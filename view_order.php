@@ -1,0 +1,2419 @@
+<?php
+require 'auth.php';
+require 'config.php';
+
+date_default_timezone_set("Asia/Phnom_Penh");
+
+$now = new DateTime();
+if ((int)$now->format("H") < 6) {
+    $business_date = $now->modify("-1 day")->format("Y-m-d");
+} else {
+    $business_date = $now->format("Y-m-d");
+}
+
+$action = $_GET['action'] ?? "";
+
+// Clock-in status
+$_is_clocked_in = false;
+$_clock_since   = null;
+$_att_check = $conn->query("SHOW TABLES LIKE 'attendance'");
+if ($_att_check && $_att_check->num_rows > 0) {
+    $_cs = $conn->prepare("SELECT clock_in FROM attendance WHERE user_id = ? AND date = CURDATE() AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1");
+    $_cs->bind_param('i', $_SESSION['user_id']);
+    $_cs->execute();
+    $_crow = $_cs->get_result()->fetch_assoc();
+    if ($_crow) { $_is_clocked_in = true; $_clock_since = date('g:i A', strtotime($_crow['clock_in'])); }
+}
+
+// Fetch active announcements
+$_ann_check = $conn->query("SHOW TABLES LIKE 'announcements'");
+$_announcements = [];
+if ($_ann_check && $_ann_check->num_rows > 0) {
+    $_ann_res = $conn->query("SELECT id, title, message, type FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) ORDER BY created_at DESC");
+    if ($_ann_res) $_announcements = $_ann_res->fetch_all(MYSQLI_ASSOC);
+}
+
+// ── Define Socket URL in one place ──
+if (!defined('SOCKET_URL')) {
+    define('SOCKET_URL', 'http://localhost:3000');
+}
+
+/* ===============================
+   MAIN PAGE
+================================ */
+if ($action === ""):
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bird's Nest Coffee — Orders</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    
+    <style>
+    /* ── RESET & ROOT ── */
+    :root {
+        --accent: #d1904b;
+        --accent-light: #e8b87a;
+        --accent-dark: #a0702a;
+        --bg: #0c0c0c;
+        --bg-card: #121212;
+        --bg-card-hover: #181818;
+        --border: #1f1f1f;
+        --border-hover: #2a2a2a;
+        --text: #f5f5f5;
+        --text-muted: #888888;
+        --text-light: #ffffff;
+        --success: #55e087;
+        --warning: #f39c12;
+        --danger: #ff5c5c;
+        
+        /* ── Shadow System ── */
+        --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
+        --shadow-md: 0 4px 20px rgba(0,0,0,0.4);
+        --shadow-lg: 0 8px 40px rgba(0,0,0,0.5);
+        --shadow-accent: 0 4px 20px rgba(209, 144, 75, 0.15);
+        
+        /* ── Transitions ── */
+        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { 
+        box-sizing: border-box; 
+        margin: 0; 
+        padding: 0; 
+    }
+
+    /* ── PREMIUM DARK BACKGROUND ── */
+    body {
+        background-color: #09090b;
+        background-image:
+            radial-gradient(ellipse 90% 60% at 15% -10%, rgba(80,80,120,0.10) 0%, transparent 55%),
+            radial-gradient(ellipse 70% 60% at 85% 110%, rgba(60,60,100,0.08) 0%, transparent 55%),
+            radial-gradient(ellipse 50% 50% at 50% 50%, rgba(209,144,75,0.03) 0%, transparent 60%),
+            linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+        background-size: auto, auto, auto, 72px 72px, 72px 72px;
+        background-attachment: fixed;
+        font-family: 'Poppins', sans-serif;
+        color: var(--text);
+        margin: 0;
+        padding: 40px;
+        min-height: 100vh;
+        position: relative;
+        overflow-x: hidden;
+    }
+
+    /* ── Coffee Steam Animation ── */
+    .steam-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: 0;
+        overflow: hidden;
+    }
+
+    .steam {
+        position: absolute;
+        bottom: -50px;
+        width: 20px;
+        height: 20px;
+        background: rgba(200, 200, 230, 0.025);
+        border-radius: 50%;
+        filter: blur(24px);
+        animation: rise linear infinite;
+    }
+
+    .steam:nth-child(1) {
+        left: 10%;
+        width: 40px;
+        height: 40px;
+        animation-duration: 12s;
+        animation-delay: 0s;
+    }
+    .steam:nth-child(2) {
+        left: 20%;
+        width: 30px;
+        height: 30px;
+        animation-duration: 15s;
+        animation-delay: 2s;
+    }
+    .steam:nth-child(3) {
+        left: 35%;
+        width: 50px;
+        height: 50px;
+        animation-duration: 18s;
+        animation-delay: 4s;
+    }
+    .steam:nth-child(4) {
+        left: 50%;
+        width: 35px;
+        height: 35px;
+        animation-duration: 14s;
+        animation-delay: 1s;
+    }
+    .steam:nth-child(5) {
+        left: 65%;
+        width: 45px;
+        height: 45px;
+        animation-duration: 16s;
+        animation-delay: 3s;
+    }
+    .steam:nth-child(6) {
+        left: 80%;
+        width: 25px;
+        height: 25px;
+        animation-duration: 13s;
+        animation-delay: 5s;
+    }
+    .steam:nth-child(7) {
+        left: 90%;
+        width: 35px;
+        height: 35px;
+        animation-duration: 17s;
+        animation-delay: 6s;
+    }
+
+    @keyframes rise {
+        0% {
+            transform: translateY(0) scale(0.5) rotate(0deg);
+            opacity: 0;
+        }
+        25% {
+            opacity: 0.5;
+        }
+        50% {
+            transform: translateY(-50vh) scale(1.5) rotate(180deg);
+            opacity: 0.3;
+        }
+        100% {
+            transform: translateY(-100vh) scale(2) rotate(360deg);
+            opacity: 0;
+        }
+    }
+
+    /* ── Custom Scrollbar ── */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb {
+        background: var(--accent);
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent-dark); }
+
+    /* ── Back Button ── */
+    .back {
+        position: fixed;
+        top: 24px;
+        left: 24px;
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        background: rgba(255,255,255,0.05);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-radius: 50px;
+        border: 1px solid rgba(255,255,255,0.1);
+        transition: var(--transition);
+        z-index: 100;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+
+    .back:hover {
+        border-color: var(--accent);
+        box-shadow: var(--shadow-accent);
+        transform: translateX(-4px);
+    }
+
+    .back i {
+        font-size: 16px;
+    }
+
+    /* ── Header ── */
+    .header {
+        text-align: center;
+        margin-bottom: 40px;
+        padding-top: 20px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .header h1 {
+        color: var(--accent);
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        text-shadow: 0 0 30px rgba(209, 144, 75, 0.15);
+    }
+
+    .header h1 i {
+        font-size: 28px;
+    }
+
+    .header p {
+        color: var(--text-muted);
+        font-size: 14px;
+        font-weight: 400;
+    }
+
+    .header .live-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        padding: 6px 16px;
+        background: rgba(85, 224, 135, 0.1);
+        border-radius: 50px;
+        font-size: 12px;
+        color: var(--success);
+        border: 1px solid rgba(85, 224, 135, 0.2);
+    }
+
+    .header .live-indicator .dot {
+        width: 8px;
+        height: 8px;
+        background: var(--success);
+        border-radius: 50%;
+        animation: pulse-dot 1.5s infinite;
+    }
+
+    @keyframes pulse-dot {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    /* ── STATUS TABS ── */
+    .status-tabs {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .status-tab {
+        padding: 8px 24px;
+        border-radius: 50px;
+        background: rgba(255,255,255,0.04);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255,255,255,0.08);
+        color: var(--text-muted);
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 14px;
+        transition: var(--transition);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .status-tab:hover {
+        border-color: var(--accent);
+        color: var(--text);
+    }
+
+    .status-tab.active {
+        background: rgba(209, 144, 75, 0.2);
+        border-color: var(--accent);
+        color: var(--text-light);
+    }
+
+    .status-tab .badge {
+        background: rgba(255,255,255,0.1);
+        padding: 2px 10px;
+        border-radius: 50px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .status-tab.active .badge {
+        background: rgba(0,0,0,0.2);
+        color: var(--text-light);
+    }
+
+    /* ── Toggle Button ── */
+    .toggle-container {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 20px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .toggle-btn {
+        padding: 8px 20px;
+        border-radius: 50px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.04);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        color: var(--text);
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-family: 'Poppins', sans-serif;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .toggle-btn:hover {
+        border-color: var(--accent);
+        box-shadow: var(--shadow-accent);
+    }
+
+    /* ── Container ── */
+    .container {
+        max-width: 1400px;
+        margin: auto;
+        position: relative;
+        z-index: 1;
+    }
+
+    /* ── Orders Grid ── */
+    .orders-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 18px;
+    }
+
+    /* ── Order Card ── */
+    @keyframes cardIn {
+        from { opacity: 0; transform: translateY(14px) scale(0.98); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .order-card {
+        background: linear-gradient(145deg,
+            rgba(255,255,255,0.055) 0%,
+            rgba(255,255,255,0.028) 50%,
+            rgba(255,255,255,0.018) 100%);
+        border: 1px solid rgba(255,255,255,0.09);
+        border-radius: 18px;
+        padding: 20px;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+        animation: cardIn 0.35s ease both;
+        backdrop-filter: blur(28px) saturate(150%);
+        -webkit-backdrop-filter: blur(28px) saturate(150%);
+        box-shadow: 0 4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+
+    /* Status accent strip on left */
+    .order-card::before {
+        content: '';
+        position: absolute;
+        left: 0; top: 0; bottom: 0;
+        width: 4px;
+        border-radius: 18px 0 0 18px;
+        background: var(--sc, var(--accent));
+    }
+
+    /* Subtle top glow matching status */
+    .order-card::after {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, var(--sc, var(--accent)), transparent);
+        opacity: 0.5;
+    }
+
+    .order-card[data-status="PendingPayment"] { --sc: #d1904b; }
+    .order-card[data-status="Paid"]           { --sc: #3498db; }
+    .order-card[data-status="Preparing"]      { --sc: #f1c40f; }
+    .order-card[data-status="Completed"]      { --sc: #55e087; }
+    .order-card[data-status="Cancelled"]      { --sc: #ff5c5c; }
+    .order-card[data-status="Refunded"]       { --sc: #9b59b6; }
+
+    .order-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(255,255,255,0.16);
+        box-shadow: 0 16px 48px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+
+    /* ── Card Header ── */
+    .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        padding-left: 8px;
+    }
+
+    .card-order-num {
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--sc, var(--accent));
+        letter-spacing: -0.5px;
+        line-height: 1;
+    }
+
+    .card-header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .card-total {
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--text-light);
+        letter-spacing: -0.3px;
+    }
+
+    /* ── Card Customer Row ── */
+    .card-customer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 8px;
+        margin-bottom: 4px;
+    }
+
+    .card-customer-name {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+    }
+
+    .card-customer-name i {
+        color: var(--text-muted);
+        font-size: 13px;
+    }
+
+    .card-time {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+
+    .card-table-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: rgba(209,144,75,0.12);
+        border: 1px solid rgba(209,144,75,0.2);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 600;
+        margin: 4px 0 4px 8px;
+    }
+
+    /* ── Card Divider ── */
+    .card-divider {
+        height: 1px;
+        background: linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.05) 100%);
+        margin: 12px 0;
+    }
+
+    /* ── Card Footer ── */
+    .card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 2px;
+        margin-top: 10px;
+    }
+
+    .card-employee {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11.5px;
+        color: var(--text-muted);
+    }
+
+    /* ── Card Actions ── */
+    .card-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .card-actions button {
+        flex: 1;
+        min-width: 80px;
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: 'Poppins', sans-serif;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        white-space: nowrap;
+    }
+
+    .card-actions button:hover { transform: translateY(-1px); filter: brightness(1.15); }
+    .card-actions button:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+    .card-actions .call-btn   { background: rgba(209,144,75,.12); color: var(--accent); border-color: rgba(209,144,75,.2); }
+    .card-actions .paid-btn   { background: rgba(52,152,219,.12); color: #3498db; border-color: rgba(52,152,219,.2); }
+    .card-actions .prepare-btn{ background: rgba(241,196,15,.12); color: #f1c40f; border-color: rgba(241,196,15,.2); }
+    .card-actions .complete-btn{background: rgba(85,224,135,.12); color: var(--success); border-color: rgba(85,224,135,.2);}
+    .card-actions .cancel-btn { background: rgba(255,92,92,.12);  color: var(--danger); border-color: rgba(255,92,92,.2); }
+    .card-actions .refund-btn { background: rgba(155,89,182,.12); color: #9b59b6; border-color: rgba(155,89,182,.2); }
+    .card-actions .delete-btn { background: rgba(255,92,92,.12);  color: var(--danger); border-color: rgba(255,92,92,.2); padding: 8px 14px; min-width: auto; flex: 0; }
+
+    /* ── Order ID (legacy, keep for search) ── */
+    .order-id {
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    /* ── Items List ── */
+    .items-list {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 200px;
+    }
+
+    .item-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 6px 8px;
+        background: rgba(255,255,255,0.04);
+        border-radius: 8px;
+        border-left: 3px solid var(--accent);
+    }
+
+    .item-qty-badge {
+        background: var(--accent);
+        color: #000;
+        font-size: 11px;
+        font-weight: 700;
+        min-width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-top: 1px;
+    }
+
+    .item-body {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .item-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-light);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .item-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+        margin-top: 3px;
+    }
+
+    .item-chip {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: rgba(255,255,255,0.07);
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    /* ── Price (legacy) ── */
+    .price {
+        font-weight: 700;
+        color: var(--accent);
+        font-size: 15px;
+    }
+
+    /* ── Status Badge ── */
+    .status {
+        display: inline-block;
+        padding: 6px 16px;
+        border-radius: 50px;
+        font-weight: 600;
+        font-size: 12px;
+        min-width: 90px;
+        letter-spacing: 0.3px;
+        transition: var(--transition);
+    }
+
+    .status.PendingPayment {
+        background: rgba(209, 144, 75, 0.2);
+        color: var(--accent);
+        border: 1px solid rgba(209, 144, 75, 0.2);
+    }
+
+    .status.Paid {
+        background: rgba(52, 152, 219, 0.2);
+        color: #3498db;
+        border: 1px solid rgba(52, 152, 219, 0.2);
+    }
+
+    .status.Preparing {
+        background: rgba(241, 196, 15, 0.2);
+        color: #f1c40f;
+        border: 1px solid rgba(241, 196, 15, 0.2);
+    }
+
+    .status.Completed {
+        background: rgba(85, 224, 135, 0.2);
+        color: var(--success);
+        border: 1px solid rgba(85, 224, 135, 0.2);
+    }
+
+    .status.Cancelled {
+        background: rgba(255, 92, 92, 0.2);
+        color: var(--danger);
+        border: 1px solid rgba(255, 92, 92, 0.2);
+    }
+
+    .status.Refunded {
+        background: rgba(155, 89, 182, 0.2);
+        color: #9b59b6;
+        border: 1px solid rgba(155, 89, 182, 0.2);
+    }
+
+    .status:hover {
+        transform: scale(1.05);
+    }
+
+    /* ── Date Cell (legacy) ── */
+    .date-cell {
+        color: var(--text-muted);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    /* ── Fade Out Animation ── */
+    .fade-out {
+        opacity: 0;
+        transform: translateX(20px);
+        transition: all 0.4s ease;
+    }
+
+    /* ── Empty State ── */
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-muted);
+    }
+
+    .empty-state i {
+        font-size: 48px;
+        display: block;
+        margin-bottom: 16px;
+        color: var(--border);
+    }
+
+    .empty-state h3 {
+        color: var(--text);
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .empty-state p {
+        font-size: 14px;
+    }
+
+    /* ── Call Notification Modal ── */
+    .call-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(10px);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .call-modal.active {
+        display: flex;
+    }
+
+    .call-modal-content {
+        background: rgba(18, 18, 18, 0.95);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        text-align: center;
+        max-width: 400px;
+        border: 2px solid var(--accent);
+        box-shadow: var(--shadow-lg);
+        animation: modalPop 0.3s ease;
+    }
+
+    @keyframes modalPop {
+        from {
+            opacity: 0;
+            transform: scale(0.9);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    .call-modal-content h2 {
+        font-size: 48px;
+        color: var(--accent);
+        margin-bottom: 8px;
+    }
+
+    .call-modal-content .order-number {
+        font-size: 72px;
+        font-weight: 800;
+        color: var(--text-light);
+        margin: 16px 0;
+    }
+
+    .call-modal-content p {
+        color: var(--text-muted);
+        margin-bottom: 20px;
+    }
+
+    .call-modal-content .btn-dismiss {
+        padding: 12px 40px;
+        border-radius: 50px;
+        border: none;
+        background: var(--accent);
+        color: #000;
+        font-weight: 600;
+        font-size: 16px;
+        cursor: pointer;
+        transition: var(--transition);
+    }
+
+    .call-modal-content .btn-dismiss:hover {
+        transform: scale(1.05);
+        box-shadow: var(--shadow-accent);
+    }
+
+    /* ── Cancel Modal ── */
+    .cancel-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(10px);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .cancel-modal.active {
+        display: flex;
+    }
+
+    .cancel-modal-content {
+        background: rgba(18, 18, 18, 0.95);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        text-align: center;
+        max-width: 500px;
+        border: 2px solid var(--danger);
+        box-shadow: var(--shadow-lg);
+        animation: modalPop 0.3s ease;
+        width: 100%;
+    }
+
+    .cancel-modal-content h2 {
+        font-size: 28px;
+        color: var(--danger);
+        margin-bottom: 8px;
+    }
+
+    .cancel-modal-content .order-number {
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--text-light);
+        margin: 8px 0;
+    }
+
+    .cancel-modal-content textarea {
+        width: 100%;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.03);
+        color: var(--text);
+        font-family: 'Poppins', sans-serif;
+        font-size: 14px;
+        min-height: 80px;
+        resize: vertical;
+        margin: 12px 0;
+    }
+
+    .cancel-modal-content textarea:focus {
+        outline: none;
+        border-color: var(--danger);
+    }
+
+    .cancel-modal-content .btn-group {
+        display: flex;
+        gap: 12px;
+        margin-top: 16px;
+    }
+
+    .cancel-modal-content .btn-group button {
+        flex: 1;
+        padding: 12px;
+        border-radius: 10px;
+        border: none;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: 'Poppins', sans-serif;
+        font-size: 14px;
+        transition: var(--transition);
+    }
+
+    .cancel-modal-content .btn-group .btn-cancel-yes {
+        background: var(--danger);
+        color: #fff;
+    }
+
+    .cancel-modal-content .btn-group .btn-cancel-yes:hover {
+        background: #cc0000;
+        transform: scale(1.02);
+    }
+
+    .cancel-modal-content .btn-group .btn-cancel-no {
+        background: rgba(255,255,255,0.05);
+        color: var(--text);
+        border: 1px solid var(--border);
+    }
+
+    .cancel-modal-content .btn-group .btn-cancel-no:hover {
+        border-color: var(--accent);
+    }
+
+    /* ── Refund Modal ── */
+    .refund-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(10px);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .refund-modal.active {
+        display: flex;
+    }
+
+    .refund-modal-content {
+        background: rgba(18, 18, 18, 0.95);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        text-align: center;
+        max-width: 500px;
+        border: 2px solid #9b59b6;
+        box-shadow: var(--shadow-lg);
+        animation: modalPop 0.3s ease;
+        width: 100%;
+    }
+
+    .refund-modal-content h2 {
+        font-size: 28px;
+        color: #9b59b6;
+        margin-bottom: 8px;
+    }
+
+    .refund-modal-content .order-number {
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--text-light);
+        margin: 8px 0;
+    }
+
+    .refund-modal-content .form-group {
+        margin: 12px 0;
+        text-align: left;
+    }
+
+    .refund-modal-content .form-group label {
+        display: block;
+        color: var(--text-muted);
+        font-size: 13px;
+        margin-bottom: 4px;
+    }
+
+    .refund-modal-content .form-group input,
+    .refund-modal-content .form-group textarea {
+        width: 100%;
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.03);
+        color: var(--text);
+        font-family: 'Poppins', sans-serif;
+        font-size: 14px;
+    }
+
+    .refund-modal-content .form-group textarea {
+        min-height: 60px;
+        resize: vertical;
+    }
+
+    .refund-modal-content .form-group input:focus,
+    .refund-modal-content .form-group textarea:focus {
+        outline: none;
+        border-color: #9b59b6;
+    }
+
+    .refund-modal-content .btn-group {
+        display: flex;
+        gap: 12px;
+        margin-top: 16px;
+    }
+
+    .refund-modal-content .btn-group button {
+        flex: 1;
+        padding: 12px;
+        border-radius: 10px;
+        border: none;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: 'Poppins', sans-serif;
+        font-size: 14px;
+        transition: var(--transition);
+    }
+
+    .refund-modal-content .btn-group .btn-refund-yes {
+        background: #9b59b6;
+        color: #fff;
+    }
+
+    .refund-modal-content .btn-group .btn-refund-yes:hover {
+        background: #8e44ad;
+        transform: scale(1.02);
+    }
+
+    .refund-modal-content .btn-group .btn-refund-no {
+        background: rgba(255,255,255,0.05);
+        color: var(--text);
+        border: 1px solid var(--border);
+    }
+
+    .refund-modal-content .btn-group .btn-refund-no:hover {
+        border-color: var(--accent);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 1024px) {
+        body { padding: 24px; }
+        .orders-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+    }
+
+    @media (max-width: 768px) {
+        body { padding: 16px; }
+        .orders-grid { grid-template-columns: 1fr; }
+        .back { top: 16px; left: 16px; padding: 8px 14px; font-size: 12px; }
+
+        .header h1 {
+            font-size: 24px;
+        }
+
+        .container {
+            padding: 16px;
+            border-radius: 14px;
+        }
+
+        .orders-grid { grid-template-columns: 1fr; }
+
+        .status {
+            font-size: 11px;
+            padding: 4px 12px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        body {
+            padding: 10px;
+        }
+
+        .header h1 {
+            font-size: 20px;
+        }
+
+        .header h1 i {
+            font-size: 20px;
+        }
+
+        .container {
+            padding: 12px;
+        }
+    }
+    </style>
+</head>
+<body>
+
+<!-- Coffee Steam Animation -->
+<div class="steam-container">
+    <div class="steam"></div>
+    <div class="steam"></div>
+    <div class="steam"></div>
+    <div class="steam"></div>
+    <div class="steam"></div>
+    <div class="steam"></div>
+    <div class="steam"></div>
+</div>
+
+<!-- Back Buttons -->
+<div style="position:fixed;top:24px;left:24px;display:flex;gap:10px;z-index:100;">
+    <a href="menu.php" class="back" style="position:static;">
+        <i class="fa-solid fa-mug-hot"></i> Menu
+    </a>
+    <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'manager'])): ?>
+    <a href="dashboard.php" class="back" style="position:static;">
+        <i class="fa-solid fa-gauge"></i> Dashboard
+    </a>
+    <?php endif; ?>
+</div>
+
+<!-- Top-right: Clock + Profile + Logout -->
+<div style="position:fixed;top:24px;right:24px;display:flex;gap:8px;z-index:100;">
+    <?php
+    $clocked = $_is_clocked_in;
+    $clkBg    = $clocked ? 'rgba(255,95,95,.08)'   : 'rgba(85,224,135,.08)';
+    $clkBr    = $clocked ? 'rgba(255,95,95,.25)'   : 'rgba(85,224,135,.25)';
+    $clkColor = $clocked ? '#ff6b6b'               : '#55e087';
+    $clkIcon  = $clocked ? 'right-from-bracket'    : 'fingerprint';
+    $clkLabel = $clocked ? 'Clock Out'             : 'Clock In';
+    $clkTitle = $clocked ? 'Clocked in at ' . $_clock_since : 'Not clocked in';
+    ?>
+    <button id="clockBtn" data-clocked="<?= $clocked ? '1' : '0' ?>"
+        onclick="toggleClock()"
+        title="<?= htmlspecialchars($clkTitle) ?>"
+        style="position:static;display:inline-flex;align-items:center;gap:7px;
+               padding:7px 14px;border-radius:8px;font-size:13px;font-family:'Poppins',sans-serif;font-weight:500;cursor:pointer;
+               background:<?= $clkBg ?>;border:1px solid <?= $clkBr ?>;color:<?= $clkColor ?>;transition:all .2s;">
+        <i class="fa-solid fa-<?= $clkIcon ?>"></i> <?= $clkLabel ?>
+    </button>
+    <a href="profile.php" class="back" style="position:static;" title="My Profile">
+        <i class="fa-solid fa-circle-user"></i> Profile
+    </a>
+    <a href="logout.php" class="back" style="position:static;background:rgba(255,95,95,.08);border-color:rgba(255,95,95,.25);color:#ff6b6b;" title="Logout">
+        <i class="fa-solid fa-right-from-bracket"></i> Logout
+    </a>
+</div>
+
+<!-- Header -->
+<div class="header">
+    <h1>
+        <i class="fa-solid fa-receipt"></i>
+        Orders
+    </h1>
+    <p>Manage and track all incoming orders in real-time</p>
+    <div class="live-indicator">
+        <span class="dot"></span>
+        Live
+    </div>
+</div>
+
+<!-- Announcements -->
+<div id="annContainer" style="max-width:900px;margin:0 auto 0;padding:0 20px;"></div>
+<style>
+@keyframes annIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+</style>
+<script>
+var _annColors = {
+    info:    ['#5bc0de','rgba(91,192,222,.08)','rgba(91,192,222,.2)','info-circle'],
+    warning: ['#f39c12','rgba(243,156,18,.08)','rgba(243,156,18,.2)','triangle-exclamation'],
+    urgent:  ['#e74c3c','rgba(231,76,60,.1)',  'rgba(231,76,60,.25)','circle-exclamation'],
+};
+function _annDismissed() { return JSON.parse(localStorage.getItem('ann_dismissed') || '[]'); }
+function dismissAnn(btn, id) {
+    id = parseInt(id);
+    var banner = btn.closest('.ann-banner');
+    banner.style.transition = 'opacity .3s, transform .3s';
+    banner.style.opacity = '0';
+    banner.style.transform = 'translateY(-6px)';
+    setTimeout(function(){ banner.remove(); }, 300);
+    var dismissed = _annDismissed();
+    if (!dismissed.includes(id)) { dismissed.push(id); localStorage.setItem('ann_dismissed', JSON.stringify(dismissed)); }
+}
+function _buildAnnBanner(ann) {
+    var c = _annColors[ann.type] || _annColors.info;
+    var ac = c[0], abg = c[1], abr = c[2], ai = c[3];
+    var div = document.createElement('div');
+    div.className = 'ann-banner';
+    div.dataset.id = ann.id;
+    div.style.cssText = 'display:flex;align-items:flex-start;gap:14px;padding:14px 18px;margin-bottom:10px;border-radius:14px;background:'+abg+';border:1px solid '+abr+';animation:annIn .4s ease both;';
+    div.innerHTML =
+        '<i class="fa-solid fa-'+ai+'" style="color:'+ac+';font-size:16px;margin-top:2px;flex-shrink:0"></i>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:13px;font-weight:700;color:#f5f5f5;margin-bottom:3px">'+_escAnn(ann.title)+'</div>' +
+          '<div style="font-size:12.5px;color:#aaa;line-height:1.55">'+_escAnn(ann.message).replace(/\n/g,'<br>')+'</div>' +
+        '</div>' +
+        '<button onclick="dismissAnn(this,'+ann.id+')" style="background:none;border:none;color:#555;cursor:pointer;font-size:14px;padding:2px 4px;flex-shrink:0;margin-top:1px;transition:color .2s" title="Dismiss"><i class="fa-solid fa-xmark"></i></button>';
+    return div;
+}
+function _escAnn(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function updateAnnouncements(list) {
+    var container = document.getElementById('annContainer');
+    if (!container) return;
+    var dismissed = _annDismissed().map(function(x){ return parseInt(x); });
+    var activeIds = list.map(function(a){ return parseInt(a.id); }).filter(function(id){ return !dismissed.includes(id); });
+    // Remove banners no longer active or hidden
+    container.querySelectorAll('.ann-banner').forEach(function(b){
+        if (!activeIds.includes(parseInt(b.dataset.id))) {
+            b.style.transition = 'opacity .3s';
+            b.style.opacity = '0';
+            setTimeout(function(){ b.remove(); }, 300);
+        }
+    });
+    // Add new banners not yet shown
+    var shownIds = Array.from(container.querySelectorAll('.ann-banner')).map(function(b){ return parseInt(b.dataset.id); });
+    list.forEach(function(ann) {
+        var id = parseInt(ann.id);
+        if (!dismissed.includes(id) && !shownIds.includes(id)) {
+            container.insertBefore(_buildAnnBanner(ann), container.firstChild);
+        }
+    });
+}
+</script>
+
+<script>
+async function toggleClock() {
+    var btn = document.getElementById('clockBtn');
+    var clocked = btn.dataset.clocked === '1';
+    btn.disabled = true;
+    btn.style.opacity = '.6';
+
+    try {
+        var resp = await fetch('attendance_action.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'action=' + (clocked ? 'clock_out' : 'clock_in')
+        });
+        var data = await resp.json();
+
+        if (data.ok) {
+            if (!clocked) {
+                btn.dataset.clocked = '1';
+                btn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Clock Out';
+                btn.style.background = 'rgba(255,95,95,.08)';
+                btn.style.borderColor = 'rgba(255,95,95,.25)';
+                btn.style.color = '#ff6b6b';
+                btn.title = 'Clocked in at ' + (data.time || '');
+            } else {
+                btn.dataset.clocked = '0';
+                btn.innerHTML = '<i class="fa-solid fa-fingerprint"></i> Clock In';
+                btn.style.background = 'rgba(85,224,135,.08)';
+                btn.style.borderColor = 'rgba(85,224,135,.25)';
+                btn.style.color = '#55e087';
+                btn.title = 'Not clocked in';
+            }
+            showClockToast(data.msg, false);
+        } else {
+            showClockToast(data.msg, true);
+        }
+    } catch(e) {
+        showClockToast('Connection error.', true);
+    }
+
+    btn.disabled = false;
+    btn.style.opacity = '1';
+}
+
+function showClockToast(msg, isErr) {
+    var el = document.createElement('div');
+    el.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);' +
+        'padding:12px 22px;border-radius:12px;font-size:13px;font-weight:600;z-index:9999;' +
+        'animation:toastIn .35s ease both;box-shadow:0 8px 32px rgba(0,0,0,.5);' +
+        (isErr
+            ? 'background:#3a1a1a;border:1px solid rgba(231,76,60,.3);color:#e87070;'
+            : 'background:#1a3a28;border:1px solid rgba(85,224,135,.3);color:#55e087;');
+    el.innerHTML = (isErr ? '<i class="fa-solid fa-circle-exclamation"></i> ' : '<i class="fa-solid fa-circle-check"></i> ') + msg;
+    document.body.appendChild(el);
+    setTimeout(function(){ el.style.animation='toastOut .35s ease forwards'; setTimeout(()=>el.remove(),350); }, 3000);
+}
+</script>
+
+<!-- Status Tabs -->
+<div class="status-tabs" id="statusTabs">
+    <button class="status-tab active" data-status="all" onclick="filterStatus('all')">
+        📋 All <span class="badge" id="count-all">0</span>
+    </button>
+    <button class="status-tab" data-status="PendingPayment" onclick="filterStatus('PendingPayment')">
+        ⏳ Pending <span class="badge" id="count-PendingPayment">0</span>
+    </button>
+    <button class="status-tab" data-status="Paid" onclick="filterStatus('Paid')">
+        💳 Paid <span class="badge" id="count-Paid">0</span>
+    </button>
+    <button class="status-tab" data-status="Preparing" onclick="filterStatus('Preparing')">
+        👨‍🍳 Preparing <span class="badge" id="count-Preparing">0</span>
+    </button>
+    <button class="status-tab" data-status="Completed" onclick="filterStatus('Completed')">
+        ✅ Completed <span class="badge" id="count-Completed">0</span>
+    </button>
+    <button class="status-tab" data-status="Cancelled" onclick="filterStatus('Cancelled')">
+        ❌ Cancelled <span class="badge" id="count-Cancelled">0</span>
+    </button>
+    <button class="status-tab" data-status="Refunded" onclick="filterStatus('Refunded')">
+        🔄 Refunded <span class="badge" id="count-Refunded">0</span>
+    </button>
+</div>
+
+<!-- Search Bar -->
+<div class="search-bar" style="display:flex; justify-content:center; gap:12px; margin-bottom:20px; align-items:center; flex-wrap:wrap;">
+    <input type="text" id="searchInput" placeholder="Search by customer name, order #, or status..."
+           style="width:300px; padding:10px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.09); background:rgba(255,255,255,0.05); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); color:var(--text); font-family:'Poppins',sans-serif; font-size:14px; outline:none; transition:var(--transition); box-shadow:0 2px 8px rgba(0,0,0,0.3); inset 0 1px 0 rgba(255,255,255,0.06);">
+    <button class="btn" onclick="searchOrders()" 
+            style="padding:10px 20px; border-radius:10px; border:none; background:var(--accent); color:#000; font-weight:600; cursor:pointer; transition:var(--transition); font-family:'Poppins',sans-serif; font-size:14px; display:flex; align-items:center; gap:8px;">
+        <i class="fa-solid fa-magnifying-glass"></i> Search
+    </button>
+    <button class="btn-clear" onclick="clearSearch()" 
+            style="padding:10px 20px; border-radius:10px; border:1px solid var(--border); background:rgba(18, 18, 18, 0.5); backdrop-filter:blur(10px); color:var(--text); font-weight:500; cursor:pointer; transition:var(--transition); font-family:'Poppins',sans-serif; font-size:14px; display:flex; align-items:center; gap:8px;">
+        <i class="fa-solid fa-xmark"></i> Clear
+    </button>
+</div>
+
+<!-- Toggle Completed Button -->
+<div class="toggle-container">
+    <button class="toggle-btn" id="toggleCompletedBtn" onclick="toggleCompleted()">
+        <i class="fa-solid fa-eye"></i> Show Completed/Refunded
+    </button>
+</div>
+
+<!-- Orders Grid -->
+<div class="container">
+    <div class="orders-grid" id="ordersBody"></div>
+</div>
+
+<!-- Call Notification Modal -->
+<div class="call-modal" id="callModal">
+    <div class="call-modal-content">
+        <h2>🔔 Order Ready!</h2>
+        <div class="order-number" id="callOrderNumber">#001</div>
+        <p id="callCustomerName">Customer</p>
+        <button class="btn-dismiss" onclick="dismissCall()">Dismiss</button>
+    </div>
+</div>
+
+<!-- Cancel Modal -->
+<div class="cancel-modal" id="cancelModal">
+    <div class="cancel-modal-content">
+        <h2><i class="fa-solid fa-ban"></i> Cancel Order</h2>
+        <div class="order-number" id="cancelOrderNumber">#001</div>
+        <p style="color: var(--text-muted);">Please provide a reason for cancellation:</p>
+        <textarea id="cancelReason" placeholder="Why is this order being cancelled?"></textarea>
+        <div class="btn-group">
+            <button class="btn-cancel-yes" onclick="confirmCancel()">
+                <i class="fa-solid fa-check"></i> Yes, Cancel
+            </button>
+            <button class="btn-cancel-no" onclick="closeCancelModal()">
+                <i class="fa-solid fa-times"></i> Back
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Refund Modal -->
+<div class="refund-modal" id="refundModal">
+    <div class="refund-modal-content">
+        <h2><i class="fa-solid fa-rotate-left"></i> Refund Order</h2>
+        <div class="order-number" id="refundOrderNumber">#001</div>
+        <p style="color: var(--text-muted);">Enter refund details:</p>
+        
+        <div class="form-group">
+            <label>Refund Amount ($)</label>
+            <input type="number" step="0.01" id="refundAmount" value="">
+        </div>
+        
+        <div class="form-group">
+            <label>Reason for Refund</label>
+            <textarea id="refundReason" placeholder="Why is this order being refunded?"></textarea>
+        </div>
+        
+        <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="restoreStock" checked style="width: 18px; height: 18px; accent-color: #9b59b6;">
+            <label for="restoreStock" style="color: var(--text-muted); font-size: 13px; margin: 0;">Restore ingredients to stock</label>
+        </div>
+        
+        <div class="btn-group">
+            <button class="btn-refund-yes" onclick="confirmRefund()">
+                <i class="fa-solid fa-check"></i> Process Refund
+            </button>
+            <button class="btn-refund-no" onclick="closeRefundModal()">
+                <i class="fa-solid fa-times"></i> Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Audio Notifications -->
+<audio id="bell">
+    <source src="audio/bell.wav" type="audio/wav">
+</audio>
+
+<audio id="action">
+    <source src="audio/order_arrived.wav" type="audio/wav">
+</audio>
+
+<audio id="callSound">
+    <source src="audio/call_order.wav" type="audio/wav">
+</audio>
+
+<script src="<?= SOCKET_URL ?>/socket.io/socket.io.js"></script>
+<script>
+const tbody = document.getElementById("ordersBody");
+const known = new Set();
+let currentFilter = 'all';
+let showCompleted = false;
+let searchQuery = '';
+let currentCancelId = 0;
+let currentRefundId = 0;
+
+// ── Get user role from PHP ──
+const userRole = "<?= $_SESSION['role'] ?? 'staff' ?>";
+const isAdmin = userRole === 'admin';
+
+// ── Play Sound ──
+function play(id) {
+    const a = document.getElementById(id);
+    if (a) a.play().catch(() => {});
+}
+
+// ── Escape HTML ──
+function escapeHtml(text) {
+    return String(text ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+// ── Build Items HTML ──
+function buildItems(items) {
+    if (!items || items.length === 0) {
+        return '<div style="color:var(--text-muted);font-size:12px;padding:4px 0;">No items</div>';
+    }
+    let html = '<div class="items-list">';
+    items.forEach(i => {
+        const chips = [];
+        if (i.sweetness) chips.push(`<span class="item-chip">🍬 ${escapeHtml(i.sweetness)}</span>`);
+        if (i.ice)       chips.push(`<span class="item-chip">🧊 ${escapeHtml(i.ice)}</span>`);
+        if (i.milk)      chips.push(`<span class="item-chip">🥛 ${escapeHtml(i.milk)}</span>`);
+
+        html += `<div class="item-line">
+            <div class="item-qty-badge">×${escapeHtml(String(i.quantity))}</div>
+            <div class="item-body">
+                <div class="item-name">${escapeHtml(i.product_name)}</div>
+                ${chips.length ? `<div class="item-chips">${chips.join('')}</div>` : ''}
+            </div>
+        </div>`;
+    });
+    html += '</div>';
+    return html;
+}
+
+// ── Determine Status Badge ──
+function getStatusBadge(status) {
+    let statusClass = status;
+    let statusText = status;
+    
+    if (status === 'PendingPayment') {
+        statusText = '⏳ Pending';
+    } else if (status === 'Paid') {
+        statusText = '💳 Paid';
+    } else if (status === 'Preparing') {
+        statusText = '👨‍🍳 Preparing';
+    } else if (status === 'Completed') {
+        statusText = '✅ Completed';
+    } else if (status === 'Cancelled') {
+        statusText = '❌ Cancelled';
+    } else if (status === 'Refunded') {
+        statusText = '🔄 Refunded';
+    }
+    
+    return `<span class="status ${statusClass}">${statusText}</span>`;
+}
+
+// ── Get Time Ago ──
+function timeAgo(dateString) {
+    const now = new Date();
+    const past = new Date(dateString);
+    const diff = Math.floor((now - past) / 1000);
+    
+    if (diff < 60) return diff + ' sec ago';
+    if (diff < 3600) return Math.floor(diff / 60) + ' min ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' hr ago';
+    return Math.floor(diff / 86400) + ' day ago';
+}
+
+// ── Build Card Inner HTML ──
+function buildCardInner(o) {
+    const tableTag = o.table_number
+        ? `<span class="card-table-badge"><i class="fa-solid fa-hashtag" style="font-size:9px"></i>${escapeHtml(o.table_number)}</span>`
+        : '';
+    return `
+        <div class="card-header">
+            <div class="card-order-num">#${escapeHtml(String(o.daily_order_no))}</div>
+            <div class="card-header-right">
+                ${getStatusBadge(o.status)}
+                <div class="card-total">$${parseFloat(o.total || 0).toFixed(2)}</div>
+            </div>
+        </div>
+        <div class="card-customer-row">
+            <div class="card-customer-name">
+                <i class="fa-regular fa-user"></i>${escapeHtml(o.customer_name || 'Guest')}
+            </div>
+            <div class="card-time">
+                <i class="fa-regular fa-clock"></i>
+                <span data-timestamp="${escapeHtml(o.order_date)}">${timeAgo(o.order_date)}</span>
+            </div>
+        </div>
+        ${tableTag}
+        <div class="card-divider"></div>
+        ${buildItems(o.items || [])}
+        <div class="card-footer">
+            <div class="card-employee">
+                <i class="fa-solid fa-user-tie" style="font-size:11px;opacity:.5"></i>
+                ${escapeHtml(o.employee_name || 'Unknown')}
+            </div>
+        </div>
+        <div class="card-actions">${getActionButtons(o)}</div>
+    `;
+}
+
+// ── Add Row ──
+function addRow(o) {
+    const card = document.createElement("div");
+    card.id = "row-" + o.order_id;
+    card.className = "order-card";
+    card.dataset.status = o.status;
+    card.dataset.orderId = o.order_id;
+    if ((o.status === 'Completed' || o.status === 'Refunded') && !showCompleted) {
+        card.style.display = 'none';
+    }
+    card.innerHTML = buildCardInner(o);
+    tbody.appendChild(card);
+}
+
+// ── Get Action Buttons ──
+function getActionButtons(o) {
+    let buttons = '';
+    
+    // Call button - only for Paid or Preparing
+    if (o.status === 'Paid' || o.status === 'Preparing') {
+        buttons += `
+            <button class="call-btn" onclick="callOrder(${Number(o.order_id)}, '${escapeHtml(o.customer_name)}', ${Number(o.daily_order_no)})" title="Call customer">
+                <i class="fa-solid fa-bell"></i> Call
+            </button>
+        `;
+    }
+    
+    // Paid button - only for PendingPayment
+    if (o.status === 'PendingPayment') {
+        buttons += `
+            <button class="paid-btn" onclick="markPaid(${Number(o.order_id)})" title="Mark as paid">
+                <i class="fa-solid fa-credit-card"></i> Paid
+            </button>
+        `;
+    }
+    
+    // Prepare button - only for Paid
+    if (o.status === 'Paid') {
+        buttons += `
+            <button class="prepare-btn" onclick="markPrepare(${Number(o.order_id)})" title="Start preparing">
+                <i class="fa-solid fa-utensils"></i> Prepare
+            </button>
+        `;
+    }
+    
+    // Complete button - only for Preparing
+    if (o.status === 'Preparing') {
+        buttons += `
+            <button class="complete-btn" onclick="completeOrder(${Number(o.order_id)})" title="Complete order">
+                <i class="fa-solid fa-check"></i> Complete
+            </button>
+        `;
+    }
+    
+    // Cancel button - for PendingPayment, Paid, Preparing (not Completed or Cancelled)
+    if (o.status !== 'Completed' && o.status !== 'Cancelled' && o.status !== 'Refunded') {
+        buttons += `
+            <button class="cancel-btn" onclick="showCancelModal(${Number(o.order_id)}, ${Number(o.daily_order_no)})" title="Cancel order">
+                <i class="fa-solid fa-ban"></i> Cancel
+            </button>
+        `;
+    }
+    
+    // Refund button - only for Completed orders (admin only)
+    if (o.status === 'Completed' && isAdmin) {
+        buttons += `
+            <button class="refund-btn" onclick="showRefundModal(${Number(o.order_id)}, ${Number(o.daily_order_no)}, ${parseFloat(o.total).toFixed(2)})" title="Refund order">
+                <i class="fa-solid fa-rotate-left"></i> Refund
+            </button>
+        `;
+    }
+    
+    // Delete button - only for PendingPayment or Cancelled (admin only)
+    if ((o.status === 'PendingPayment' || o.status === 'Cancelled') && isAdmin) {
+        buttons += `
+            <button class="delete-btn" onclick="removeOrder(${Number(o.order_id)})" title="Delete order">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+        `;
+    }
+    
+    return buttons || `<span style="color:var(--text-muted);font-size:12px;padding:4px 0;">—</span>`;
+}
+
+// ── Update Existing Row ──
+function updateExistingRow(o) {
+    const card = document.getElementById("row-" + o.order_id);
+    if (!card) return;
+    if ((o.status === 'Completed' || o.status === 'Refunded') && !showCompleted) {
+        card.style.display = 'none';
+    } else {
+        card.style.display = '';
+    }
+    card.dataset.status = o.status;
+    card.innerHTML = buildCardInner(o);
+}
+
+// ── Apply Filters ──
+function applyFilters() {
+    const cards = document.querySelectorAll('#ordersBody .order-card');
+    const query = searchQuery.toLowerCase().trim();
+
+    cards.forEach(card => {
+        const cardStatus = card.dataset.status;
+        let visible = true;
+
+        if (currentFilter !== 'all' && cardStatus !== currentFilter) visible = false;
+        if ((cardStatus === 'Completed' || cardStatus === 'Refunded') && !showCompleted) visible = false;
+
+        if (visible && query) {
+            const text = card.textContent.toLowerCase();
+            visible = text.includes(query);
+        }
+
+        card.style.display = visible ? '' : 'none';
+    });
+
+    // Show empty state if no visible cards
+    const anyVisible = Array.from(cards).some(c => c.style.display !== 'none');
+    let emptyEl = document.getElementById('ordersEmptyState');
+    if (!anyVisible && cards.length > 0) {
+        if (!emptyEl) {
+            emptyEl = document.createElement('div');
+            emptyEl.id = 'ordersEmptyState';
+            emptyEl.style.cssText = 'grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--text-muted);';
+            emptyEl.innerHTML = '<i class="fa-regular fa-rectangle-list" style="font-size:48px;display:block;margin-bottom:16px;color:var(--border)"></i><h3 style="color:var(--text);margin-bottom:8px">No Orders</h3><p style="font-size:14px">No orders match the current filter.</p>';
+            tbody.appendChild(emptyEl);
+        }
+    } else if (emptyEl) {
+        emptyEl.remove();
+    }
+}
+
+// ── Filter Status ──
+function filterStatus(status) {
+    currentFilter = status;
+    
+    // Update active tab
+    document.querySelectorAll('.status-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.status === status);
+    });
+    
+    applyFilters();
+}
+
+// ── Update Counts ──
+function updateCounts(data) {
+    const counts = { 
+        all: 0, 
+        PendingPayment: 0, 
+        Paid: 0, 
+        Preparing: 0, 
+        Completed: 0, 
+        Cancelled: 0,
+        Refunded: 0
+    };
+    
+    data.forEach(o => {
+        counts.all++;
+        if (counts[o.status] !== undefined) {
+            counts[o.status]++;
+        }
+    });
+    
+    document.getElementById('count-all').textContent = counts.all;
+    document.getElementById('count-PendingPayment').textContent = counts.PendingPayment;
+    document.getElementById('count-Paid').textContent = counts.Paid;
+    document.getElementById('count-Preparing').textContent = counts.Preparing;
+    document.getElementById('count-Completed').textContent = counts.Completed;
+    document.getElementById('count-Cancelled').textContent = counts.Cancelled;
+    document.getElementById('count-Refunded').textContent = counts.Refunded;
+}
+
+// ── Toggle Completed Orders ──
+function toggleCompleted() {
+    showCompleted = !showCompleted;
+    applyFilters();
+    
+    const toggleBtn = document.getElementById('toggleCompletedBtn');
+    toggleBtn.innerHTML = showCompleted 
+        ? '<i class="fa-solid fa-eye-slash"></i> Hide Completed/Refunded' 
+        : '<i class="fa-solid fa-eye"></i> Show Completed/Refunded';
+}
+
+// ── Load Orders ──
+async function loadOrders() {
+    try {
+        const r = await fetch("view_order.php?action=fetch", { cache: "no-store" });
+        const raw = await r.json();
+
+        // Support both old array format and new {orders, announcements} format
+        const data = Array.isArray(raw) ? raw : (raw.orders || []);
+        if (raw.announcements !== undefined) updateAnnouncements(raw.announcements);
+
+        const currentIds = new Set();
+
+        if (data.length === 0) {
+            if (tbody.children.length === 0) {
+                const empty = document.createElement("div");
+                empty.id = "ordersEmptyState";
+                empty.style.cssText = 'grid-column:1/-1;text-align:center;padding:80px 20px;color:var(--text-muted);';
+                empty.innerHTML = '<i class="fa-regular fa-rectangle-list" style="font-size:56px;display:block;margin-bottom:16px;color:var(--border)"></i><h3 style="color:var(--text);margin-bottom:8px;font-size:20px">No Orders Yet</h3><p style="font-size:14px">Orders will appear here in real-time.</p>';
+                tbody.appendChild(empty);
+            }
+            return;
+        }
+
+        // Remove empty state if present
+        const emptyEl = document.getElementById('ordersEmptyState');
+        if (emptyEl) emptyEl.remove();
+
+        // Update counts
+        updateCounts(data);
+
+        data.forEach(o => {
+            const id = String(o.order_id);
+            currentIds.add(id);
+
+            if (known.has(id)) {
+                updateExistingRow(o);
+            } else {
+                known.add(id);
+                addRow(o);
+            }
+        });
+
+        // Remove rows that no longer exist
+        Array.from(known).forEach(id => {
+            if (!currentIds.has(id)) {
+                const row = document.getElementById("row-" + id);
+                if (row) {
+                    row.classList.add("fade-out");
+                    setTimeout(() => {
+                        row.remove();
+                        known.delete(id);
+                    }, 400);
+                }
+            }
+        });
+        
+        // Apply filters after loading
+        applyFilters();
+    } catch (err) {
+        console.error("Fetch failed:", err);
+    }
+}
+
+// ── Call Order ──
+function callOrder(id, customerName, orderNumber) {
+    play("callSound");
+    document.getElementById('callOrderNumber').textContent = '#' + orderNumber;
+    document.getElementById('callCustomerName').textContent = 'Customer: ' + customerName;
+    document.getElementById('callModal').classList.add('active');
+}
+
+// ── Dismiss Call ──
+function dismissCall() {
+    document.getElementById('callModal').classList.remove('active');
+}
+
+// ── Show Cancel Modal ──
+function showCancelModal(id, orderNumber) {
+    currentCancelId = id;
+    document.getElementById('cancelOrderNumber').textContent = '#' + orderNumber;
+    document.getElementById('cancelReason').value = '';
+    document.getElementById('cancelModal').classList.add('active');
+}
+
+// ── Close Cancel Modal ──
+function closeCancelModal() {
+    document.getElementById('cancelModal').classList.remove('active');
+    currentCancelId = 0;
+}
+
+// ── Confirm Cancel ──
+async function confirmCancel() {
+    const reason = document.getElementById('cancelReason').value.trim();
+    if (!reason) {
+        showToast('Please provide a reason for cancellation.', 'error');
+        return;
+    }
+    
+    const id = currentCancelId;
+    if (!id) return;
+    
+    closeCancelModal();
+    
+    try {
+        const formData = new FormData();
+        formData.append('cancel_reason', reason);
+        formData.append('restore_stock', '1');
+        
+        const r = await fetch(`cancel_order.php?order_id=${id}`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!r.ok) {
+            const text = await r.text();
+            console.error("Server returned error:", text);
+            showToast('❌ Server error: ' + r.status, 'error');
+            return;
+        }
+        
+        let res;
+        try {
+            res = await r.json();
+        } catch (e) {
+            console.error("Failed to parse JSON:", e);
+            showToast('❌ Invalid response from server', 'error');
+            return;
+        }
+
+        if (res.ok) {
+            await loadOrders();
+            showToast('✅ ' + (res.message || 'Order cancelled successfully'));
+        } else {
+            showToast('❌ Failed: ' + (res.error || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        console.error("Fetch error:", err);
+        showToast('❌ Request failed: ' + err.message, 'error');
+    }
+}
+
+// ── Show Refund Modal ──
+function showRefundModal(id, orderNumber, total) {
+    currentRefundId = id;
+    document.getElementById('refundOrderNumber').textContent = '#' + orderNumber;
+    document.getElementById('refundAmount').value = total;
+    document.getElementById('refundReason').value = '';
+    document.getElementById('restoreStock').checked = true;
+    document.getElementById('refundModal').classList.add('active');
+}
+
+// ── Close Refund Modal ──
+function closeRefundModal() {
+    document.getElementById('refundModal').classList.remove('active');
+    currentRefundId = 0;
+}
+
+// ── Confirm Refund ──
+async function confirmRefund() {
+    const amount = parseFloat(document.getElementById('refundAmount').value);
+    const reason = document.getElementById('refundReason').value.trim();
+    const restoreStock = document.getElementById('restoreStock').checked ? 1 : 0;
+    
+    if (!amount || amount <= 0) {
+        showToast('Please enter a valid refund amount.', 'error');
+        return;
+    }
+    
+    if (!reason) {
+        showToast('Please provide a reason for refund.', 'error');
+        return;
+    }
+    
+    const id = currentRefundId;
+    if (!id) return;
+    
+    closeRefundModal();
+    
+    try {
+        const formData = new FormData();
+        formData.append('refund_amount', amount);
+        formData.append('refund_reason', reason);
+        formData.append('restore_stock', restoreStock);
+        
+        const r = await fetch(`refund_order.php?order_id=${id}`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!r.ok) {
+            const text = await r.text();
+            console.error("Server returned error:", text);
+            showToast('❌ Server error: ' + r.status, 'error');
+            return;
+        }
+        
+        let res;
+        try {
+            res = await r.json();
+        } catch (e) {
+            console.error("Failed to parse JSON:", e);
+            showToast('❌ Invalid response from server', 'error');
+            return;
+        }
+
+        if (res.ok) {
+            await loadOrders();
+            showToast('✅ ' + (res.message || 'Order refunded successfully'));
+        } else {
+            showToast('❌ Failed: ' + (res.error || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        console.error("Fetch error:", err);
+        showToast('❌ Request failed: ' + err.message, 'error');
+    }
+}
+
+// ── Toast Function ──
+function showToast(message, type = 'success') {
+    Toastify({
+        text: message,
+        duration: 3000,
+        gravity: "top",
+        position: "right",
+        style: {
+            background: type === 'success' ? '#55e087' : '#ff5c5c',
+            color: '#000',
+            fontWeight: '600',
+        }
+    }).showToast();
+}
+
+// ── Mark as Paid ──
+async function markPaid(id) {
+    const btn = document.querySelector(`#row-${id} .paid-btn`);
+    if (btn) btn.disabled = true;
+
+    try {
+        const r = await fetch(`view_order.php?action=paid&id=${id}`, { cache: "no-store" });
+        const res = await r.json();
+
+        if (res.ok) {
+            await loadOrders();
+            showToast("✅ Order marked as paid");
+        } else {
+            showToast("❌ Failed: " + (res.error || "Unknown error"), 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("❌ Request failed", 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// ── Mark as Prepare ──
+async function markPrepare(id) {
+    const btn = document.querySelector(`#row-${id} .prepare-btn`);
+    if (btn) btn.disabled = true;
+
+    try {
+        const r = await fetch(`view_order.php?action=prepare&id=${id}`, { cache: "no-store" });
+        const res = await r.json();
+
+        if (res.ok) {
+            await loadOrders();
+            showToast("👨‍🍳 Order marked as preparing");
+        } else {
+            showToast("❌ Failed: " + (res.error || "Unknown error"), 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("❌ Request failed", 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// ── Complete Order ──
+async function completeOrder(id) {
+    const btn = document.querySelector(`#row-${id} .complete-btn`);
+    if (btn) {
+        if (btn.dataset.confirming === 'true') {
+            // Second click — confirm
+            btn.dataset.confirming = 'false';
+            btn.innerHTML = '<i class="fa-solid fa-check"></i> Complete';
+            btn.style.background = 'rgba(85, 224, 135, 0.15)';
+            btn.style.color = 'var(--success)';
+            btn.style.border = '1px solid rgba(85, 224, 135, 0.2)';
+            
+            btn.disabled = true;
+            play("action");
+            
+            try {
+                const r = await fetch(`view_order.php?action=complete&id=${id}`, { cache: "no-store" });
+                const res = await r.json();
+
+                if (res.ok) {
+                    const row = document.getElementById("row-" + id);
+                    if (row) {
+                        const orderNumber = row.querySelector('.card-order-num')?.textContent?.replace('#', '') || id;
+                        const customerName = row.querySelector('.card-customer-name')?.textContent?.trim() || 'Customer';
+                        callOrder(id, customerName, orderNumber);
+                    }
+                    await loadOrders();
+                    showToast("✅ Order completed");
+                } else {
+                    showToast("❌ Failed: " + (res.error || "Unknown error"), 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("❌ Request failed", 'error');
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+            return;
+        }
+        
+        // First click — show confirmation
+        btn.dataset.confirming = 'true';
+        btn.textContent = '⚠️ Confirm?';
+        btn.style.background = 'var(--danger)';
+        btn.style.color = '#fff';
+        btn.style.border = '1px solid var(--danger)';
+        
+        // Auto-cancel after 3 seconds
+        setTimeout(() => {
+            if (btn.dataset.confirming === 'true') {
+                btn.dataset.confirming = 'false';
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> Complete';
+                btn.style.background = 'rgba(85, 224, 135, 0.15)';
+                btn.style.color = 'var(--success)';
+                btn.style.border = '1px solid rgba(85, 224, 135, 0.2)';
+            }
+        }, 3000);
+    }
+}
+
+// ── Delete Order ──
+async function removeOrder(id) {
+    const btn = document.querySelector(`#row-${id} .delete-btn`);
+    if (btn) {
+        if (btn.dataset.confirming === 'true') {
+            // Second click — confirm
+            btn.dataset.confirming = 'false';
+            btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+            btn.style.cssText = 'background: rgba(255, 92, 92, 0.15); color: var(--danger); border: 1px solid rgba(255, 92, 92, 0.2); font-size: 13px; padding: 6px 14px; border-radius: 6px; width: auto; height: auto;';
+            
+            btn.disabled = true;
+            
+            try {
+                const r = await fetch(`view_order.php?action=delete&id=${id}`, { cache: "no-store" });
+                const res = await r.json();
+
+                if (res.ok) {
+                    const row = document.getElementById("row-" + id);
+                    if (row) {
+                        row.classList.add("fade-out");
+                        setTimeout(() => row.remove(), 400);
+                    }
+                    known.delete(String(id));
+                    showToast("🗑️ Order deleted");
+                } else {
+                    showToast("❌ Failed: " + (res.error || "Unknown error"), 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("❌ Request failed", 'error');
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+            return;
+        }
+        
+        // First click — show confirmation
+        btn.dataset.confirming = 'true';
+        btn.innerHTML = 'Confirm?';
+        btn.style.cssText = 'background: var(--danger); color: #fff; border: 1px solid var(--danger); font-size: 13px; padding: 6px 14px; border-radius: 6px; width: auto; height: auto;';
+        
+        // Auto-cancel after 3 seconds
+        setTimeout(() => {
+            if (btn.dataset.confirming === 'true') {
+                btn.dataset.confirming = 'false';
+                btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+                btn.style.cssText = 'background: rgba(255, 92, 92, 0.15); color: var(--danger); border: 1px solid rgba(255, 92, 92, 0.2); font-size: 13px; padding: 6px 14px; border-radius: 6px; width: auto; height: auto;';
+            }
+        }, 3000);
+    }
+}
+
+// ── Search Orders ──
+function searchOrders() {
+    searchQuery = document.getElementById('searchInput').value;
+    applyFilters();
+}
+
+// ── Clear Search ──
+function clearSearch() {
+    searchQuery = '';
+    document.getElementById('searchInput').value = '';
+    applyFilters();
+}
+
+// ── Initial Load ──
+loadOrders().then(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab) filterStatus(tab);
+});
+setInterval(loadOrders, 4000);
+
+// ── Real-time Socket ──
+const socket = io("<?= SOCKET_URL ?>");
+
+socket.on("connect", () => {
+    console.log("Connected to realtime server");
+});
+
+socket.on("disconnect", () => {
+    console.log("Disconnected from realtime server");
+});
+
+socket.on("new_order", async (data) => {
+    console.log("New order received:", data);
+
+    if (data && data.order_id) {
+        play("bell");
+        await loadOrders();
+
+        const card = document.getElementById("row-" + data.order_id);
+        const orderNum = card?.querySelector('.card-order-num')?.textContent || ('#' + data.order_id);
+        showToast("🔔 New order " + orderNum + " received!");
+    }
+});
+
+// ── Keyboard shortcut for dismissing call ──
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.getElementById('callModal').classList.contains('active')) {
+        dismissCall();
+    }
+    if (e.key === 'Escape' && document.getElementById('cancelModal').classList.contains('active')) {
+        closeCancelModal();
+    }
+    if (e.key === 'Escape' && document.getElementById('refundModal').classList.contains('active')) {
+        closeRefundModal();
+    }
+});
+
+// ── Time ago auto-refresh ──
+setInterval(() => {
+    document.querySelectorAll('[data-timestamp]').forEach(el => {
+        el.textContent = timeAgo(el.dataset.timestamp);
+    });
+}, 30000);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+</body>
+</html>
+<?php
+exit;
+endif;
+
+/* ===============================
+   FETCH ORDERS
+================================ */
+if ($action === "fetch") {
+    header('Content-Type: application/json');
+
+    $stmt = $conn->prepare("
+        SELECT
+            o.order_id,
+            o.daily_order_no,
+            o.customer_name,
+            o.total,
+            o.status,
+            o.order_date,
+            o.token_number,
+            o.employee_id,
+            o.employee_name,
+            o.table_number,
+            oi.product_name,
+            oi.sweetness,
+            oi.ice,
+            oi.milk,
+            oi.quantity
+        FROM orders o
+        LEFT JOIN order_items oi ON o.order_id = oi.order_id
+        WHERE o.business_date = ?
+        ORDER BY 
+            CASE o.status
+                WHEN 'PendingPayment' THEN 1
+                WHEN 'Paid' THEN 2
+                WHEN 'Preparing' THEN 3
+                WHEN 'Completed' THEN 4
+                WHEN 'Cancelled' THEN 5
+                WHEN 'Refunded' THEN 6
+            END,
+            o.order_id ASC
+    ");
+
+    $stmt->bind_param("s", $business_date);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    $map = [];
+    while ($r = $result->fetch_assoc()) {
+        $id = $r['order_id'];
+
+        if (!isset($map[$id])) {
+            $map[$id] = [
+                "order_id" => $id,
+                "daily_order_no" => $r['daily_order_no'],
+                "customer_name" => $r['customer_name'],
+                "total" => $r['total'],
+                "status" => $r['status'],
+                "order_date" => $r['order_date'],
+                "token_number" => $r['token_number'],
+                "employee_id" => $r['employee_id'],
+                "employee_name" => $r['employee_name'],
+                "table_number" => $r['table_number'],
+                "items" => []
+            ];
+        }
+
+        if (!empty($r['product_name'])) {
+            $map[$id]["items"][] = [
+                "product_name" => $r["product_name"],
+                "sweetness" => $r["sweetness"],
+                "ice" => $r["ice"],
+                "milk" => $r["milk"],
+                "quantity" => $r["quantity"]
+            ];
+        }
+    }
+
+    // Fetch active announcements alongside orders
+    $_ann_data = [];
+    $_ann_res2 = $conn->query("SELECT id, title, message, type FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) ORDER BY created_at DESC");
+    if ($_ann_res2) {
+        foreach ($_ann_res2->fetch_all(MYSQLI_ASSOC) as $_a) {
+            $_ann_data[] = ['id' => (int)$_a['id'], 'title' => $_a['title'], 'message' => $_a['message'], 'type' => $_a['type']];
+        }
+    }
+
+    echo json_encode(["orders" => array_values($map), "announcements" => $_ann_data]);
+    exit;
+}
+
+/* ===============================
+   MARK AS PAID
+================================ */
+if ($action === "paid") {
+    header('Content-Type: application/json');
+
+    $order_id = (int)($_GET['id'] ?? 0);
+    if ($order_id <= 0) {
+        echo json_encode(["ok" => 0, "error" => "Invalid order id"]);
+        exit;
+    }
+
+    $conn->begin_transaction();
+    try {
+        $s1 = $conn->prepare("UPDATE orders SET status = 'Paid' WHERE order_id = ?");
+        $s1->bind_param("i", $order_id);
+        $s1->execute();
+
+        // Sync any pending payment records so order_payments stays consistent
+        $s2 = $conn->prepare("UPDATE order_payments SET payment_status = 'paid' WHERE order_id = ? AND payment_status != 'paid'");
+        $s2->bind_param("i", $order_id);
+        $s2->execute();
+
+        $conn->commit();
+        echo json_encode(["ok" => 1]);
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(["ok" => 0, "error" => $e->getMessage()]);
+    }
+    exit;
+}
+
+/* ===============================
+   MARK AS PREPARE
+================================ */
+if ($action === "prepare") {
+    header('Content-Type: application/json');
+
+    $order_id = (int)($_GET['id'] ?? 0);
+    if ($order_id <= 0) {
+        echo json_encode(["ok" => 0, "error" => "Invalid order id"]);
+        exit;
+    }
+
+    $stmt = $conn->prepare("UPDATE orders SET status = 'Preparing' WHERE order_id = ?");
+    $stmt->bind_param("i", $order_id);
+    
+    if ($stmt->execute()) {
+        echo json_encode(["ok" => 1]);
+    } else {
+        echo json_encode(["ok" => 0, "error" => "Failed to update status"]);
+    }
+    exit;
+}
+
+/* ===============================
+   COMPLETE ORDER
+================================ */
+if ($action === "complete") {
+    header('Content-Type: application/json');
+
+    $order_id = (int)($_GET['id'] ?? 0);
+    if ($order_id <= 0) {
+        echo json_encode(["ok" => 0, "error" => "Invalid order id"]);
+        exit;
+    }
+
+    $conn->begin_transaction();
+
+    try {
+        // Lock order
+        $stmt_check = $conn->prepare("SELECT status FROM orders WHERE order_id = ? FOR UPDATE");
+        $stmt_check->bind_param("i", $order_id);
+        $stmt_check->execute();
+        $check_res = $stmt_check->get_result();
+
+        if ($check_res->num_rows === 0) {
+            throw new Exception("Order not found");
+        }
+
+        $order = $check_res->fetch_assoc();
+
+        if ($order['status'] === 'Completed') {
+            $conn->commit();
+            echo json_encode(["ok" => 1]);
+            exit;
+        }
+
+        // Stock was already deducted at order creation (confirm_order.php).
+        // Deducting again here would double-consume ingredients and cause
+        // "Not enough stock" errors on busy days. Only mark the order complete.
+        $stmt_update = $conn->prepare("UPDATE orders SET status = 'Completed' WHERE order_id = ?");
+        $stmt_update->bind_param("i", $order_id);
+        $stmt_update->execute();
+
+        $conn->commit();
+        echo json_encode(["ok" => 1]);
+        exit;
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(["ok" => 0, "error" => $e->getMessage()]);
+        exit;
+    }
+}
+
+/* ===============================
+   DELETE ORDER
+================================ */
+if ($action === "delete") {
+    header('Content-Type: application/json');
+
+    $order_id = (int)($_GET['id'] ?? 0);
+    if ($order_id <= 0) {
+        echo json_encode(["ok" => 0, "error" => "Invalid order id"]);
+        exit;
+    }
+
+    // ── Role check ──
+    if ($_SESSION['role'] !== 'admin') {
+        echo json_encode(["ok" => 0, "error" => "Unauthorized"]);
+        exit;
+    }
+
+    $conn->begin_transaction();
+
+    try {
+        $stmt_items = $conn->prepare("DELETE FROM order_items WHERE order_id = ?");
+        $stmt_items->bind_param("i", $order_id);
+        $stmt_items->execute();
+
+        $stmt_order = $conn->prepare("DELETE FROM orders WHERE order_id = ?");
+        $stmt_order->bind_param("i", $order_id);
+        $stmt_order->execute();
+
+        $conn->commit();
+        echo json_encode(["ok" => 1]);
+        exit;
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(["ok" => 0, "error" => $e->getMessage()]);
+        exit;
+    }
+}
+?>

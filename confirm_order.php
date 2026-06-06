@@ -1,0 +1,489 @@
+<?php
+require 'admin_only.php';
+
+// ── Migrate: add order_type and completed_at if missing ──
+if ($conn->query("SHOW COLUMNS FROM orders LIKE 'order_type'")->num_rows === 0) {
+    $conn->query("ALTER TABLE orders ADD COLUMN order_type ENUM('drink_in','drink_out') NOT NULL DEFAULT 'drink_in'");
+}
+if ($conn->query("SHOW COLUMNS FROM orders LIKE 'completed_at'")->num_rows === 0) {
+    $conn->query("ALTER TABLE orders ADD COLUMN completed_at DATETIME NULL");
+}
+
+if (empty($_SESSION['cart'])) {
+    header("Location: menu.php");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header("Location: cart.php");
+    exit;
+}
+
+if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    die("Invalid request. Please try again from the cart page.");
+}
+
+$customer_name = trim($_POST['customer_name'] ?? '');
+if (strlen($customer_name) < 1 || strlen($customer_name) > 120) {
+    $customer_name = 'Guest';
+}
+$_SESSION['customer_name'] = $customer_name;
+
+$order_type    = in_array($_POST['order_type'] ?? '', ['drink_in','drink_out']) ? $_POST['order_type'] : 'drink_in';
+$table_number  = ($order_type === 'drink_in') ? (substr(trim($_POST['table_number'] ?? ''), 0, 10) ?: null) : null;
+
+$payment_methods   = isset($_POST['payment_methods'])   ? $_POST['payment_methods']   : [];
+$payment_amounts   = isset($_POST['payment_amounts'])   ? $_POST['payment_amounts']   : [];
+$payment_references = isset($_POST['payment_references']) ? $_POST['payment_references'] : [];
+
+// ── VALIDATION: payment methods must not mix paylater with others ──
+if (in_array('paylater', $payment_methods) && count($payment_methods) > 1) {
+    die("Pay Later cannot be combined with other payment methods. <a href='cart.php'>Go back</a>");
+}
+// ── VALIDATION: riel cannot be combined with other payment methods ──
+if (in_array('riel', $payment_methods) && count($payment_methods) > 1) {
+    die("Riel payment cannot be combined with other payment methods. <a href='cart.php'>Go back</a>");
+}
+
+// ── EXISTING ORDER (add more items) ──
+// Only honour the session var when the form explicitly declares add-to-order mode.
+// A stale $_SESSION['add_to_order_id'] left over from a previous, abandoned
+// add-to-order flow would otherwise hijack every subsequent normal checkout.
+$is_add_to_order   = ($_POST['is_add_to_order'] ?? '0') === '1';
+$existing_order_id = ($is_add_to_order && isset($_SESSION['add_to_order_id']))
+    ? (int)$_SESSION['add_to_order_id']
+    : 0;
+
+if ($existing_order_id > 0) {
+    $stmt = $conn->prepare("
+        SELECT order_id, customer_name, total, promotion_discount, is_open
+        FROM orders
+        WHERE order_id = ?
+          AND status IN ('Preparing', 'Paid')
+          AND is_open = 1
+    ");
+    $stmt->bind_param("i", $existing_order_id);
+    $stmt->execute();
+    $existing_order = $stmt->get_result()->fetch_assoc();
+
+    if (!$existing_order) {
+        die("Order not found or already closed. <a href='menu.php'>Back to menu</a>");
+    }
+
+    $new_subtotal    = 0;
+    $new_total_qty   = 0;
+    $min_price       = PHP_FLOAT_MAX;
+
+    foreach ($_SESSION['cart'] as $item) {
+        $qty   = max(1, (int)($item['qty'] ?? 1));
+        $price = (float)($item['price'] ?? 0.0);
+        $new_subtotal  += $price * $qty;
+        $new_total_qty += $qty;
+        if ($price < $min_price) $min_price = $price;
+    }
+
+    $new_tax        = $new_subtotal * 0.10;
+    $new_total      = round($new_subtotal + $new_tax, 2);
+
+    $final_total    = round((float)$existing_order['total'] + $new_total, 2);
+    $final_discount = (float)$existing_order['promotion_discount'];
+
+    $conn->begin_transaction();
+
+    try {
+        $stmt_upd = $conn->prepare("UPDATE orders SET total = ?, promotion_discount = ? WHERE order_id = ?");
+        $stmt_upd->bind_param("ddi", $final_total, $final_discount, $existing_order_id);
+        $stmt_upd->execute();
+
+        $stmt_item = $conn->prepare("
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+
+        foreach ($_SESSION['cart'] as $item) {
+            $qty        = max(1, (int)($item['qty'] ?? 1));
+            $price      = (float)($item['price'] ?? 0.0);
+            $product_id = (int)($item['product_id'] ?? 0);
+            $pname      = $item['product_name'] ?? '';
+            $sweet      = $item['sweetness'] ?? '';
+            $ice        = $item['ice'] ?? '';
+            $milk       = $item['milk'] ?? '';
+
+            $stmt_item->bind_param("iisdisss", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk);
+            $stmt_item->execute();
+
+            // ── STOCK: deduct at order creation time ──
+            if ($product_id > 0) {
+                _deduct_stock($conn, $product_id, $qty, $milk);
+            }
+        }
+
+        $conn->commit();
+        $_SESSION['cart'] = [];
+        unset($_SESSION['add_to_order_id']);
+        unset($_SESSION['add_to_daily_no']);
+
+        header("Location: payment_paylater.php?order_id=" . $existing_order_id);
+        exit;
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        die("Error adding to order: " . htmlspecialchars($e->getMessage()));
+    }
+}
+
+// ── NEW ORDER ──
+$subtotal    = 0.0;
+$total_qty   = 0;
+$min_price   = PHP_FLOAT_MAX;
+
+foreach ($_SESSION['cart'] as $item) {
+    $qty   = max(1, (int)($item['qty'] ?? 1));
+    $price = (float)($item['price'] ?? 0.0);
+    $subtotal  += $price * $qty;
+    $total_qty += $qty;
+    if ($price < $min_price) $min_price = $price;
+}
+
+$happy_hour_discount = 0;
+$current_hour        = (int)date('H');
+if (HAPPY_HOUR_ENABLED && $current_hour >= HAPPY_HOUR_START && $current_hour < HAPPY_HOUR_END) {
+    $happy_hour_discount = $subtotal * (HAPPY_HOUR_DISCOUNT / 100);
+}
+
+$after_promos_co = $subtotal - $happy_hour_discount;
+$md_co = $_SESSION['manual_discount'] ?? null;
+$manual_discount_co = 0.0;
+$manual_reason_co   = '';
+if ($md_co && (float)($md_co['amount'] ?? 0) > 0) {
+    $manual_discount_co = $md_co['type'] === 'flat'
+        ? min((float)$md_co['amount'], max(0, $after_promos_co))
+        : max(0, $after_promos_co) * ((float)$md_co['amount'] / 100.0);
+    $manual_reason_co = substr(trim($md_co['reason'] ?? ''), 0, 100);
+    $after_promos_co -= $manual_discount_co;
+}
+
+// NOTE: Buy X Get 1 Free is NOT subtracted here — intentional by design.
+// The free drink is an *extra* gift on top of what the customer ordered.
+// Customer pays full price for all ordered drinks; the free drink costs the cafe $0 to give.
+// Only happy_hour and manual discounts reduce the chargeable total.
+$total_discount      = $happy_hour_discount + $manual_discount_co;
+$subtotal_after      = $after_promos_co;
+$tax                 = $subtotal_after * 0.10;
+$total               = round($subtotal_after + $tax, 2);
+
+// ── PAYMENT VALIDATION ──
+if (empty($payment_methods) || empty($payment_amounts)) {
+    $payment_methods    = ['bakong'];
+    $payment_amounts    = [$total];
+    $payment_references = [''];
+}
+
+// Pay Later: customer pays at pickup — the client-submitted amount may be stale
+// (race condition: user clicks confirm while loadCartPanel() is still in-flight).
+// Force the amount to the server-calculated total so there is never a mismatch.
+if (in_array('paylater', $payment_methods)) {
+    $payment_methods    = ['paylater'];
+    $payment_amounts    = [$total];
+    $payment_references = [''];
+}
+// Riel: KHR→USD conversion has inherent rounding; trust the server total for the
+// stored USD amount while keeping the raw KHR reference for receipt display.
+if (count($payment_methods) === 1 && $payment_methods[0] === 'riel') {
+    $payment_amounts[0] = $total;
+}
+
+$total_paid = 0;
+foreach ($payment_amounts as $amt) {
+    $total_paid += (float)$amt;
+}
+
+if (abs($total_paid - $total) > 0.01) {
+    die("Payment amount mismatch. Expected $" . number_format($total, 2) . ", got $" . number_format($total_paid, 2) . ". <a href='cart.php'>Go back</a>");
+}
+
+// ── ORDER STATUS LOGIC ──
+// Pay Later → Preparing (open for additions)
+// Bakong    → PendingPayment (awaiting QR scan)
+// Cash only → Paid (immediate)
+// Split (cash+bakong) → PendingPayment (Bakong leg must complete)
+$has_paylater = in_array('paylater', $payment_methods);
+$has_bakong   = in_array('bakong',   $payment_methods);
+
+if ($has_paylater) {
+    $order_status = 'Preparing';
+    $is_open      = 1;
+} elseif ($has_bakong) {
+    $order_status = 'PendingPayment';
+    $is_open      = 0;
+} else {
+    $order_status = 'Paid';
+    $is_open      = 0;
+}
+
+$primary_method = $payment_methods[0] ?? 'bakong';
+
+// ── DAILY ORDER NUMBER ──
+date_default_timezone_set('Asia/Phnom_Penh');
+$now       = new DateTime();
+$today6am  = (clone $now)->setTime(6, 0, 0);
+if ($now < $today6am) $today6am->modify('-1 day');
+
+$start = $today6am->format('Y-m-d H:i:s');
+$end   = (clone $today6am)->modify('+1 day -1 second')->format('Y-m-d H:i:s');
+
+$stmt = $conn->prepare("SELECT COALESCE(MAX(daily_order_no), 0) + 1 AS next_no FROM orders WHERE order_date >= ? AND order_date <= ?");
+$stmt->bind_param("ss", $start, $end);
+$stmt->execute();
+$daily_no = (int)$stmt->get_result()->fetch_assoc()['next_no'];
+
+$conn->begin_transaction();
+
+try {
+    $business_date = $today6am->format('Y-m-d');
+
+    // ── UNIQUE TOKEN ──
+    $token_number  = rand(1, 999);
+    $stmt_tok = $conn->prepare("SELECT COUNT(*) FROM orders WHERE token_number = ? AND DATE(order_date) = CURDATE()");
+    $stmt_tok->bind_param("i", $token_number);
+    do {
+        $token_number = rand(1, 999);
+        $stmt_tok->bind_param("i", $token_number);
+        $stmt_tok->execute();
+        $tok_count = (int)$stmt_tok->get_result()->fetch_row()[0];
+    } while ($tok_count > 0);
+
+    $employee_id   = $_SESSION['user_id']   ?? 0;
+    $employee_name = $_SESSION['username']  ?? 'Unknown';
+
+    // ── IMPORTANT: Cast variables to the correct types ──
+    $customer_name   = (string)$customer_name;
+    $total           = (float)$total;
+    $daily_no        = (int)$daily_no;
+    $order_status    = (string)$order_status;
+    $business_date   = (string)$business_date;
+    $primary_method  = (string)$primary_method;
+    $total_discount  = (float)$total_discount;
+    $is_open         = (int)$is_open;
+    $token_number    = (int)$token_number;
+    $employee_id     = (int)$employee_id;
+    $employee_name   = (string)$employee_name;
+
+    $completed_at = ($order_status === 'Paid') ? date('Y-m-d H:i:s') : null;
+
+    $stmt_order = $conn->prepare("
+        INSERT INTO orders
+        (customer_name, total, daily_order_no, status, business_date, payment_method,
+         promotion_discount, is_open, token_number, employee_id, employee_name,
+         manual_discount, manual_discount_reason, order_type, completed_at, table_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+    $stmt_order->bind_param(
+        "sdisssdiiisdssss",
+        $customer_name, $total, $daily_no, $order_status, $business_date,
+        $primary_method, $total_discount, $is_open, $token_number,
+        $employee_id, $employee_name,
+        $manual_discount_co, $manual_reason_co, $order_type, $completed_at, $table_number
+    );
+    $stmt_order->execute();
+    $order_id = $conn->insert_id;
+
+    // ── PAYMENT RECORDS ──
+    $stmt_pay = $conn->prepare("
+        INSERT INTO order_payments (order_id, payment_method, amount, reference, payment_status)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    for ($i = 0; $i < count($payment_methods); $i++) {
+        $method    = $payment_methods[$i];
+        $amount    = (float)$payment_amounts[$i];
+        $reference = $payment_references[$i] ?? '';
+        $pay_status = in_array($method, ['bakong', 'paylater']) ? 'pending' : 'paid';
+
+        if ($amount > 0) {
+            $stmt_pay->bind_param("isdss", $order_id, $method, $amount, $reference, $pay_status);
+            $stmt_pay->execute();
+        }
+    }
+
+    // ── ORDER ITEMS + STOCK DEDUCTION ──
+    $stmt_item = $conn->prepare("
+        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+    foreach ($_SESSION['cart'] as $item) {
+        $qty        = max(1, (int)($item['qty'] ?? 1));
+        $price      = (float)($item['price'] ?? 0.0);
+        $product_id = (int)($item['product_id'] ?? 0);
+        $pname      = $item['product_name'] ?? '';
+        $sweet      = $item['sweetness'] ?? '';
+        $ice        = $item['ice'] ?? '';
+        $milk       = $item['milk'] ?? '';
+
+        $stmt_item->bind_param("iisdisss", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk);
+        $stmt_item->execute();
+
+        if ($product_id > 0) {
+            _deduct_stock($conn, $product_id, $qty, $milk);
+        }
+    }
+
+    // ── ADD REDEEMED REWARDS TO ORDER + deduct points now that order is confirmed ──
+    if (!empty($_SESSION['redeemed_rewards'])) {
+        $stmt_reward = $conn->prepare("
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt_deduct   = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points - ?), last_used = NOW() WHERE card_id = ?");
+        $stmt_hist     = $conn->prepare("
+            INSERT INTO loyalty_history (card_id, order_id, points_change, type, reward_name, description)
+            VALUES (?, ?, ?, 'redeemed', ?, ?)
+        ");
+
+        foreach ($_SESSION['redeemed_rewards'] as $reward) {
+            // Add free item to order
+            $rid        = 0;
+            $rname      = "[GIFT] {$reward['reward_name']} (Loyalty)";
+            $rprice     = 0.0;
+            $rqty       = 1;
+            $rempty     = '';
+            $stmt_reward->bind_param("iisdisss", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty);
+            $stmt_reward->execute();
+
+            // Deduct points from card (the deduction that loyalty_redeem.php now defers)
+            $pts_used   = (int)$reward['points_required'];
+            $card_db_id = (int)($reward['card_id_int'] ?? 0);
+            if ($card_db_id > 0 && $pts_used > 0) {
+                $stmt_deduct->bind_param("ii", $pts_used, $card_db_id);
+                $stmt_deduct->execute();
+
+                $neg_pts   = -$pts_used;
+                $desc      = "Redeemed {$reward['reward_name']} for {$pts_used} points";
+                $rwd_name  = $reward['reward_name'];
+                $stmt_hist->bind_param("iiiss", $card_db_id, $order_id, $neg_pts, $rwd_name, $desc);
+                $stmt_hist->execute();
+            }
+        }
+
+        // Clear session — rewards are now committed to the DB
+        $_SESSION['redeemed_rewards'] = [];
+    }
+
+    // ── LINK CUSTOMER ──
+    if ($customer_name !== 'Guest' && $customer_name !== '') {
+        $stmt_cf = $conn->prepare("SELECT customer_id FROM customers WHERE name = ? LIMIT 1");
+        $stmt_cf->bind_param("s", $customer_name);
+        $stmt_cf->execute();
+        $cust_row = $stmt_cf->get_result()->fetch_assoc();
+        if ($cust_row) {
+            $cust_id = (int)$cust_row['customer_id'];
+        } else {
+            $stmt_cn = $conn->prepare("INSERT INTO customers (name) VALUES (?)");
+            $stmt_cn->bind_param("s", $customer_name);
+            $stmt_cn->execute();
+            $cust_id = $conn->insert_id;
+        }
+        $stmt_cu = $conn->prepare("UPDATE orders SET customer_id = ? WHERE order_id = ?");
+        $stmt_cu->bind_param("ii", $cust_id, $order_id);
+        $stmt_cu->execute();
+    }
+
+    // ── MARK TABLE OCCUPIED ──
+    if (!empty($table_number) && $order_type === 'drink_in') {
+        $conn->query("UPDATE cafe_tables SET status = 'occupied' WHERE table_number = '" . $conn->real_escape_string($table_number) . "'");
+    }
+
+    $conn->commit();
+    unset($_SESSION['csrf_token']);
+    $_SESSION['cart'] = [];
+    unset($_SESSION['manual_discount']);
+
+    // ── LOYALTY POINTS (1 point per drink ordered) ──
+    $loyalty_card_id = isset($_SESSION['loyalty_card_id']) ? (int)$_SESSION['loyalty_card_id'] : 0;
+    if ($loyalty_card_id > 0) {
+        $points_earned = $total_qty;
+
+        if ($points_earned > 0) {
+            // Step 1: Always update the points balance — only touches guaranteed columns.
+            // Split from the counter update so a missing column can't silently block this.
+            $su = $conn->prepare("UPDATE loyalty_cards SET points = points + ?, last_used = NOW() WHERE card_id = ?");
+            if ($su) { $su->bind_param("ii", $points_earned, $loyalty_card_id); $su->execute(); }
+
+            // Step 2: Increment counter columns if they exist in this schema version.
+            $sc = $conn->prepare("UPDATE loyalty_cards SET total_orders = total_orders + 1, total_drinks = total_drinks + ? WHERE card_id = ?");
+            if ($sc) { $sc->bind_param("ii", $total_qty, $loyalty_card_id); $sc->execute(); }
+
+            // Step 3: Write earn record to loyalty_history.
+            // Hardcode 'earned' directly in SQL (not as a parameter) so ENUM validation
+            // happens at execute(), not bind time. Falls back to 'adjusted_add' if prepare
+            // fails (e.g. schema uses a different ENUM set without 'earned').
+            $si = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, 'earned', 'Points earned from order')");
+            if (!$si) {
+                $si = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, 'adjusted_add', 'Points earned from order')");
+            }
+            if ($si) {
+                $si->bind_param("iii", $loyalty_card_id, $order_id, $points_earned);
+                $si->execute();
+            }
+        }
+
+        // Link loyalty card to this order and record earned points for reporting
+        $stmt_link = $conn->prepare("UPDATE orders SET loyalty_card_id = ?, points_earned = ? WHERE order_id = ?");
+        if ($stmt_link) { $stmt_link->bind_param("iii", $loyalty_card_id, $points_earned, $order_id); $stmt_link->execute(); }
+
+        // Clear card from session so the next customer's order doesn't accidentally inherit it
+        unset($_SESSION['loyalty_card_id']);
+    }
+
+    // ── REDIRECT ──
+    if ($has_bakong) {
+        header("Location: payment.php?order_id=" . $order_id);
+    } elseif ($has_paylater) {
+        header("Location: payment_paylater.php?order_id=" . $order_id);
+    } else {
+        header("Location: payment_cash.php?order_id=" . $order_id);
+    }
+    exit;
+
+} catch (Exception $e) {
+    $conn->rollback();
+    echo "<h1 style='color:red;font-family:sans-serif'>Order Failed</h1>";
+    echo "<p>" . htmlspecialchars($e->getMessage()) . "</p>";
+    echo "<p><a href='cart.php'>Back to Cart</a></p>";
+    exit;
+}
+
+// ── HELPER: deduct ingredients, respecting milk substitution ──
+function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_choice): void {
+    $stmt = $conn->prepare("
+        SELECT pi.ingredient_id, pi.amount_used, i.ingredient_name
+        FROM product_ingredients pi
+        JOIN ingredients i ON i.ingredient_id = pi.ingredient_id
+        WHERE pi.product_id = ?
+    ");
+    $stmt->bind_param("i", $product_id);
+    $stmt->execute();
+    $rows = $stmt->get_result();
+
+    while ($row = $rows->fetch_assoc()) {
+        $ing_id   = (int)$row['ingredient_id'];
+        $amount   = (float)$row['amount_used'] * $qty;
+        $ing_name = strtolower(trim($row['ingredient_name']));
+
+        // Substitute milk ingredient if customer chose a different milk
+        if (strpos($ing_name, 'milk') !== false && !empty($milk_choice)) {
+            $stmt_milk = $conn->prepare("SELECT ingredient_id FROM ingredients WHERE LOWER(ingredient_name) = LOWER(?) LIMIT 1");
+            $stmt_milk->bind_param("s", $milk_choice);
+            $stmt_milk->execute();
+            $milk_row = $stmt_milk->get_result()->fetch_assoc();
+            if ($milk_row) {
+                $ing_id = (int)$milk_row['ingredient_id'];
+            }
+        }
+
+        $stmt_upd = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity - ? WHERE ingredient_id = ? AND stock_quantity >= ?");
+        $stmt_upd->bind_param("dii", $amount, $ing_id, $amount);
+        $stmt_upd->execute();
+        // Note: if affected rows = 0, stock hit zero — consider alerting staff
+    }
+}
+?>

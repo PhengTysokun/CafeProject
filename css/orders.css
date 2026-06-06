@@ -1,0 +1,113 @@
+/* css/orders.css - warm white + espresso palette */
+
+body {
+  background-color: #FDFAF5;
+  color: #2C1A0E;
+  font-family: 'Poppins', sans-serif;
+  margin: 0;
+  padding: 40px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+}
+
+h1 {
+  color: #4A2510;
+  font-size: 28px;
+  margin-bottom: 30px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Container */
+.table-box {
+  width: 92%;
+  max-width: 1200px;
+  background: #F5EBD8;
+  border-radius: 18px;
+  padding: 26px 28px;
+  box-shadow: 0 4px 20px rgba(44,26,14,0.1);
+  border: 0.5px solid rgba(44,26,14,0.08);
+}
+
+/* Table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: #2C1A0E;
+}
+th, td {
+  padding: 14px 12px;
+  text-align: center;
+  vertical-align: middle;
+}
+th {
+  color: #4A2510;
+  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: 0.9px;
+  border-bottom: 2px solid #6B3E1E;
+}
+tr {
+  border-bottom: 1px solid rgba(44,26,14,0.06);
+}
+tr:hover {
+  background: rgba(44,26,14,0.03);
+}
+
+/* Status */
+.status {
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  display: inline-block;
+}
+.status.pending {
+  color: #6B3E1E;
+  background: rgba(107,62,30,0.12);
+}
+.status.completed {
+  color: #27500A;
+  background: rgba(99,153,34,0.15);
+}
+
+/* Buttons */
+.action-btn {
+  font-size: 18px;
+  margin: 0 8px;
+  cursor: pointer;
+  transition: transform .12s ease, opacity .12s;
+}
+.action-btn:hover { transform: translateY(-2px); opacity: .75; }
+
+.complete-btn { color: #6B3E1E; }
+.delete-btn { color: #dc3545; }
+
+/* New row animation */
+.new-row {
+  animation: popIn .42s ease;
+  background: rgba(44,26,14,0.01) !important;
+}
+@keyframes popIn {
+  from { transform: translateY(-8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Fade out */
+.fade-out {
+  animation: fadeOut .45s ease forwards;
+}
+@keyframes fadeOut {
+  0% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(30px); height: 0; padding: 0; margin: 0; }
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  th, td { font-size: 13px; padding: 12px 8px; }
+  .table-box { padding: 18px; }
+}

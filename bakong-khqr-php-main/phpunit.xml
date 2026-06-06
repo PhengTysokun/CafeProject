@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<phpunit
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+    bootstrap="vendor/autoload.php"
+    colors="true"
+    executionOrder="defects"
+>
+    <php>
+        <ini name="memory_limit" value="1G" />
+        <ini name="max_execution_time" value="600" /> <!-- Increase to 600 seconds -->
+    </php>
+    <testsuites>
+        <testsuite name="main">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

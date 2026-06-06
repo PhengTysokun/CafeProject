@@ -1,0 +1,104 @@
+<?php
+session_start();
+require 'config.php';
+
+$order_id = (int)($_GET['order_id'] ?? 0);
+
+if ($order_id <= 0) {
+    header("Location: menu.php");
+    exit;
+}
+
+// ✅ FIX: Allow 'Paid' orders if is_open = 1
+$stmt = $conn->prepare("
+    SELECT order_id, daily_order_no, customer_name, status, is_open
+    FROM orders
+    WHERE order_id = ?
+      AND status IN ('Preparing', 'Paid')
+      AND is_open = 1
+");
+$stmt->bind_param("i", $order_id);
+$stmt->execute();
+$order = $stmt->get_result()->fetch_assoc();
+
+if (!$order) {
+    echo "<!DOCTYPE html>
+    <html>
+    <head>
+        <title>Order Not Found</title>
+        <link href='https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap' rel='stylesheet'>
+        <style>
+            body {
+                font-family: 'Poppins', sans-serif;
+                background: #f2ede8;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                margin: 0;
+                padding: 20px;
+            }
+            .error-box {
+                background: #fffdf9;
+                border: 1px solid #e0d5c8;
+                border-radius: 16px;
+                padding: 40px;
+                max-width: 480px;
+                width: 100%;
+                text-align: center;
+                box-shadow: 0 6px 28px rgba(90,60,20,0.11);
+            }
+            .error-box i {
+                font-size: 48px;
+                color: #d1904b;
+                display: block;
+                margin-bottom: 16px;
+            }
+            .error-box h1 {
+                font-size: 22px;
+                color: #1a1410;
+                margin: 0 0 8px 0;
+            }
+            .error-box p {
+                color: #5a4a3a;
+                margin: 0 0 24px 0;
+                font-size: 15px;
+            }
+            .error-box a {
+                display: inline-block;
+                background: #d1904b;
+                color: #fff;
+                padding: 12px 28px;
+                border-radius: 50px;
+                text-decoration: none;
+                font-weight: 600;
+                transition: all 0.3s ease;
+            }
+            .error-box a:hover {
+                background: #a0702a;
+                transform: translateY(-3px);
+                box-shadow: 0 4px 16px rgba(209,144,75,0.22);
+            }
+        </style>
+    </head>
+    <body>
+        <div class='error-box'>
+            <i class='fa-solid fa-circle-exclamation'></i>
+            <h1>Order Cannot Be Modified</h1>
+            <p>This order is closed or no longer available for additions.</p>
+            <a href='dashboard.php'>Back to Dashboard</a>
+        </div>
+    </body>
+    </html>";
+    exit;
+}
+
+// Store the internal order_id in session
+$_SESSION['add_to_order_id'] = $order['order_id'];
+$_SESSION['add_to_daily_no'] = $order['daily_order_no'];
+$_SESSION['customer_name'] = $order['customer_name'];
+
+// Redirect to menu with the daily_order_no for display
+header("Location: menu.php?add_to_order=" . $order['daily_order_no']);
+exit;
+?>
