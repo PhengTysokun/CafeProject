@@ -114,6 +114,35 @@ while ($r = mysqli_fetch_assoc($qNR)) {
 }
 
 /* ═══════════════════════════════
+   3b. INLINE EDITOR DATA
+   (mirrors manage_recipe.php's split of base / Milk base / Sugar Syrup,
+   so the in-page modal can save through the same handler)
+═══════════════════════════════ */
+$baseIngredients = [];
+$qBases = mysqli_query($conn, "
+    SELECT ingredient_id, ingredient_name FROM ingredients
+    WHERE ingredient_name NOT IN ('Milk base','Sugar Syrup')
+    ORDER BY ingredient_name
+");
+while ($row = mysqli_fetch_assoc($qBases)) {
+    $baseIngredients[] = ['id' => (int)$row['ingredient_id'], 'name' => $row['ingredient_name']];
+}
+
+$recipeEditData = [];
+foreach ($recipes as $pid => $rec) {
+    $base = []; $milk = 0; $syrup = 0;
+    foreach ($rec['items'] as $it) {
+        if ($it['ingredient_name'] === 'Milk base')        $milk  = (int)$it['amount_used'];
+        elseif ($it['ingredient_name'] === 'Sugar Syrup')  $syrup = (int)$it['amount_used'];
+        else $base[] = ['id' => $it['ingredient_id'], 'amount' => (int)$it['amount_used']];
+    }
+    $recipeEditData[$pid] = ['name' => $rec['product_name'], 'base' => $base, 'milk' => $milk, 'syrup' => $syrup];
+}
+foreach ($noRecipe as $nr) {
+    $recipeEditData[(int)$nr['product_id']] = ['name' => $nr['name'], 'base' => [], 'milk' => 0, 'syrup' => 0];
+}
+
+/* ═══════════════════════════════
    4. STATS
 ═══════════════════════════════ */
 $totalRecipes     = count($recipes);
@@ -398,7 +427,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
     border-radius:20px; font-size:12px; font-weight:500; border:1px solid rgba(255,95,95,.25);
     background:rgba(255,95,95,.06); color:var(--text-muted); text-decoration:none;
-    transition:var(--transition);
+    transition:var(--transition); cursor:pointer; font-family:'Poppins',sans-serif;
 }
 .no-recipe-pill:hover { border-color:var(--danger); color:var(--danger); background:rgba(255,95,95,.1); }
 
@@ -439,6 +468,68 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     .topbar-center h1 { font-size:15px; }
     .search-wrap { min-width:0; flex:1; }
 }
+
+/* ── INLINE RECIPE EDITOR MODAL ── */
+.recipe-modal {
+    display:none; position:fixed; inset:0; z-index:9999;
+    background:rgba(0,0,0,.75); backdrop-filter:blur(8px);
+    justify-content:center; align-items:center; padding:20px;
+}
+.recipe-modal.active { display:flex; }
+.recipe-modal-content {
+    width:100%; max-width:560px; max-height:88vh; overflow-y:auto;
+    background:var(--bg-card); border:1px solid var(--border-hover);
+    border-radius:var(--radius); padding:32px; box-shadow:var(--shadow-lg);
+    animation:modalPop .25s ease;
+}
+@keyframes modalPop { from{opacity:0;transform:scale(.95) translateY(10px);} to{opacity:1;transform:scale(1) translateY(0);} }
+.recipe-modal-content h2 {
+    display:flex; align-items:center; gap:10px; font-size:19px; margin-bottom:22px;
+}
+.recipe-modal-content h2 i { color:var(--accent); }
+.recipe-modal-content h2 span { color:var(--accent); }
+.rm-group { margin-bottom:18px; }
+.rm-group > label {
+    display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600;
+    color:var(--text-muted); margin-bottom:8px;
+}
+.rm-row { display:flex; gap:10px; margin-bottom:8px; }
+.rm-row select, .rm-row input, .rm-amount-only {
+    background:var(--bg-input); border:1px solid var(--border); color:var(--text);
+    border-radius:9px; padding:9px 12px; font-family:'Poppins',sans-serif; font-size:13px;
+    outline:none; transition:var(--transition);
+}
+.rm-row select:focus, .rm-row input:focus { border-color:var(--accent); }
+.rm-row select { flex:2; min-width:0; }
+.rm-row input[type="number"] { flex:1; min-width:0; }
+.rm-row .rm-remove {
+    flex:0 0 auto; width:38px; border:1px solid var(--border); background:transparent;
+    color:var(--text-muted); border-radius:9px; cursor:pointer; transition:var(--transition);
+}
+.rm-row .rm-remove:hover { border-color:var(--danger); color:var(--danger); }
+.rm-add {
+    display:inline-flex; align-items:center; gap:6px; background:transparent;
+    border:1px dashed var(--border-hover); color:var(--text-muted); border-radius:9px;
+    padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; transition:var(--transition);
+    font-family:'Poppins',sans-serif;
+}
+.rm-add:hover { border-color:var(--accent); color:var(--accent); }
+.rm-fixed-row { display:flex; align-items:center; gap:10px; }
+.rm-fixed-row .rm-fixed-label {
+    flex:2; padding:9px 12px; border-radius:9px; border:1px solid var(--border);
+    background:rgba(255,255,255,.02); color:var(--text-muted); font-size:13px;
+}
+.rm-fixed-row input { flex:1; }
+.rm-btn-group { display:flex; gap:12px; margin-top:26px; }
+.rm-btn-group button {
+    flex:1; padding:13px; border-radius:10px; border:none; font-weight:600;
+    cursor:pointer; font-family:'Poppins',sans-serif; font-size:14px; transition:var(--transition);
+}
+.rm-save { background:var(--accent); color:#000; }
+.rm-save:hover { background:var(--accent-light); transform:translateY(-1px); }
+.rm-save:disabled { opacity:.6; cursor:not-allowed; transform:none; }
+.rm-cancel { background:rgba(255,255,255,.05); color:var(--text); border:1px solid var(--border) !important; }
+.rm-cancel:hover { border-color:var(--accent) !important; }
 </style>
 </head>
 <body>
@@ -447,7 +538,9 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 <div class="topbar">
     <div class="topbar-left">
         <a href="dashboard.php" class="btn-nav"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
+        <?php if (can('manage_recipes')): ?>
         <a href="manage_recipe.php" class="btn-nav"><i class="fa-solid fa-pen-to-square"></i> Manage</a>
+        <?php endif; ?>
     </div>
 
     <div class="topbar-center">
@@ -520,18 +613,27 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 <div class="no-recipe-section">
     <div class="no-recipe-header">
         <h3><i class="fa-solid fa-circle-exclamation"></i> <?= $totalNoRecipe ?> product<?= $totalNoRecipe!==1?'s':'' ?> have no recipe configured</h3>
+        <?php if (can('manage_recipes')): ?>
         <a href="manage_recipe.php" class="btn-action ghost" style="font-size:11px;padding:5px 12px;">
             <i class="fa-solid fa-pen-to-square"></i> Set up recipes
         </a>
+        <?php endif; ?>
     </div>
     <div class="no-recipe-pills">
         <?php foreach ($noRecipe as $nr):
             $cm = getCategoryMeta($nr['category']);
         ?>
-        <a href="manage_recipe.php?product_id=<?= (int)$nr['product_id'] ?>" class="no-recipe-pill">
+        <?php if (can('manage_recipes')): ?>
+        <button type="button" class="no-recipe-pill" onclick="openRecipeModal(<?= (int)$nr['product_id'] ?>)">
             <i class="fa-solid <?= $cm['icon'] ?>" style="color:<?= $cm['color'] ?>;font-size:11px;"></i>
             <?= h($nr['name']) ?>
-        </a>
+        </button>
+        <?php else: ?>
+        <span class="no-recipe-pill" style="cursor:default;">
+            <i class="fa-solid <?= $cm['icon'] ?>" style="color:<?= $cm['color'] ?>;font-size:11px;"></i>
+            <?= h($nr['name']) ?>
+        </span>
+        <?php endif; ?>
         <?php endforeach; ?>
     </div>
 </div>
@@ -639,9 +741,11 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 
         <!-- Actions -->
         <div class="card-actions">
-            <a class="btn-action orange" href="manage_recipe.php?product_id=<?= (int)$r['product_id'] ?>">
+            <?php if (can('manage_recipes')): ?>
+            <button type="button" class="btn-action orange" onclick="openRecipeModal(<?= (int)$r['product_id'] ?>)">
                 <i class="fa-solid fa-pen-to-square"></i> Edit Recipe
-            </a>
+            </button>
+            <?php endif; ?>
             <button class="btn-action ghost" onclick="printCard(this)" title="Print this recipe">
                 <i class="fa-solid fa-print"></i>
             </button>
@@ -656,6 +760,156 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     </div>
 <?php endif; ?>
 </div>
+
+<!-- ── Inline Recipe Editor Modal ── -->
+<div class="recipe-modal" id="recipeModal">
+    <div class="recipe-modal-content">
+        <h2><i class="fa-solid fa-pen-to-square"></i> Edit Recipe — <span id="rmProductName"></span></h2>
+
+        <div class="rm-group">
+            <label><i class="fa-solid fa-leaf"></i> Coffee / Tea Base</label>
+            <div id="rmBaseBox"></div>
+            <button type="button" class="rm-add" onclick="addRecipeBaseRow()">
+                <i class="fa-solid fa-plus"></i> Add another base ingredient
+            </button>
+        </div>
+
+        <div class="rm-group">
+            <label><i class="fa-solid fa-cow"></i> Milk (ml)</label>
+            <div class="rm-fixed-row">
+                <span class="rm-fixed-label">Milk base</span>
+                <input type="number" id="rmMilk" min="0" step="1" placeholder="Amount (ml)">
+            </div>
+        </div>
+
+        <div class="rm-group">
+            <label><i class="fa-solid fa-droplet"></i> Sugar Syrup (ml)</label>
+            <div class="rm-fixed-row">
+                <span class="rm-fixed-label">Sugar Syrup</span>
+                <input type="number" id="rmSyrup" min="0" step="1" placeholder="Amount (ml)">
+            </div>
+        </div>
+
+        <div class="rm-btn-group">
+            <button type="button" class="rm-save" id="rmSaveBtn" onclick="saveRecipeModal()">
+                <i class="fa-solid fa-floppy-disk"></i> Save Recipe
+            </button>
+            <button type="button" class="rm-cancel" onclick="closeRecipeModal()">
+                <i class="fa-solid fa-xmark"></i> Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Inline Recipe Editor: data from server ──
+const BASE_INGREDIENTS = <?= json_encode($baseIngredients) ?>;
+const RECIPE_EDIT_DATA = <?= json_encode($recipeEditData) ?>;
+let rmCurrentProductId = 0;
+
+function rmBaseRowHtml(selectedId, amount) {
+    let opts = '<option value="">— Choose —</option>';
+    BASE_INGREDIENTS.forEach(ing => {
+        opts += `<option value="${ing.id}" ${ing.id === selectedId ? 'selected' : ''}>${ing.name}</option>`;
+    });
+    return `<div class="rm-row">
+        <select>${opts}</select>
+        <input type="number" min="0" step="1" placeholder="Amount (g/ml)" value="${amount > 0 ? amount : ''}">
+        <button type="button" class="rm-remove" onclick="this.parentElement.remove()" title="Remove">
+            <i class="fa-solid fa-trash-can"></i>
+        </button>
+    </div>`;
+}
+
+function addRecipeBaseRow(selectedId, amount) {
+    if (selectedId === undefined) selectedId = null;
+    if (amount === undefined) amount = 0;
+    document.getElementById('rmBaseBox').insertAdjacentHTML('beforeend', rmBaseRowHtml(selectedId, amount));
+}
+
+function openRecipeModal(productId) {
+    const data = RECIPE_EDIT_DATA[productId];
+    if (!data) return;
+
+    rmCurrentProductId = productId;
+    document.getElementById('rmProductName').textContent = data.name;
+
+    const box = document.getElementById('rmBaseBox');
+    box.innerHTML = '';
+    if (data.base.length > 0) {
+        data.base.forEach(b => addRecipeBaseRow(b.id, b.amount));
+    } else {
+        addRecipeBaseRow();
+    }
+
+    document.getElementById('rmMilk').value  = data.milk  > 0 ? data.milk  : '';
+    document.getElementById('rmSyrup').value = data.syrup > 0 ? data.syrup : '';
+
+    document.getElementById('recipeModal').classList.add('active');
+}
+
+function closeRecipeModal() {
+    document.getElementById('recipeModal').classList.remove('active');
+    rmCurrentProductId = 0;
+}
+
+async function saveRecipeModal() {
+    if (!rmCurrentProductId) return;
+
+    const btn = document.getElementById('rmSaveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+
+    const formData = new FormData();
+    formData.append('save_recipe', '1');
+    formData.append('ajax', '1');
+    formData.append('product_id', rmCurrentProductId);
+    formData.append('milk_amount', document.getElementById('rmMilk').value || '');
+    formData.append('syrup_amount', document.getElementById('rmSyrup').value || '');
+    document.querySelectorAll('#rmBaseBox .rm-row').forEach(row => {
+        const sel = row.querySelector('select');
+        const amt = row.querySelector('input');
+        formData.append('base_ingredient[]', sel.value);
+        formData.append('base_amount[]', amt.value);
+    });
+
+    try {
+        const resp = await fetch('manage_recipe.php', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.ok) {
+            showRecipeToast('Recipe saved successfully.', 'success');
+            closeRecipeModal();
+            setTimeout(() => location.reload(), 800);
+        } else {
+            showRecipeToast(data.error || 'Failed to save recipe.', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Recipe';
+        }
+    } catch (e) {
+        showRecipeToast('Connection error.', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Recipe';
+    }
+}
+
+function showRecipeToast(msg, type) {
+    if (type === undefined) type = 'success';
+    const el = document.createElement('div');
+    el.textContent = msg;
+    el.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);' +
+        'background:' + (type === 'success' ? 'rgba(85,224,135,.15)' : 'rgba(255,95,95,.15)') + ';' +
+        'color:' + (type === 'success' ? '#55e087' : '#ff5f5f') + ';' +
+        'border:1px solid ' + (type === 'success' ? 'rgba(85,224,135,.35)' : 'rgba(255,95,95,.35)') + ';' +
+        'padding:12px 22px;border-radius:12px;font-family:\'Poppins\',sans-serif;font-size:13px;' +
+        'font-weight:600;z-index:10000;backdrop-filter:blur(12px);box-shadow:0 8px 30px rgba(0,0,0,.4);';
+    document.body.appendChild(el);
+    setTimeout(function(){ el.remove(); }, 2600);
+}
+
+document.getElementById('recipeModal').addEventListener('click', function(e){
+    if (e.target.id === 'recipeModal') closeRecipeModal();
+});
+</script>
 
 <script>
 // ── Data ──

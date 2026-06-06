@@ -137,6 +137,7 @@ if ((int)$conn->query("SELECT COUNT(*) FROM permissions")->fetch_row()[0] === 0)
         ['Products',           'products',        'Inventory',   5],
         ['Ingredients',        'ingredients',     'Inventory',   6],
         ['Drink Recipe',       'recipes',         'Inventory',   7],
+        ['Manage Recipes',     'manage_recipes',  'Inventory',   17],
         ['Suppliers',          'suppliers',       'Procurement', 8],
         ['Purchase Orders',    'purchase_orders', 'Procurement', 9],
         ['Daily Report',       'report',          'Analytics',   10],
@@ -151,13 +152,23 @@ if ((int)$conn->query("SELECT COUNT(*) FROM permissions")->fetch_row()[0] === 0)
 
     // Default manager permissions
     foreach (['dashboard','find_orders','view_orders','loyalty','products','ingredients',
-              'recipes','suppliers','purchase_orders','report','announcements','attendance','promotions'] as $slug)
+              'recipes','manage_recipes','suppliers','purchase_orders','report','announcements','attendance','promotions'] as $slug)
         $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'manager',id FROM permissions WHERE slug='$slug'");
 
     // Default staff permissions
     foreach (['dashboard','find_orders','view_orders','loyalty','announcements','attendance'] as $slug)
         $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'staff',id FROM permissions WHERE slug='$slug'");
 }
+
+// ── RBAC: register newly-added permissions for existing installs ──
+$conn->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Tables', 'tables', 'Orders', 16)");
+// Managers previously had hard-coded access to the Tables page — preserve that on upgrade
+$conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='tables'");
+
+// 'recipes' used to grant both viewing AND editing — split out editing into its own permission
+$conn->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Manage Recipes', 'manage_recipes', 'Inventory', 17)");
+// Managers previously could edit recipes via 'recipes' — preserve that on upgrade (other roles, e.g. barista, keep view-only access)
+$conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='manage_recipes'");
 
 // ── SANITIZE FUNCTION ──
 if (!function_exists('sanitizeForReceipt')) {

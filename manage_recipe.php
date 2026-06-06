@@ -1,7 +1,7 @@
 <?php
 require 'auth.php';
 require 'config.php';
-if (!can('recipes')) { header("Location: recipes_view.php"); exit; }
+if (!can('manage_recipes')) { header("Location: recipes_view.php"); exit; }
 
 /* ================= SAVE RECIPE ================= */
 if (isset($_POST['save_recipe'])) {
@@ -68,6 +68,13 @@ if (isset($_POST['save_recipe'])) {
                 ");
             }
         }
+    }
+
+    // Inline editor on recipes_view.php saves via fetch() and expects JSON, not a redirect
+    if (!empty($_POST['ajax'])) {
+        header('Content-Type: application/json');
+        echo json_encode(["ok" => 1]);
+        exit;
     }
 
     header("Location: manage_recipe.php?success=1");
@@ -638,8 +645,8 @@ input:disabled {
 <body>
 
 <!-- Back Button -->
-<a class="back-btn" href="dashboard.php">
-    <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+<a class="back-btn" href="recipes_view.php">
+    <i class="fa-solid fa-arrow-left"></i> Back
 </a>
 
 <!-- Theme Toggle -->

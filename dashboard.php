@@ -10,6 +10,23 @@ $_roles_db = [];
 $_rdb = $conn->query("SELECT slug, name, icon, color FROM roles ORDER BY is_system DESC, id ASC");
 while ($_rdbr = $_rdb->fetch_assoc()) $_roles_db[$_rdbr['slug']] = $_rdbr;
 
+$_cur_role = $_SESSION['role'] ?? 'staff';
+$_cur_role_info = $_roles_db[$_cur_role] ?? null;
+$_cur_role_name = $_cur_role_info['name'] ?? ucwords(str_replace('_', ' ', $_cur_role));
+$_cur_role_color = $_cur_role_info['color'] ?? '#d1904b';
+
+// Clock-in status (self-service shift tracking — same check as view_order.php)
+$_is_clocked_in = false;
+$_clock_since   = null;
+$_att_check = $conn->query("SHOW TABLES LIKE 'attendance'");
+if ($_att_check && $_att_check->num_rows > 0) {
+    $_cs = $conn->prepare("SELECT clock_in FROM attendance WHERE user_id = ? AND date = CURDATE() AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1");
+    $_cs->bind_param('i', $_SESSION['user_id']);
+    $_cs->execute();
+    $_crow = $_cs->get_result()->fetch_assoc();
+    if ($_crow) { $_is_clocked_in = true; $_clock_since = date('g:i A', strtotime($_crow['clock_in'])); }
+}
+
 $_now = new DateTime();
 $business_date = (int)$_now->format("H") < 6
     ? (clone $_now)->modify("-1 day")->format("Y-m-d")
@@ -29,6 +46,15 @@ $total_orders  = mysqli_fetch_assoc($order_result)['total_orders'];
 
 $low_result  = mysqli_query($conn, "SELECT COUNT(*) AS low_count FROM ingredients WHERE stock_quantity < minimum_stock");
 $low_stock   = mysqli_fetch_assoc($low_result)['low_count'];
+
+// Recipes whose ingredients are running low — surfaced on the "Drink Recipe" tile for prep-facing roles (e.g. barista)
+$low_recipe_result = mysqli_query($conn, "
+    SELECT COUNT(DISTINCT pi.product_id) AS low_recipe_count
+    FROM product_ingredients pi
+    JOIN ingredients i ON pi.ingredient_id = i.ingredient_id
+    WHERE pi.amount_used > 0 AND i.stock_quantity < i.minimum_stock
+");
+$low_recipe_count = mysqli_fetch_assoc($low_recipe_result)['low_recipe_count'];
 
 $unpaid_result = mysqli_query($conn, "SELECT COUNT(*) AS unpaid_count FROM orders WHERE status!='Completed' AND status!='Cancelled' AND status!='Paid'");
 $unpaid_count  = mysqli_fetch_assoc($unpaid_result)['unpaid_count'];
@@ -174,6 +200,9 @@ button{font-family:inherit;cursor:pointer;}
     z-index:1;
     min-width:0;
 }
+
+/* collapses the reserved sidebar width for roles without a sidebar */
+body.no-sidebar{--sidebar-w:0px;}
 
 /* ── SIDEBAR ── */
 .sidebar{
@@ -351,6 +380,33 @@ button{font-family:inherit;cursor:pointer;}
     flex-shrink:0;
 }
 .theme-toggle:hover{border-color:var(--border-hi);color:var(--text);}
+
+.header-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+
+.role-badge{
+    display:inline-flex;align-items:center;gap:6px;
+    background:var(--glass);border:1px solid var(--border);
+    border-radius:50px;padding:3px 12px;margin-left:8px;
+    font-size:11px;font-weight:600;color:var(--text-muted);
+    vertical-align:middle;
+}
+.role-badge::before{
+    content:'';flex-shrink:0;
+    width:6px;height:6px;border-radius:50%;
+    background:var(--role-color,var(--amber));
+    box-shadow:0 0 6px var(--role-color,var(--amber));
+}
+
+.logout-btn{
+    display:flex;align-items:center;gap:7px;
+    background:var(--glass);border:1px solid var(--border);
+    color:var(--text-muted);
+    padding:8px 14px;border-radius:50px;
+    font-size:12px;font-weight:600;
+    transition:.15s var(--ease);
+    flex-shrink:0;
+}
+.logout-btn:hover{background:var(--red-dim);border-color:rgba(255,107,107,.35);color:var(--red);}
 
 /* ── ALERT STRIP ── */
 .alert-strip{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px;}
@@ -635,25 +691,47 @@ button{font-family:inherit;cursor:pointer;}
 .tbl-empty span{font-size:13px;color:var(--text-muted);}
 
 /* ── QUICK ACCESS GRID (non-admin dashboard) ── */
-.qa-grid{display:flex;flex-direction:column;gap:28px;}
-.qa-group{display:flex;flex-direction:column;gap:12px;}
+.qa-grid{display:flex;flex-direction:column;gap:32px;max-width:1000px;width:100%;margin:0 auto;}
+.qa-group{display:flex;flex-direction:column;gap:16px;}
 .qa-group-label{
     font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
     color:var(--text-muted);display:flex;align-items:center;gap:7px;
     padding-bottom:8px;border-bottom:1px solid var(--border);
 }
 .qa-group-label i{color:var(--accent);font-size:13px;}
-.qa-tiles{display:flex;flex-wrap:wrap;gap:14px;}
+.qa-tiles{display:flex;flex-wrap:wrap;justify-content:center;gap:20px;}
 .qa-tile{
+    position:relative;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:10px;padding:22px 28px;
+    gap:16px;padding:42px 38px;
     background:var(--surface);border:1px solid var(--border);
     border-radius:var(--r);color:var(--text);text-decoration:none;
-    font-size:13px;font-weight:600;min-width:120px;
+    font-size:16px;font-weight:600;min-width:180px;min-height:150px;
     transition:background .2s,border-color .2s,transform .15s;
 }
 .qa-tile:hover{background:var(--surface-2);border-color:var(--amber-glow);transform:translateY(-2px);}
-.qa-tile i{font-size:26px;color:var(--accent);}
+.qa-tile i{font-size:44px;color:var(--accent);}
+.qa-tile-badge{
+    position:absolute;top:14px;right:14px;
+    background:var(--purple);color:#fff;
+    font-size:12px;font-weight:700;
+    min-width:24px;height:24px;padding:0 7px;
+    border-radius:50px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.3);
+}
+
+.qa-hero-btn{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    align-self:center;gap:16px;padding:42px 38px;
+    background:var(--amber);color:#000;text-decoration:none;
+    border-radius:var(--r);font-size:16px;font-weight:700;
+    min-width:180px;min-height:150px;
+    box-shadow:0 6px 28px var(--amber-glow);
+    transition:background .2s,transform .15s,box-shadow .2s;
+}
+.qa-hero-btn i{font-size:44px;color:#000;}
+.qa-hero-btn:hover{background:var(--amber-light);transform:translateY(-2px);box-shadow:0 10px 36px var(--amber-glow);}
 
 /* ── TOAST ── */
 .toast-container{position:fixed;bottom:22px;right:22px;z-index:9999;display:flex;flex-direction:column;gap:9px;}
@@ -702,25 +780,22 @@ button{font-family:inherit;cursor:pointer;}
 }
 </style>
 </head>
-<body>
+<body<?= $_is_mgr ? '' : ' class="no-sidebar"' ?>>
 
+<?php if ($_is_mgr): ?>
 <button class="menu-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
 <div class="overlay" onclick="toggleSidebar()"></div>
+<?php endif; ?>
 <div class="toast-container" id="toastContainer"></div>
 
 <div class="layout">
 
+<?php if ($_is_mgr): ?>
 <!-- ═══ SIDEBAR ═══ -->
 <div class="sidebar" id="sidebar">
 
     <a href="profile.php" class="sidebar-profile" title="My Profile">
         <div class="profile-avatar"><i class="fa-solid fa-user"></i></div>
-        <?php
-        $_cur_role = $_SESSION['role'] ?? 'staff';
-        $_cur_role_info = $_roles_db[$_cur_role] ?? null;
-        $_cur_role_name = $_cur_role_info['name'] ?? ucwords(str_replace('_', ' ', $_cur_role));
-        $_cur_role_color = $_cur_role_info['color'] ?? '#d1904b';
-        ?>
         <div class="profile-info">
             <div class="profile-name"><?= htmlspecialchars($admin_name) ?></div>
             <div class="profile-role" style="--role-color:<?= $_cur_role_color ?>;">
@@ -758,7 +833,7 @@ button{font-family:inherit;cursor:pointer;}
         </div>
 
         <!-- ORDERS -->
-        <?php if (can('find_orders') || can('view_orders')): ?>
+        <?php if (can('find_orders') || can('view_orders') || can('tables')): ?>
         <div class="nav-group-label" onclick="toggleGroup(this)" data-group="orders">
             <span>Orders</span>
             <i class="fa-solid fa-chevron-right nav-chevron"></i>
@@ -779,6 +854,7 @@ button{font-family:inherit;cursor:pointer;}
                 <span class="nav-label">Orders</span>
             </a>
             <?php endif; ?>
+            <?php if (can('tables')): ?>
             <a class="nav-item" href="tables.php">
                 <i class="fa-solid fa-table-cells"></i>
                 <span class="nav-label">Tables</span>
@@ -788,6 +864,7 @@ button{font-family:inherit;cursor:pointer;}
                 <span class="order-badge" style="background:var(--red,#e74c3c);"><?= (int)$_occ ?></span>
                 <?php endif; ?>
             </a>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -937,6 +1014,7 @@ button{font-family:inherit;cursor:pointer;}
 
 </div>
 <!-- end sidebar -->
+<?php endif; ?>
 
 <!-- ═══ MAIN ═══ -->
 <div class="main">
@@ -956,20 +1034,50 @@ button{font-family:inherit;cursor:pointer;}
     <!-- HEADER -->
     <div class="dash-header fu" style="animation-delay:.0s">
         <div>
-            <h1>Good <span id="timeOfDay">morning</span>, <span class="name"><?= htmlspecialchars($admin_name) ?></span></h1>
+            <h1>
+                Good <span id="timeOfDay">morning</span>, <span class="name"><?= htmlspecialchars($admin_name) ?></span>
+                <?php if (!$_is_mgr): ?>
+                <span class="role-badge" style="--role-color:<?= htmlspecialchars($_cur_role_color) ?>;"><?= htmlspecialchars($_cur_role_name) ?></span>
+                <?php endif; ?>
+            </h1>
             <p class="header-sub">
                 <i class="fa-regular fa-calendar-days"></i>
                 <?= date("l, d F Y") ?>
             </p>
         </div>
-        <button class="theme-toggle" onclick="toggleTheme()">
-            <i class="fa-solid fa-moon" id="themeIcon"></i>
-            <span id="themeText">Dark</span>
-        </button>
+        <div class="header-actions">
+            <button class="theme-toggle" onclick="toggleTheme()">
+                <i class="fa-solid fa-moon" id="themeIcon"></i>
+                <span id="themeText">Dark</span>
+            </button>
+            <?php if (!$_is_mgr): ?>
+            <?php
+            $clocked  = $_is_clocked_in;
+            $clkBg    = $clocked ? 'rgba(255,95,95,.08)'   : 'rgba(85,224,135,.08)';
+            $clkBr    = $clocked ? 'rgba(255,95,95,.25)'   : 'rgba(85,224,135,.25)';
+            $clkColor = $clocked ? '#ff6b6b'               : '#55e087';
+            $clkIcon  = $clocked ? 'right-from-bracket'    : 'fingerprint';
+            $clkLabel = $clocked ? 'Clock Out'             : 'Clock In';
+            $clkTitle = $clocked ? 'Clocked in at ' . $_clock_since : 'Not clocked in';
+            ?>
+            <button id="clockBtn" data-clocked="<?= $clocked ? '1' : '0' ?>"
+                onclick="toggleClock()"
+                title="<?= htmlspecialchars($clkTitle) ?>"
+                style="display:inline-flex;align-items:center;gap:7px;
+                       padding:9px 16px;border-radius:10px;font-size:13px;font-family:'Poppins',sans-serif;font-weight:500;cursor:pointer;
+                       background:<?= $clkBg ?>;border:1px solid <?= $clkBr ?>;color:<?= $clkColor ?>;transition:all .2s;">
+                <i class="fa-solid fa-<?= $clkIcon ?>"></i> <?= $clkLabel ?>
+            </button>
+            <a href="logout.php" class="logout-btn" title="Log out">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span>Logout</span>
+            </a>
+            <?php endif; ?>
+        </div>
     </div>
 
     <!-- ALERT STRIP -->
-    <?php if (($low_stock > 0 && can('ingredients')) || ($unpaid_count > 0 && can('find_orders'))): ?>
+    <?php if (($low_stock > 0 && can('ingredients')) || ($_is_mgr && $unpaid_count > 0 && can('find_orders'))): ?>
     <div class="alert-strip fu" style="animation-delay:.06s">
         <?php if ($low_stock > 0 && can('ingredients')): ?>
         <a href="ingredients.php" class="alert-pill danger">
@@ -977,7 +1085,7 @@ button{font-family:inherit;cursor:pointer;}
             <?= $low_stock ?> item<?= $low_stock != 1 ? 's' : '' ?> low on stock — restock needed
         </a>
         <?php endif; ?>
-        <?php if ($unpaid_count > 0 && can('find_orders')): ?>
+        <?php if ($_is_mgr && $unpaid_count > 0 && can('find_orders')): ?>
         <a href="find_order.php" class="alert-pill warning">
             <i class="fa-solid fa-clock"></i>
             <?= $unpaid_count ?> unpaid order<?= $unpaid_count != 1 ? 's' : '' ?> pending
@@ -1175,7 +1283,14 @@ button{font-family:inherit;cursor:pointer;}
 
     <!-- QUICK ACCESS GRID -->
     <div class="qa-grid fu" style="animation-delay:.1s">
-        <?php if (can('view_orders') || can('find_orders')): ?>
+        <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'supervisor', 'cashier', 'staff'])): ?>
+        <a href="menu.php" class="qa-hero-btn">
+            <i class="fa-solid fa-plus"></i>
+            <span>Take New Order</span>
+        </a>
+        <?php endif; ?>
+
+        <?php if (can('view_orders') || can('find_orders') || can('tables')): ?>
         <div class="qa-group">
             <div class="qa-group-label"><i class="fa-solid fa-receipt"></i> Orders</div>
             <div class="qa-tiles">
@@ -1187,8 +1302,17 @@ button{font-family:inherit;cursor:pointer;}
                 <?php endif; ?>
                 <?php if (can('find_orders')): ?>
                 <a href="find_order.php" class="qa-tile">
+                    <?php if ($unpaid_count > 0): ?>
+                    <span class="qa-tile-badge"><?= $unpaid_count ?></span>
+                    <?php endif; ?>
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <span>Find Order</span>
+                </a>
+                <?php endif; ?>
+                <?php if (can('tables')): ?>
+                <a href="tables.php" class="qa-tile">
+                    <i class="fa-solid fa-table-cells"></i>
+                    <span>Tables</span>
                 </a>
                 <?php endif; ?>
             </div>
@@ -1213,6 +1337,9 @@ button{font-family:inherit;cursor:pointer;}
                 <?php endif; ?>
                 <?php if (can('recipes')): ?>
                 <a href="recipes_view.php" class="qa-tile">
+                    <?php if ($low_recipe_count > 0): ?>
+                    <span class="qa-tile-badge" title="<?= $low_recipe_count ?> recipe<?= $low_recipe_count == 1 ? '' : 's' ?> low on ingredients"><?= $low_recipe_count ?></span>
+                    <?php endif; ?>
                     <i class="fa-solid fa-utensils"></i>
                     <span>Drink Recipe</span>
                 </a>
@@ -1325,22 +1452,26 @@ setInterval(updateSidebarClock,10000);
     document.getElementById('timeOfDay').textContent=g;
 })();
 
-/* ── Mobile sidebar ── */
+/* ── Mobile sidebar (absent for roles without sidebar access) ── */
 function toggleSidebar(){
-    document.getElementById('sidebar').classList.toggle('open');
-    document.querySelector('.overlay').classList.toggle('active');
+    const sb = document.getElementById('sidebar');
+    const ov = document.querySelector('.overlay');
+    if (!sb || !ov) return;
+    sb.classList.toggle('open');
+    ov.classList.toggle('active');
+}
+function closeSidebar(){
+    const sb = document.getElementById('sidebar');
+    const ov = document.querySelector('.overlay');
+    if (!sb || !ov) return;
+    sb.classList.remove('open');
+    ov.classList.remove('active');
 }
 document.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){
-        document.getElementById('sidebar').classList.remove('open');
-        document.querySelector('.overlay').classList.remove('active');
-    }
+    if(e.key==='Escape') closeSidebar();
 });
 window.addEventListener('resize',()=>{
-    if(window.innerWidth>768){
-        document.getElementById('sidebar').classList.remove('open');
-        document.querySelector('.overlay').classList.remove('active');
-    }
+    if(window.innerWidth>768) closeSidebar();
 });
 
 /* ── Theme toggle ── */
@@ -1379,7 +1510,50 @@ function showToast(msg,type='success'){
     setTimeout(()=>{ if(t.parentElement){ t.style.opacity='0'; t.style.transform='translateX(18px)'; setTimeout(()=>t.remove(),400); }},5000);
 }
 document.addEventListener('DOMContentLoaded',()=>showToast('Welcome back, <?= htmlspecialchars($admin_name, ENT_QUOTES) ?>!','success'));
-<?php if ($low_stock > 0): ?>
+
+async function toggleClock(){
+    var btn = document.getElementById('clockBtn');
+    if (!btn) return;
+    var clocked = btn.dataset.clocked === '1';
+    btn.disabled = true;
+    btn.style.opacity = '.6';
+
+    try {
+        var resp = await fetch('attendance_action.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'action=' + (clocked ? 'clock_out' : 'clock_in')
+        });
+        var data = await resp.json();
+
+        if (data.ok) {
+            if (!clocked) {
+                btn.dataset.clocked = '1';
+                btn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Clock Out';
+                btn.style.background = 'rgba(255,95,95,.08)';
+                btn.style.borderColor = 'rgba(255,95,95,.25)';
+                btn.style.color = '#ff6b6b';
+                btn.title = 'Clocked in at ' + (data.time || '');
+            } else {
+                btn.dataset.clocked = '0';
+                btn.innerHTML = '<i class="fa-solid fa-fingerprint"></i> Clock In';
+                btn.style.background = 'rgba(85,224,135,.08)';
+                btn.style.borderColor = 'rgba(85,224,135,.25)';
+                btn.style.color = '#55e087';
+                btn.title = 'Not clocked in';
+            }
+            showToast(data.msg, 'success');
+        } else {
+            showToast(data.msg, 'error');
+        }
+    } catch(e) {
+        showToast('Connection error.', 'error');
+    }
+
+    btn.disabled = false;
+    btn.style.opacity = '1';
+}
+<?php if ($low_stock > 0 && can('ingredients')): ?>
 document.addEventListener('DOMContentLoaded',()=>showToast('<?= $low_stock ?> ingredient<?= $low_stock!=1?"s are":" is"?> low on stock','error'));
 <?php endif; ?>
 

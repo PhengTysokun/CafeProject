@@ -1120,10 +1120,12 @@ if ($action === ""):
 
 <!-- Back Buttons -->
 <div style="position:fixed;top:24px;left:24px;display:flex;gap:10px;z-index:100;">
+    <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
     <a href="menu.php" class="back" style="position:static;">
         <i class="fa-solid fa-mug-hot"></i> Menu
     </a>
-    <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'manager'])): ?>
+    <?php endif; ?>
+    <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'barista'])): ?>
     <a href="dashboard.php" class="back" style="position:static;">
         <i class="fa-solid fa-gauge"></i> Dashboard
     </a>
@@ -1297,9 +1299,11 @@ function showClockToast(msg, isErr) {
     <button class="status-tab active" data-status="all" onclick="filterStatus('all')">
         📋 All <span class="badge" id="count-all">0</span>
     </button>
+    <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
     <button class="status-tab" data-status="PendingPayment" onclick="filterStatus('PendingPayment')">
         ⏳ Pending <span class="badge" id="count-PendingPayment">0</span>
     </button>
+    <?php endif; ?>
     <button class="status-tab" data-status="Paid" onclick="filterStatus('Paid')">
         💳 Paid <span class="badge" id="count-Paid">0</span>
     </button>
@@ -1309,12 +1313,14 @@ function showClockToast(msg, isErr) {
     <button class="status-tab" data-status="Completed" onclick="filterStatus('Completed')">
         ✅ Completed <span class="badge" id="count-Completed">0</span>
     </button>
+    <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
     <button class="status-tab" data-status="Cancelled" onclick="filterStatus('Cancelled')">
         ❌ Cancelled <span class="badge" id="count-Cancelled">0</span>
     </button>
     <button class="status-tab" data-status="Refunded" onclick="filterStatus('Refunded')">
         🔄 Refunded <span class="badge" id="count-Refunded">0</span>
     </button>
+    <?php endif; ?>
 </div>
 
 <!-- Search Bar -->
@@ -1704,13 +1710,14 @@ function updateCounts(data) {
         }
     });
     
-    document.getElementById('count-all').textContent = counts.all;
-    document.getElementById('count-PendingPayment').textContent = counts.PendingPayment;
-    document.getElementById('count-Paid').textContent = counts.Paid;
-    document.getElementById('count-Preparing').textContent = counts.Preparing;
-    document.getElementById('count-Completed').textContent = counts.Completed;
-    document.getElementById('count-Cancelled').textContent = counts.Cancelled;
-    document.getElementById('count-Refunded').textContent = counts.Refunded;
+    const setCount = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setCount('count-all', counts.all);
+    setCount('count-PendingPayment', counts.PendingPayment);
+    setCount('count-Paid', counts.Paid);
+    setCount('count-Preparing', counts.Preparing);
+    setCount('count-Completed', counts.Completed);
+    setCount('count-Cancelled', counts.Cancelled);
+    setCount('count-Refunded', counts.Refunded);
 }
 
 // ── Toggle Completed Orders ──

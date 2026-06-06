@@ -1,5 +1,6 @@
 <?php
-require 'admin_only.php';
+require 'auth.php';
+if (!can('tables')) { header("Location: dashboard.php?denied=1"); exit; }
 
 // JSON poll endpoint
 if (isset($_GET['json'])) {
