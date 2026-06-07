@@ -23,6 +23,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick
             $s2->bind_param("ids", $iid, $amt, $logNote);
             $s2->execute();
         }
+        $by = $_SESSION['username'] ?? null;
+        $sh = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, reference, created_by) VALUES (?, 'quick_restock', ?, ?, ?)");
+        $sh->bind_param("idss", $iid, $amt, $logNote, $by);
+        $sh->execute();
         $conn->commit();
         $s3 = $conn->prepare("SELECT stock_quantity, minimum_stock FROM ingredients WHERE ingredient_id = ?");
         $s3->bind_param("i", $iid);
@@ -80,8 +84,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 }
 
 /* ══════════════════════════════════════════
+   AJAX: Manual Stock Adjustment
+══════════════════════════════════════════ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manual_adjust') {
+    header('Content-Type: application/json');
+    $iid    = (int)($_POST['ingredient_id'] ?? 0);
+    $delta  = (float)($_POST['delta'] ?? 0);
+    $reason = trim($_POST['reason'] ?? '');
+    if ($iid <= 0 || $delta == 0) { echo json_encode(['success'=>false,'message'=>'Invalid input']); exit; }
+    if (empty($reason))           { echo json_encode(['success'=>false,'message'=>'Reason is required']); exit; }
+    $conn->begin_transaction();
+    try {
+        $chk = $conn->prepare("SELECT stock_quantity, minimum_stock FROM ingredients WHERE ingredient_id = ?");
+        $chk->bind_param("i", $iid);
+        $chk->execute();
+        $cur = $chk->get_result()->fetch_assoc();
+        $curStock = (float)$cur['stock_quantity'];
+        $newStock = $curStock + $delta;
+        if ($newStock < 0) {
+            $conn->rollback();
+            echo json_encode(['success'=>false,'message'=>"Cannot remove more than current stock (".rtrim(rtrim(number_format($curStock,4,'.','' ),'0'),'.').")"]);
+            exit;
+        }
+        $s1 = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity + ? WHERE ingredient_id = ?");
+        $s1->bind_param("di", $delta, $iid);
+        $s1->execute();
+        $by = $_SESSION['username'] ?? null;
+        $sh = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, reference, created_by) VALUES (?, 'manual_adjust', ?, ?, ?)");
+        $sh->bind_param("idss", $iid, $delta, $reason, $by);
+        $sh->execute();
+        $conn->commit();
+        $s3 = $conn->prepare("SELECT stock_quantity, minimum_stock FROM ingredients WHERE ingredient_id = ?");
+        $s3->bind_param("i", $iid);
+        $s3->execute();
+        $rr = $s3->get_result()->fetch_assoc();
+        echo json_encode(['success'=>true,'new_stock'=>(float)$rr['stock_quantity'],'min_stock'=>(float)$rr['minimum_stock']]);
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(['success'=>false,'message'=>$e->getMessage()]);
+    }
+    exit;
+}
+
+/* ══════════════════════════════════════════
+   AJAX: Poll (real-time stock sync)
+══════════════════════════════════════════ */
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'poll') {
+    header('Content-Type: application/json');
+    $fc_map = [];
+    $fc_res = $conn->query("SELECT ingredient_id, SUM(amount)/7 AS daily_avg FROM ingredient_history WHERE change_type='order_deduct' AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY ingredient_id");
+    if ($fc_res) while ($fc = $fc_res->fetch_assoc()) $fc_map[(int)$fc['ingredient_id']] = (float)$fc['daily_avg'];
+    $out = [];
+    $res = $conn->query("SELECT ingredient_id, ingredient_name, stock_quantity, minimum_stock, cost_per_unit, unit, supplier_id FROM ingredients ORDER BY ingredient_name ASC");
+    while ($r = $res->fetch_assoc()) {
+        $id = (int)$r['ingredient_id'];
+        $out[] = ['id'=>$id,'stock'=>(float)$r['stock_quantity'],'min'=>(float)$r['minimum_stock'],'cpu'=>(float)$r['cost_per_unit'],'unit'=>$r['unit']??'','supplier_id'=>(int)($r['supplier_id']??0),'daily_avg'=>$fc_map[$id]??0];
+    }
+    echo json_encode(['ok'=>true,'ingredients'=>$out]);
+    exit;
+}
+
+/* ══════════════════════════════════════════
+   AJAX: Ingredient History
+══════════════════════════════════════════ */
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'history') {
+    header('Content-Type: application/json');
+    $id = (int)($_GET['id'] ?? 0);
+    if ($id <= 0) { echo json_encode(['ok'=>false]); exit; }
+    $out = [];
+    $r = $conn->prepare("SELECT change_type, amount, reference, created_by, created_at FROM ingredient_history WHERE ingredient_id = ? ORDER BY created_at DESC LIMIT 30");
+    $r->bind_param('i', $id);
+    $r->execute();
+    $res = $r->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $out[] = ['type'=>$row['change_type'],'amount'=>(float)$row['amount'],'reference'=>$row['reference']??'','by'=>$row['created_by']??'','at'=>$row['created_at']];
+    }
+    echo json_encode(['ok'=>true,'history'=>$out]);
+    exit;
+}
+
+/* ══════════════════════════════════════════
    DATA
 ══════════════════════════════════════════ */
+// 7-day average daily usage per ingredient (for forecast)
+$fc_map = [];
+$fc_res = $conn->query("SELECT ingredient_id, SUM(amount)/7 AS daily_avg FROM ingredient_history WHERE change_type='order_deduct' AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY ingredient_id");
+if ($fc_res) while ($fc = $fc_res->fetch_assoc()) $fc_map[(int)$fc['ingredient_id']] = (float)$fc['daily_avg'];
+
 $rows = [];
 $res  = mysqli_query($conn, "SELECT i.*, s.name AS supplier_name FROM ingredients i LEFT JOIN suppliers s ON s.supplier_id = i.supplier_id ORDER BY i.ingredient_name ASC");
 while ($r = mysqli_fetch_assoc($res)) {
@@ -100,7 +189,8 @@ while ($r = mysqli_fetch_assoc($res)) {
     $dispSfx  = $unitLc ? ('/'.$unitLc) : '';
     if ($unitLc === 'g')  { $dispCpu = $cpu * 1000; $dispSfx = '/kg'; }
     if ($unitLc === 'ml') { $dispCpu = $cpu * 1000; $dispSfx = '/L';  }
-    $rows[] = array_merge($r, ['stock'=>$stock,'min'=>$min,'cpu'=>$cpu,'value'=>$value,'pct'=>$pct,'status'=>$status,'disp_cpu'=>$dispCpu,'disp_sfx'=>$dispSfx]);
+    $da = $fc_map[(int)$r['ingredient_id']] ?? 0;
+    $rows[] = array_merge($r, ['stock'=>$stock,'min'=>$min,'cpu'=>$cpu,'value'=>$value,'pct'=>$pct,'status'=>$status,'disp_cpu'=>$dispCpu,'disp_sfx'=>$dispSfx,'daily_avg'=>$da]);
 }
 
 $total    = count($rows);
@@ -130,7 +220,7 @@ function h($s)     { return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
     --border:#222; --border-hover:#333;
     --accent:#d1904b; --accent-light:#e8b87a; --accent-dark:#a0702a;
     --text:#f5f5f5; --text-muted:#888; --text-light:#fff;
-    --ok:#55e087; --low:#f1c40f; --danger:#ff5f5f; --blue:#3498db;
+    --ok:#55e087; --low:#f1c40f; --danger:#ff5f5f; --blue:#3498db; --purple:#9b59b6;
     --shadow-sm:0 2px 8px rgba(0,0,0,.35); --shadow-md:0 4px 20px rgba(0,0,0,.45);
     --shadow-accent:0 0 0 3px rgba(209,144,75,.12);
     --radius:14px; --transition:all .22s cubic-bezier(.4,0,.2,1);
@@ -290,7 +380,11 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
 .fill-ok    { background:linear-gradient(90deg,#2ecc71,var(--ok)); }
 .fill-low   { background:linear-gradient(90deg,#d4ac0d,var(--low)); }
 .fill-out   { background:var(--danger); }
-.stock-pct  { font-size:10px; color:var(--text-muted); }
+.stock-pct      { font-size:10px; color:var(--text-muted); }
+.stock-forecast { font-size:10px; display:flex; align-items:center; gap:3px; margin-top:2px; font-weight:600; }
+.fc-ok          { color:var(--ok); }
+.fc-warn        { color:var(--low); }
+.fc-critical    { color:var(--danger); }
 
 /* ── BADGES ── */
 .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:50px; font-size:11px; font-weight:700; }
@@ -319,6 +413,8 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
 .btn-row.edit:hover    { background:var(--accent); color:#000; }
 .btn-row.restock:hover { background:var(--ok); color:#000; }
 .btn-row.del:hover     { background:var(--danger); color:#fff; }
+.btn-row.adjust { background:rgba(241,196,15,.08); color:var(--low); border-color:rgba(241,196,15,.3); }
+.btn-row.adjust:hover { background:var(--low); color:#000; }
 
 /* ── EMPTY STATE ── */
 .empty-state { text-align:center; padding:60px 20px; }
@@ -354,6 +450,12 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
 .btn-confirm.danger  { background:var(--danger); color:#fff; }
 .btn-cancel { width:100%; margin-top:8px; padding:10px; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer; transition:var(--transition); font-family:'Poppins',sans-serif; }
 .btn-cancel:hover { border-color:var(--border-hover); color:var(--text); }
+.direction-btn {
+    display:none; flex:1; padding:9px 14px; border-radius:9px; border:1px solid var(--border);
+    background:transparent; color:var(--text-muted); font-size:12px; font-weight:600;
+    cursor:pointer; transition:var(--transition); font-family:'Poppins',sans-serif;
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+}
 .divider { height:1px; background:var(--border); margin:14px 0; }
 
 /* ── TOAST ── */
@@ -390,6 +492,32 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; animation:none!important; } }
 
+/* ── HISTORY DRAWER ── */
+.history-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(6px); z-index:9998; display:none; }
+.history-overlay.open { display:block; }
+.history-drawer { position:fixed; top:0; right:0; height:100%; width:360px; max-width:95vw; background:var(--bg-card); border-left:1px solid var(--border); box-shadow:-10px 0 50px rgba(0,0,0,.55); display:flex; flex-direction:column; transform:translateX(100%); transition:transform .28s cubic-bezier(.4,0,.2,1); z-index:9999; }
+.history-overlay.open .history-drawer { transform:translateX(0); }
+.history-hdr { display:flex; align-items:flex-start; justify-content:space-between; padding:20px 20px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
+.history-title { font-size:15px; font-weight:700; color:var(--text-light); }
+.history-sub { font-size:11px; color:var(--text-muted); margin-top:3px; font-weight:500; }
+.history-body { flex:1; overflow-y:auto; padding:16px 20px; }
+.h-loading, .h-empty { text-align:center; padding:50px 20px; color:var(--text-muted); font-size:13px; }
+
+.h-entry { display:flex; gap:12px; padding-bottom:14px; margin-bottom:2px; position:relative; }
+.h-entry:not(:last-child)::after { content:''; position:absolute; left:11px; top:26px; width:1px; bottom:0; background:var(--border); }
+.h-icon { width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; flex-shrink:0; margin-top:1px; }
+.h-icon.add     { background:rgba(85,224,135,.15); color:var(--ok); }
+.h-icon.remove  { background:rgba(255,95,95,.12);  color:var(--danger); }
+.h-icon.neutral { background:rgba(241,196,15,.12); color:var(--low); }
+.h-content { flex:1; min-width:0; }
+.h-type  { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); margin-bottom:2px; }
+.h-amt   { font-size:14px; font-weight:700; line-height:1.2; }
+.h-amt.pos { color:var(--ok); }
+.h-amt.neg { color:var(--danger); }
+.h-amt.neu { color:var(--low); }
+.h-ref  { font-size:11px; color:var(--text); margin-top:3px; word-break:break-word; }
+.h-meta { font-size:10px; color:var(--text-muted); margin-top:4px; }
+
 /* Hide per-row Stock Value column — footer total still shows */
 #ingredientTable th:nth-child(6),
 #ingredientTable td:nth-child(6) { display:none; }
@@ -423,6 +551,8 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
             <span class="badge-count"><?= $critical ?></span>
         </button>
         <?php endif; ?>
+        <a href="ingredient_history.php" class="btn-nav" title="View stock movement history"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
+        <a href="ingredient_report.php" class="btn-nav" title="Consumption summary report"><i class="fa-solid fa-chart-bar"></i> Report</a>
         <button class="btn-nav" onclick="window.open('ingredients_pdf.php','_blank')" title="Export stock report as PDF"><i class="fa-solid fa-file-pdf"></i> Export PDF</button>
         <button class="btn-nav" onclick="generateStockAlert()" title="Send low-stock alert"><i class="fa-solid fa-bell"></i> Alert</button>
         <a href="add_ingredient.php" class="btn-nav primary" title="Add new ingredient (N)"><i class="fa-solid fa-plus"></i> Add</a>
@@ -534,6 +664,9 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
     $iid       = (int)$row['ingredient_id'];
     $unit      = h($row['unit'] ?? '');
     $ingName   = h($row['ingredient_name']);
+    $da        = (float)$row['daily_avg'];
+    $days_rem  = ($da > 0 && $row['stock'] > 0) ? (int)round($row['stock'] / $da) : null;
+    $fc_cls    = $days_rem === null ? '' : ($days_rem <= 2 ? 'fc-critical' : ($days_rem <= 7 ? 'fc-warn' : 'fc-ok'));
 ?>
                 <tr class="<?= $rowCls ?>"
                     data-status="<?= $row['status'] ?>"
@@ -550,6 +683,12 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
                             <div class="stock-val"><?= fmt($row['stock']) ?> <?= $unit ?></div>
                             <div class="stock-bar"><div class="stock-fill <?= $fillCls ?>" style="width:<?= $row['pct'] ?>%"></div></div>
                             <div class="stock-pct"><?= $row['pct'] ?>% of minimum</div>
+                            <?php if ($days_rem !== null): ?>
+                            <div class="stock-forecast <?= $fc_cls ?>">
+                                <i class="fa-solid fa-clock" style="font-size:9px"></i>
+                                ~<?= $days_rem ?> day<?= $days_rem !== 1 ? 's' : '' ?> remaining
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </td>
                     <td data-val="<?= $row['min'] ?>">
@@ -579,9 +718,20 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
                             <a class="btn-row edit" href="edit_ingredient.php?id=<?= $iid ?>">
                                 <i class="fa-solid fa-pen-to-square"></i> Edit
                             </a>
+                            <button class="btn-row"
+                                style="background:rgba(52,152,219,.08);color:#3498db;border-color:rgba(52,152,219,.2)"
+                                onclick="openHistory(<?= $iid ?>,'<?= $ingName ?>')"
+                                title="View stock history">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                            </button>
+                            <button class="btn-row adjust"
+                                onclick="openAdjust(<?= $iid ?>,'<?= $ingName ?>',<?= $row['stock'] ?>,'<?= $unit ?>')"
+                                title="Manual stock adjustment (waste/damage/correction)">
+                                <i class="fa-solid fa-sliders"></i> Adjust
+                            </button>
                             <button class="btn-row restock"
                                 onclick="openRestock(<?= $iid ?>,'<?= $ingName ?>',<?= $row['stock'] ?>,'<?= $unit ?>',<?= $row['min'] ?>)">
-                                <i class="fa-solid fa-plus"></i> Restock
+                                <i class="fa-solid fa-plus"></i> Add Stock
                             </button>
                             <?php if (in_array($row['status'], ['low','out']) && !empty($row['supplier_id'])): ?>
                             <a class="btn-row" href="purchase_order_create.php?supplier_id=<?= (int)$row['supplier_id'] ?>"
@@ -602,13 +752,9 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
             </tbody>
             <tfoot id="tableFoot">
                 <tr>
-                    <td colspan="5" class="foot-label" id="footLabel">
+                    <td colspan="9" class="foot-label" id="footLabel">
                         <?= $total ?> ingredients total
                     </td>
-                    <td></td>
-                    <td class="foot-value" id="footValue">$<?= money($stk_val) ?></td>
-                    <td></td>
-                    <td></td>
                 </tr>
             </tfoot>
         </table>
@@ -627,7 +773,7 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
 <div class="modal-overlay" id="restockModal" onclick="if(event.target===this)closeRestock()">
     <div class="modal-box">
         <button class="modal-close" onclick="closeRestock()"><i class="fa-solid fa-xmark"></i></button>
-        <div class="modal-title"><i class="fa-solid fa-arrow-trend-up" style="color:var(--ok)"></i> Quick Restock</div>
+        <div class="modal-title"><i class="fa-solid fa-arrow-trend-up" style="color:var(--ok)"></i> Add Stock</div>
         <div class="modal-sub" id="restockSub">Loading…</div>
 
         <div style="display:flex;gap:10px;margin-bottom:14px">
@@ -652,7 +798,7 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
         <input type="hidden" id="restockUnit">
 
         <button class="btn-confirm" id="restockBtn" onclick="submitRestock()">
-            <i class="fa-solid fa-check"></i> Confirm Restock
+            <i class="fa-solid fa-check"></i> Confirm Add
         </button>
     </div>
 </div>
@@ -672,6 +818,49 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
             <i class="fa-solid fa-trash-can"></i> Delete Permanently
         </button>
         <button class="btn-cancel" onclick="closeDelete()">Cancel</button>
+    </div>
+</div>
+
+<!-- ── MANUAL ADJUST MODAL ── -->
+<div class="modal-overlay" id="adjustModal" onclick="if(event.target===this)closeAdjust()">
+    <div class="modal-box">
+        <button class="modal-close" onclick="closeAdjust()"><i class="fa-solid fa-xmark"></i></button>
+        <div class="modal-title"><i class="fa-solid fa-triangle-exclamation" style="color:var(--low)"></i> Stock Deduction</div>
+        <div class="modal-sub" id="adjustSub">Loading…</div>
+
+        <div class="modal-row" style="margin-bottom:14px">
+            <div><div class="ml">Current Stock</div><div class="mv" id="adjustCurrent">—</div></div>
+        </div>
+
+        <label class="modal-label">Amount to Remove</label>
+        <input class="modal-input" type="number" id="adjustAmt" placeholder="Quantity to deduct…" min="0.01" step="any">
+
+        <label class="modal-label">Reason <span style="color:var(--danger);font-weight:400;text-transform:none;letter-spacing:0">* required</span></label>
+        <input class="modal-input note" type="text" id="adjustReason" placeholder="e.g. Bottle broken, expired, stock count correction…" maxlength="120">
+
+        <input type="hidden" id="adjustId">
+        <input type="hidden" id="adjustUnit">
+
+        <button class="btn-confirm" id="adjustBtn" style="background:var(--danger);color:#fff" onclick="submitAdjust()">
+            <i class="fa-solid fa-check"></i> Confirm Deduction
+        </button>
+        <button class="btn-cancel" onclick="closeAdjust()">Cancel</button>
+    </div>
+</div>
+
+<!-- ── HISTORY DRAWER ── -->
+<div class="history-overlay" id="historyOverlay" onclick="if(event.target===this)closeHistory()">
+    <div class="history-drawer">
+        <div class="history-hdr">
+            <div>
+                <div class="history-title"><i class="fa-solid fa-clock-rotate-left" style="color:var(--blue);margin-right:6px"></i>Stock History</div>
+                <div class="history-sub" id="historySubtitle">—</div>
+            </div>
+            <button class="modal-close" style="position:static;flex-shrink:0" onclick="closeHistory()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="history-body" id="historyBody">
+            <div class="h-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</div>
+        </div>
     </div>
 </div>
 
@@ -769,9 +958,8 @@ function applyFilters() {
         }
     });
     document.getElementById('emptyState').style.display  = shown === 0 ? 'block' : 'none';
-    document.getElementById('rowCount').textContent   = `Showing ${shown} of ${TOTAL}`;
-    document.getElementById('footLabel').textContent  = `Showing ${shown} of ${TOTAL} ingredients`;
-    document.getElementById('footValue').textContent  = '$' + shownVal.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    document.getElementById('rowCount').textContent  = `Showing ${shown} of ${TOTAL}`;
+    document.getElementById('footLabel').textContent = `Showing ${shown} of ${TOTAL} ingredients`;
 }
 
 /* ── SORT ── */
@@ -877,15 +1065,15 @@ async function submitRestock() {
         if (data.success) {
             updateRow(parseInt(id), data.new_stock, data.min_stock, unit);
             closeRestock();
-            showToast(`+${fmt(amt)}${unit ? ' '+unit : ''} restocked`, 'success');
+            showToast(`+${fmt(amt)}${unit ? ' '+unit : ''} added to stock`, 'success');
         } else {
             showToast(data.message || 'Restock failed', 'error');
         }
     } catch { showToast('Network error', 'error'); }
-    finally  { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check"></i> Confirm Restock'; }
+    finally  { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check"></i> Confirm Add'; }
 }
 
-function updateRow(id, newStock, minStock, unit) {
+function updateRow(id, newStock, minStock, unit, dailyAvg) {
     const row = document.querySelector(`#tableBody tr[data-id="${id}"]`);
     if (!row) return;
     const pct    = minStock > 0 ? Math.min(100, Math.round(newStock / minStock * 100)) : 100;
@@ -902,6 +1090,19 @@ function updateRow(id, newStock, minStock, unit) {
     fill.className = 'stock-fill ' + fills[status];
     fill.style.width = pct + '%';
     sc.querySelector('.stock-pct').textContent = pct + '% of minimum';
+
+    // Forecast chip
+    if (dailyAvg !== undefined) {
+        let fc = sc.querySelector('.stock-forecast');
+        const da = parseFloat(dailyAvg) || 0;
+        const daysRem = (da > 0 && newStock > 0) ? Math.round(newStock / da) : null;
+        if (daysRem !== null) {
+            const fcCls = daysRem <= 2 ? 'fc-critical' : (daysRem <= 7 ? 'fc-warn' : 'fc-ok');
+            if (!fc) { fc = document.createElement('div'); fc.className = 'stock-forecast'; sc.querySelector('.stock-cell').appendChild(fc); }
+            fc.className = 'stock-forecast ' + fcCls;
+            fc.innerHTML = `<i class="fa-solid fa-clock" style="font-size:9px"></i> ~${daysRem} day${daysRem !== 1 ? 's' : ''} remaining`;
+        } else if (fc) { fc.remove(); }
+    }
 
     // Value cell
     const cpu = parseFloat(row.children[4]?.dataset?.val) || 0;
@@ -921,6 +1122,44 @@ function updateRow(id, newStock, minStock, unit) {
     row.dataset.status = status;
 
     applyFilters();
+}
+
+/* ── MANUAL ADJUST (deduction only) ── */
+function openAdjust(id, name, stock, unit) {
+    document.getElementById('adjustId').value = id;
+    document.getElementById('adjustUnit').value = unit;
+    document.getElementById('adjustSub').textContent = name;
+    document.getElementById('adjustCurrent').textContent = fmt(stock) + (unit ? ' ' + unit : '');
+    document.getElementById('adjustAmt').value = '';
+    document.getElementById('adjustReason').value = '';
+    document.getElementById('adjustModal').classList.add('open');
+    setTimeout(() => document.getElementById('adjustAmt').focus(), 100);
+}
+function closeAdjust() { document.getElementById('adjustModal').classList.remove('open'); }
+
+async function submitAdjust() {
+    const id     = document.getElementById('adjustId').value;
+    const amt    = parseFloat(document.getElementById('adjustAmt').value);
+    const reason = document.getElementById('adjustReason').value.trim();
+    const unit   = document.getElementById('adjustUnit').value;
+    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
+    if (!reason)           { showToast('Reason is required', 'error'); return; }
+    const delta  = -amt;
+    const btn    = document.getElementById('adjustBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+    try {
+        const res  = await fetch('ingredients.php', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:`action=manual_adjust&ingredient_id=${id}&delta=${delta}&reason=${encodeURIComponent(reason)}` });
+        const data = await res.json();
+        if (data.success) {
+            updateRow(parseInt(id), data.new_stock, data.min_stock, unit);
+            closeAdjust();
+            showToast(`−${fmt(amt)}${unit ? ' '+unit : ''} deducted — ${reason}`, 'error');
+        } else {
+            showToast(data.message || 'Adjustment failed', 'error');
+        }
+    } catch { showToast('Network error', 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check"></i> Confirm Deduction'; }
 }
 
 /* ── DELETE ── */
@@ -1018,7 +1257,7 @@ function toggleTheme() {
 document.addEventListener('keydown', e => {
     const tag = document.activeElement?.tagName;
     const inField = tag === 'INPUT' || tag === 'TEXTAREA';
-    if (e.key === 'Escape') { closeRestock(); closeDelete(); return; }
+    if (e.key === 'Escape') { closeRestock(); closeDelete(); closeAdjust(); closeHistory(); return; }
     if (inField) return;
     if (e.key === '/' || e.key === 'f') { e.preventDefault(); document.getElementById('searchInput').focus(); }
     if (e.key === 'n' || e.key === 'N') window.location.href = 'add_ingredient.php';
@@ -1043,7 +1282,148 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         applyFilters();
     }
+
+    // Start real-time polling
+    setInterval(pollIngredients, 8000);
 });
+
+/* ── REAL-TIME POLLING ── */
+function fmtMoney(n) { return '$' + parseFloat(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+async function pollIngredients() {
+    try {
+        const res  = await fetch('ingredients.php?action=poll', { cache:'no-store' });
+        const data = await res.json();
+        if (!data.ok) return;
+
+        const serverIds = new Set(data.ingredients.map(i => i.id));
+        const domRows   = document.querySelectorAll('#tableBody tr[data-id]');
+
+        // Update changed rows
+        data.ingredients.forEach(ing => {
+            const row = document.querySelector(`#tableBody tr[data-id="${ing.id}"]`);
+            if (!row) { location.reload(); return; }
+            const curStock = parseFloat(row.children[1].dataset.val);
+            const curMin   = parseFloat(row.children[2].dataset.val);
+            if (Math.abs(curStock - ing.stock) > 0.0001 || Math.abs(curMin - ing.min) > 0.0001) {
+                updateRow(ing.id, ing.stock, ing.min, ing.unit, ing.daily_avg);
+                flashRow(row);
+            }
+        });
+
+        // Fade out deleted rows
+        domRows.forEach(row => {
+            if (!serverIds.has(parseInt(row.dataset.id))) {
+                row.style.transition = 'opacity .4s, transform .4s';
+                row.style.opacity = '0'; row.style.transform = 'scale(.97)';
+                setTimeout(() => { row.remove(); refreshStatCards(); applyFilters(); }, 420);
+            }
+        });
+
+        refreshStatCards();
+    } catch {}
+}
+
+function flashRow(row) {
+    row.style.transition = 'background .1s';
+    row.style.background = 'rgba(209,144,75,.1)';
+    setTimeout(() => { row.style.transition = 'background .7s'; row.style.background = ''; }, 180);
+}
+
+/* ── HISTORY DRAWER ── */
+const TYPE_CFG = {
+    'order_deduct':  { label:'Order Used',      icon:'fa-cart-shopping',  cls:'remove'  },
+    'order_restore': { label:'Order Restored',  icon:'fa-rotate-left',    cls:'add'     },
+    'quick_restock': { label:'Stock Added',     icon:'fa-plus',           cls:'add'     },
+    'po_received':   { label:'PO Received',     icon:'fa-truck',          cls:'add'     },
+    'manual_adjust': { label:'Manual Adjust',   icon:'fa-sliders',        cls:'neutral' },
+};
+
+function timeAgo(dateStr) {
+    const d    = new Date(dateStr.replace(' ', 'T'));
+    const diff = Date.now() - d.getTime();
+    const mins = Math.floor(diff / 60000);
+    const hrs  = Math.floor(mins / 60);
+    const days = Math.floor(hrs / 24);
+    if (mins < 2)  return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (hrs  < 24) return `${hrs}h ago`;
+    if (days < 7)  return `${days}d ago`;
+    return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+}
+
+async function openHistory(id, name) {
+    document.getElementById('historySubtitle').textContent = name;
+    document.getElementById('historyBody').innerHTML = '<div class="h-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</div>';
+    document.getElementById('historyOverlay').classList.add('open');
+    document.addEventListener('keydown', _historyEsc);
+
+    try {
+        const res  = await fetch(`ingredients.php?action=history&id=${id}`, { cache:'no-store' });
+        const data = await res.json();
+        if (!data.ok || !data.history.length) {
+            document.getElementById('historyBody').innerHTML = '<div class="h-empty"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px"></i>No history yet</div>';
+            return;
+        }
+        document.getElementById('historyBody').innerHTML = data.history.map(e => {
+            const cfg  = TYPE_CFG[e.type] || { label:e.type, icon:'fa-circle', cls:'neutral' };
+            const amt  = e.amount;
+            // For manual_adjust, actual sign tells direction
+            const actualCls = e.type === 'manual_adjust'
+                ? (amt >= 0 ? 'pos' : 'neg')
+                : (cfg.cls === 'add' ? 'pos' : (cfg.cls === 'remove' ? 'neg' : 'neu'));
+            const sign = amt > 0 ? '+' : '';
+            const fmtAmt = n => { const s = parseFloat(n).toFixed(4); return s.replace(/\.?0+$/, ''); };
+            const ref  = e.reference ? `<div class="h-ref">${e.reference}</div>` : '';
+            const by   = e.by ? `by ${e.by} · ` : '';
+            return `<div class="h-entry">
+                <div class="h-icon ${cfg.cls}"><i class="fa-solid ${cfg.icon}"></i></div>
+                <div class="h-content">
+                    <div class="h-type">${cfg.label}</div>
+                    <div class="h-amt ${actualCls}">${sign}${fmtAmt(amt)}</div>
+                    ${ref}
+                    <div class="h-meta">${by}${timeAgo(e.at)}</div>
+                </div>
+            </div>`;
+        }).join('');
+    } catch {
+        document.getElementById('historyBody').innerHTML = '<div class="h-empty">Failed to load history.</div>';
+    }
+}
+
+function closeHistory() {
+    document.getElementById('historyOverlay').classList.remove('open');
+    document.removeEventListener('keydown', _historyEsc);
+}
+
+function _historyEsc(e) { if (e.key === 'Escape') closeHistory(); }
+
+function refreshStatCards() {
+    const allRows = [...document.querySelectorAll('#tableBody tr[data-status]')];
+    const ok    = allRows.filter(r => r.dataset.status === 'ok').length;
+    const low   = allRows.filter(r => r.dataset.status === 'low').length;
+    const out   = allRows.filter(r => r.dataset.status === 'out').length;
+    const total = allRows.length;
+    let totalVal = 0;
+    allRows.forEach(r => { totalVal += parseFloat(r.children[5]?.dataset?.val || 0); });
+
+    const nums = document.querySelectorAll('.stat-num');
+    if (nums[0]) nums[0].textContent = total;
+    if (nums[1]) nums[1].textContent = ok;
+    if (nums[2]) nums[2].textContent = low;
+    if (nums[3]) nums[3].textContent = out;
+    if (nums[4]) nums[4].textContent = fmtMoney(totalVal);
+
+    const pillOk  = document.querySelector('[data-filter="ok"] .pill-count');
+    const pillLow = document.querySelector('[data-filter="low"] .pill-count');
+    const pillOut = document.querySelector('[data-filter="out"] .pill-count');
+    if (pillOk)  pillOk.textContent  = ok;
+    if (pillLow) pillLow.textContent = low;
+    if (pillOut) pillOut.textContent = out;
+
+    const footLabel = document.getElementById('footLabel');
+    if (footLabel) footLabel.textContent = `${total} ingredients total`;
+}
 </script>
 <script src="animations.js"></script>
 </body>

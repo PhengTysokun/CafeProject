@@ -1,29 +1,26 @@
 <?php
 require 'admin_only.php';
 require 'config.php';
+header('Content-Type: application/json');
 
-// Check if ID is provided
-if (!isset($_GET['id']) || empty($_GET['id'])) {
-    header("Location: products.php");
-    exit;
+$id = (int)($_POST['product_id'] ?? 0);
+if ($id <= 0) { echo json_encode(['ok' => false, 'error' => 'Invalid ID']); exit; }
+
+$sel = $conn->prepare("SELECT image FROM products WHERE product_id = ?");
+$sel->bind_param("i", $id);
+$sel->execute();
+$row = $sel->get_result()->fetch_assoc();
+
+if (!$row) { echo json_encode(['ok' => false, 'error' => 'Product not found']); exit; }
+
+if (!empty($row['image'])) {
+    $path = $row['image'];
+    if (!str_starts_with($path, 'uploads/')) $path = 'uploads/' . $path;
+    if (file_exists($path)) unlink($path);
 }
 
-$id = mysqli_real_escape_string($conn, $_GET['id']);
+$del = $conn->prepare("DELETE FROM products WHERE product_id = ?");
+$del->bind_param("i", $id);
+$del->execute();
 
-// Get image path to delete the file
-$result = $conn->query("SELECT image FROM products WHERE product_id='$id'");
-if ($result->num_rows > 0) {
-    $product = $result->fetch_assoc();
-    // Delete image file if exists
-    if (!empty($product['image']) && file_exists($product['image'])) {
-        unlink($product['image']);
-    }
-}
-
-// Delete product from database
-$conn->query("DELETE FROM products WHERE product_id='$id'");
-
-// Redirect back to products page
-header("Location: products.php");
-exit;
-?>
+echo json_encode(['ok' => $del->affected_rows > 0]);

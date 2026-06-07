@@ -65,8 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $role = $user['role'] ?? '';
             if ($role === 'barista') {
                 header("Location: view_order.php");
-            } elseif ($role === 'inventory_clerk') {
-                header("Location: products.php");
             } else {
                 header("Location: dashboard.php");
             }

@@ -331,7 +331,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 
 /* product image */
 .card-img {
-    height:140px; overflow:hidden; position:relative; flex-shrink:0;
+    height:200px; overflow:hidden; position:relative; flex-shrink:0;
     background:var(--bg-card-hover);
 }
 .card-img img {

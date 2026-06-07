@@ -36,8 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $po_num = $conn->query("SELECT po_number FROM purchase_orders WHERE po_id=$po_id")->fetch_assoc()['po_number'];
 
-            $upd = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity + ? WHERE ingredient_id=?");
-            $log = $conn->prepare("INSERT INTO stock_refills (ingredient_id, purchase_qty, notes) VALUES (?,?,?)");
+            $upd  = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity + ? WHERE ingredient_id=?");
+            $log  = $conn->prepare("INSERT INTO stock_refills (ingredient_id, purchase_qty, notes) VALUES (?,?,?)");
+            $hist = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, reference, created_by) VALUES (?, 'po_received', ?, ?, ?)");
+            $by   = $_SESSION['username'] ?? null;
             while ($item = $items_res->fetch_assoc()) {
                 $iid = (int)$item['ingredient_id'];
                 $qty = (float)$item['qty_ordered'];
@@ -46,6 +48,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $note = "Received via $po_num";
                 $log->bind_param('ids', $iid, $qty, $note);
                 $log->execute();
+                $hist->bind_param('idss', $iid, $qty, $note, $by);
+                $hist->execute();
             }
             $conn->commit();
             header("Location: purchase_order_view.php?po_id=$po_id&msg=received");

@@ -5,6 +5,33 @@ if (!can('products')) { header("Location: dashboard.php?denied=1"); exit; }
 $_can_manage_products = in_array($_SESSION['role'] ?? '', ['admin', 'manager']);
 $_flash_welcome = !empty($_SESSION['flash_welcome']); unset($_SESSION['flash_welcome']);
 
+// Quick-view AJAX endpoint
+if (($_GET['action'] ?? '') === 'view') {
+    header('Content-Type: application/json');
+    $id = (int)($_GET['id'] ?? 0);
+    if ($id <= 0) { echo json_encode(['ok' => false]); exit; }
+    $s = $conn->prepare("SELECT * FROM products WHERE product_id = ?");
+    $s->bind_param('i', $id);
+    $s->execute();
+    $p = $s->get_result()->fetch_assoc();
+    if (!$p) { echo json_encode(['ok' => false]); exit; }
+    $img = $p['image'] ?? '';
+    if ($img && strpos($img, 'uploads/') !== false) $src = $img;
+    elseif ($img) $src = 'uploads/' . $img;
+    else $src = '';
+    echo json_encode(['ok' => true, 'product' => [
+        'id'           => (int)$p['product_id'],
+        'name'         => $p['name'],
+        'description'  => $p['description'] ?? '',
+        'price'        => (float)$p['price'],
+        'category'     => $p['category'] ?? '',
+        'image'        => $src,
+        'is_available' => (int)($p['is_available'] ?? 1),
+        'badge_text'   => $p['badge_text'] ?? '',
+    ]]);
+    exit;
+}
+
 $result = $conn->query("SELECT * FROM products ORDER BY product_id DESC");
 $products = [];
 while ($row = $result->fetch_assoc()) { $products[] = $row; }
@@ -934,6 +961,279 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
     .product-card .image-wrapper { height: 120px; }
     .stat-card { min-width: 110px; }
 }
+
+/* ========== QUICK-VIEW DRAWER ========== */
+.qv-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 400;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    backdrop-filter: blur(4px);
+}
+.qv-overlay.open { opacity: 1; pointer-events: all; }
+
+.qv-drawer {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: 430px;
+    max-width: 100vw;
+    background: var(--bg-card);
+    border-left: 1px solid var(--border-hover);
+    z-index: 401;
+    transform: translateX(100%);
+    transition: transform 0.38s cubic-bezier(0.4,0,0.2,1);
+    display: flex;
+    flex-direction: column;
+    box-shadow: -8px 0 40px rgba(0,0,0,0.5);
+    overflow: hidden;
+}
+.qv-drawer.open { transform: translateX(0); }
+
+.qv-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    z-index: 10;
+    background: rgba(0,0,0,0.55);
+    border: none;
+    color: #fff;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    transition: var(--transition);
+    backdrop-filter: blur(6px);
+}
+.qv-close:hover { background: rgba(255,107,107,0.85); transform: scale(1.05); }
+
+.qv-img-wrap {
+    position: relative;
+    width: 100%;
+    height: 270px;
+    overflow: hidden;
+    background: #151515;
+    flex-shrink: 0;
+}
+[data-theme="light"] .qv-img-wrap { background: #e8e0d5; }
+.qv-img-wrap img { width: 100%; height: 100%; object-fit: cover; }
+.qv-img-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, var(--bg-card) 0%, transparent 55%);
+    pointer-events: none;
+}
+
+.qv-sold-badge {
+    position: absolute;
+    top: 14px; left: 14px;
+    background: rgba(255,107,107,0.92);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 4px 11px;
+    border-radius: 50px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    display: none;
+    z-index: 2;
+    box-shadow: 0 2px 8px rgba(255,107,107,0.4);
+}
+.qv-star-badge {
+    position: absolute;
+    bottom: 22px; left: 14px;
+    width: 76px; height: 76px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 13px;
+    clip-path: polygon(50% 0%,59.6% 14.3%,75% 6.7%,76.2% 23.8%,93.3% 25%,85.7% 40.4%,100% 50%,85.7% 59.6%,93.3% 75%,76.2% 76.2%,75% 93.3%,59.6% 85.7%,50% 100%,40.4% 85.7%,25% 93.3%,23.8% 76.2%,6.7% 75%,14.3% 59.6%,0% 50%,14.3% 40.4%,6.7% 25%,23.8% 23.8%,25% 6.7%,40.4% 14.3%);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.3;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    background: linear-gradient(135deg,#a81e1e 0%,#e74c3c 50%,#a81e1e 100%);
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.45);
+    filter: drop-shadow(0 2px 6px rgba(231,76,60,0.7));
+    word-break: break-word;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.qv-body {
+    padding: 20px 24px 24px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* header row: category pill + status pill */
+.qv-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.qv-cat {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 11px;
+    border-radius: 50px;
+    background: rgba(209,144,75,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(209,144,75,0.22);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+.qv-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+    line-height: 1.3;
+}
+.qv-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+.qv-price {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+    line-height: 1;
+}
+.qv-price-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+.qv-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 50px;
+    flex-shrink: 0;
+}
+.qv-status.available   { background: rgba(85,224,135,0.12); color: var(--success); border: 1px solid rgba(85,224,135,0.25); }
+.qv-status.unavailable { background: rgba(255,107,107,0.12); color: var(--danger);  border: 1px solid rgba(255,107,107,0.25); }
+
+.qv-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+}
+.qv-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.9px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+.qv-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.78;
+    white-space: pre-wrap;
+}
+.qv-no-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.qv-details-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.qv-detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 13px;
+    background: var(--bg);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+}
+.qv-detail-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+.qv-detail-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.qv-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 20px;
+}
+.qv-btn {
+    flex: 1;
+    padding: 11px 16px;
+    border-radius: 10px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    border: none;
+    text-align: center;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+.qv-btn.edit      { background: var(--accent); color: #000; }
+.qv-btn.edit:hover { background: var(--accent-light); transform: translateY(-1px); }
+.qv-btn.close-btn { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.qv-btn.close-btn:hover { border-color: var(--border-hover); }
+
+.qv-shimmer {
+    background: linear-gradient(90deg, var(--border) 25%, var(--border-hover) 50%, var(--border) 75%);
+    background-size: 200% 100%;
+    animation: qvShimmer 1.2s infinite;
+    border-radius: 6px;
+    height: 16px;
+    margin-bottom: 10px;
+}
+@keyframes qvShimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.product-card .content h3.qv-trigger { cursor: pointer; }
+.product-card .content h3.qv-trigger:hover { text-decoration: underline; text-decoration-color: rgba(209,144,75,0.4); text-underline-offset: 3px; }
 </style>
 </head>
 
@@ -1047,8 +1347,8 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <div class="stat-icon"><i class="fa-solid fa-dollar-sign"></i></div>
             <div class="stat-body">
                 <div class="stat-label">Price Range</div>
-                <div class="stat-value" style="font-size:15px">$<?= number_format($minP,2) ?><span style="color:var(--text-muted);font-size:12px;font-weight:400"> – </span>$<?= number_format($maxP,2) ?></div>
-                <div class="stat-sub">across all products</div>
+                <div class="stat-value">$<?= number_format($minP,2) ?></div>
+                <div class="stat-sub">to $<?= number_format($maxP,2) ?></div>
             </div>
         </div>
         <?php endif; ?>
@@ -1171,7 +1471,9 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                         <span class="category-badge"><?= htmlspecialchars($row['category'] ?: 'Uncategorized') ?></span>
                         <span class="product-id">#<?= $row['product_id'] ?></span>
                     </div>
-                    <h3 title="<?= htmlspecialchars($row['name']) ?>"><?= htmlspecialchars($row['name']) ?></h3>
+                    <h3 class="qv-trigger"
+                        title="Click to preview"
+                        onclick="openQV(<?= (int)$row['product_id'] ?>)"><?= htmlspecialchars($row['name']) ?></h3>
                     <span class="price" data-pid="<?= $row['product_id'] ?>" title="Double-click to edit price">
                         $<?= number_format($row['price'], 2) ?>
                     </span>
@@ -1246,6 +1548,25 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <button class="modal-cancel" onclick="closeDeleteModal()">Cancel</button>
             <button class="modal-confirm" id="deleteConfirmBtn">Delete</button>
         </div>
+    </div>
+</div>
+
+<!-- ========== QUICK-VIEW DRAWER ========== -->
+<div class="qv-overlay" id="qvOverlay" onclick="closeQV()"></div>
+<div class="qv-drawer" id="qvDrawer">
+    <button class="qv-close" onclick="closeQV()"><i class="fa-solid fa-xmark"></i></button>
+    <div class="qv-img-wrap">
+        <img id="qvImg" src="" alt="">
+        <div id="qvSoldBadge" class="qv-sold-badge">Sold Out</div>
+        <div id="qvStarBadge" class="qv-star-badge"></div>
+    </div>
+    <div class="qv-body" id="qvBody">
+        <div class="qv-shimmer" style="width:55%;height:12px;margin-bottom:14px;"></div>
+        <div class="qv-shimmer" style="width:90%;height:22px;margin-bottom:8px;"></div>
+        <div class="qv-shimmer" style="width:38%;height:28px;margin-bottom:14px;"></div>
+        <div class="qv-shimmer" style="width:80%;"></div>
+        <div class="qv-shimmer" style="width:65%;"></div>
+        <div class="qv-shimmer" style="width:75%;"></div>
     </div>
 </div>
 
@@ -1697,9 +2018,37 @@ function closeDeleteModal() {
     document.getElementById('deleteModal').classList.remove('open');
     deleteTarget = null;
 }
-document.getElementById('deleteConfirmBtn').addEventListener('click', () => {
+document.getElementById('deleteConfirmBtn').addEventListener('click', async function () {
     if (!deleteTarget) return;
-    window.location.href = 'delete_product.php?id=' + deleteTarget;
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+        const res  = await fetch('delete_product.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'product_id=' + deleteTarget
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const card = document.querySelector(`.product-card[data-id="${deleteTarget}"]`);
+            if (card) {
+                card.style.transition = 'opacity .25s, transform .25s';
+                card.style.opacity = '0';
+                card.style.transform = 'scale(0.9)';
+                setTimeout(() => {
+                    allCards = allCards.filter(c => c !== card);
+                    card.remove();
+                    applyFilters();
+                }, 260);
+            }
+            closeDeleteModal();
+            showToast('Product deleted', 'error');
+        } else {
+            showToast(data.error || 'Delete failed', 'error');
+        }
+    } catch { showToast('Network error', 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Delete'; }
 });
 document.getElementById('deleteModal').addEventListener('click', function (e) {
     if (e.target === this) closeDeleteModal();
@@ -1707,9 +2056,115 @@ document.getElementById('deleteModal').addEventListener('click', function (e) {
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
         closeDeleteModal();
+        closeQV();
         if (selectMode) exitSelectMode();
     }
 });
+
+// ─────────────────────────────────────────────
+// QUICK-VIEW DRAWER
+// ─────────────────────────────────────────────
+function _qvEsc(e) { if (e.key === 'Escape') closeQV(); }
+
+function openQV(id) {
+    // reset image + badges
+    const img      = document.getElementById('qvImg');
+    const soldBadge = document.getElementById('qvSoldBadge');
+    const starBadge = document.getElementById('qvStarBadge');
+    img.src = '';
+    soldBadge.style.display = 'none';
+    starBadge.style.display = 'none';
+
+    // shimmer while loading
+    document.getElementById('qvBody').innerHTML =
+        '<div class="qv-shimmer" style="width:55%;height:12px;margin-bottom:14px;"></div>' +
+        '<div class="qv-shimmer" style="width:90%;height:22px;margin-bottom:8px;"></div>' +
+        '<div class="qv-shimmer" style="width:38%;height:28px;margin-bottom:14px;"></div>' +
+        '<div class="qv-shimmer" style="width:80%;"></div>' +
+        '<div class="qv-shimmer" style="width:65%;"></div>' +
+        '<div class="qv-shimmer" style="width:75%;"></div>';
+
+    document.getElementById('qvOverlay').classList.add('open');
+    document.getElementById('qvDrawer').classList.add('open');
+
+    fetch('products.php?action=view&id=' + id)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) { closeQV(); showToast('Could not load product', 'error'); return; }
+            const p = data.product;
+
+            img.src = p.image || 'uploads/no-image.png';
+            img.alt = p.name;
+            img.onerror = () => { img.src = 'uploads/no-image.png'; };
+
+            soldBadge.style.display = p.is_available ? 'none' : 'block';
+
+            if (p.badge_text) {
+                starBadge.textContent = p.badge_text;
+                starBadge.style.display = 'flex';
+            }
+
+            const editBtn = canManageProducts
+                ? `<a href="edit_product.php?id=${p.id}" class="qv-btn edit"><i class="fa-solid fa-pen-to-square"></i> Edit Product</a>`
+                : '';
+            const descBlock = p.description
+                ? `<div class="qv-section-label"><i class="fa-solid fa-align-left"></i> About</div>
+                   <p class="qv-desc">${_qvEscHtml(p.description)}</p>`
+                : `<div class="qv-section-label"><i class="fa-solid fa-align-left"></i> About</div>
+                   <p class="qv-no-desc">No description provided.</p>`;
+            const badgeRow = p.badge_text
+                ? `<div class="qv-detail-item">
+                       <span class="qv-detail-label"><i class="fa-solid fa-tag"></i> Badge Label</span>
+                       <span class="qv-detail-value">${_qvEscHtml(p.badge_text)}</span>
+                   </div>`
+                : '';
+
+            document.getElementById('qvBody').innerHTML =
+                `<div class="qv-header-row">
+                     <span class="qv-cat">${_qvEscHtml(p.category || 'Uncategorized')}</span>
+                     <div class="qv-status ${p.is_available ? 'available' : 'unavailable'}">
+                         <i class="fa-solid ${p.is_available ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
+                         ${p.is_available ? 'Available' : 'Sold Out'}
+                     </div>
+                 </div>
+                 <h2 class="qv-name">${_qvEscHtml(p.name)}</h2>
+                 <div class="qv-price-row">
+                     <span class="qv-price">$${parseFloat(p.price).toFixed(2)}</span>
+                     <span class="qv-price-sub">per serving</span>
+                 </div>
+                 <hr class="qv-divider">
+                 ${descBlock}
+                 <hr class="qv-divider">
+                 <div class="qv-section-label"><i class="fa-solid fa-circle-info"></i> Details</div>
+                 <div class="qv-details-grid">
+                     <div class="qv-detail-item">
+                         <span class="qv-detail-label"><i class="fa-solid fa-hashtag"></i> Product ID</span>
+                         <span class="qv-detail-value">#${p.id}</span>
+                     </div>
+                     ${badgeRow}
+                 </div>
+                 <div class="qv-actions">
+                     ${editBtn}
+                     <button class="qv-btn close-btn" onclick="closeQV()">
+                         <i class="fa-solid fa-xmark"></i> Close
+                     </button>
+                 </div>`;
+        })
+        .catch(() => { closeQV(); showToast('Request failed', 'error'); });
+}
+
+function closeQV() {
+    document.getElementById('qvOverlay').classList.remove('open');
+    document.getElementById('qvDrawer').classList.remove('open');
+}
+
+function _qvEscHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
 
 // ─────────────────────────────────────────────
 // TOAST

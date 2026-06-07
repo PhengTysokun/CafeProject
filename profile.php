@@ -12,6 +12,13 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
+// Resolve display name for role (e.g. 'staff' → 'Cashier')
+$rn = $conn->prepare("SELECT name FROM roles WHERE slug = ?");
+$rn->bind_param("s", $role);
+$rn->execute();
+$rn_row = $rn->get_result()->fetch_assoc();
+$role_display = $rn_row['name'] ?? ucfirst(str_replace('_', ' ', $role));
+
 $toast      = '';
 $toast_type = '';
 $active_tab = $_POST['active_tab'] ?? 'password';
@@ -87,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $must_change = (bool)($user['must_change_password'] ?? 0);
 $has_sq      = !empty($user['security_question']);
-$home_url    = in_array($role, ['admin', 'manager']) ? 'dashboard.php' : 'view_order.php';
+$home_url = ($role === 'barista') ? 'view_order.php' : 'dashboard.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -357,7 +364,7 @@ body {
             <div class="user-avatar"><?= strtoupper(substr($username, 0, 1)) ?></div>
             <div>
                 <div class="user-name"><?= htmlspecialchars($username) ?></div>
-                <div class="user-role"><?= htmlspecialchars($role) ?></div>
+                <div class="user-role"><?= htmlspecialchars($role_display) ?></div>
             </div>
         </div>
     </div>
@@ -397,7 +404,7 @@ body {
                     ?>
                     <span class="badge <?= $isPrivRole ? 'badge-admin' : 'badge-staff' ?>">
                         <i class="fa-solid fa-<?= $roleIcon ?>"></i>
-                        <?= ucfirst($role) ?>
+                        <?= htmlspecialchars($role_display) ?>
                     </span>
                     <span class="badge <?= $has_sq ? 'badge-ok' : 'badge-missing' ?>">
                         <i class="fa-solid fa-<?= $has_sq ? 'shield-check' : 'shield-exclamation' ?>"></i>
@@ -413,7 +420,7 @@ body {
                 <span class="pstat-lbl">Username</span>
             </div>
             <div class="pstat">
-                <span class="pstat-val"><?= ucfirst($role) ?></span>
+                <span class="pstat-val"><?= htmlspecialchars($role_display) ?></span>
                 <span class="pstat-lbl">Role</span>
             </div>
             <div class="pstat">

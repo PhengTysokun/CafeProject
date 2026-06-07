@@ -114,7 +114,7 @@ if ($existing_order_id > 0) {
 
             // ── STOCK: deduct at order creation time ──
             if ($product_id > 0) {
-                _deduct_stock($conn, $product_id, $qty, $milk);
+                _deduct_stock($conn, $product_id, $qty, $milk, $existing_order_id);
             }
         }
 
@@ -324,7 +324,7 @@ try {
         $stmt_item->execute();
 
         if ($product_id > 0) {
-            _deduct_stock($conn, $product_id, $qty, $milk);
+            _deduct_stock($conn, $product_id, $qty, $milk, $order_id);
         }
     }
 
@@ -454,7 +454,7 @@ try {
 }
 
 // ── HELPER: deduct ingredients, respecting milk substitution ──
-function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_choice): void {
+function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_choice, int $order_id = 0): void {
     $stmt = $conn->prepare("
         SELECT pi.ingredient_id, pi.amount_used, i.ingredient_name
         FROM product_ingredients pi
@@ -464,6 +464,8 @@ function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_cho
     $stmt->bind_param("i", $product_id);
     $stmt->execute();
     $rows = $stmt->get_result();
+
+    $created_by = $_SESSION['username'] ?? null;
 
     while ($row = $rows->fetch_assoc()) {
         $ing_id   = (int)$row['ingredient_id'];
@@ -484,7 +486,12 @@ function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_cho
         $stmt_upd = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity - ? WHERE ingredient_id = ? AND stock_quantity >= ?");
         $stmt_upd->bind_param("dii", $amount, $ing_id, $amount);
         $stmt_upd->execute();
-        // Note: if affected rows = 0, stock hit zero — consider alerting staff
+
+        $oid = $order_id > 0 ? $order_id : null;
+        $ref = $oid ? "Order #$order_id" : null;
+        $sh  = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, order_id, reference, created_by) VALUES (?, 'order_deduct', ?, ?, ?, ?)");
+        $sh->bind_param("idiss", $ing_id, $amount, $oid, $ref, $created_by);
+        $sh->execute();
     }
 }
 ?>

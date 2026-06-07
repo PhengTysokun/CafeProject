@@ -100,6 +100,9 @@ function _restore_stock(mysqli $conn, int $order_id): void {
     $stmt_items->execute();
     $items = $stmt_items->get_result();
 
+    $created_by = $_SESSION['username'] ?? null;
+    $ref        = "Order #$order_id";
+
     while ($item = $items->fetch_assoc()) {
         $product_id = (int)$item['product_id'];
         $qty        = (int)$item['quantity'];
@@ -131,6 +134,10 @@ function _restore_stock(mysqli $conn, int $order_id): void {
             $stmt_restore = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity + ? WHERE ingredient_id = ?");
             $stmt_restore->bind_param("di", $amount, $ing_id);
             $stmt_restore->execute();
+
+            $sh = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, order_id, reference, created_by) VALUES (?, 'order_restore', ?, ?, ?, ?)");
+            $sh->bind_param("idiss", $ing_id, $amount, $order_id, $ref, $created_by);
+            $sh->execute();
         }
     }
 }

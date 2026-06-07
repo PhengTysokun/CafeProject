@@ -56,6 +56,20 @@ $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT P
 $conn->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_text VARCHAR(40) NULL DEFAULT NULL");
 $conn->query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_number VARCHAR(10) NULL DEFAULT NULL");
 
+$conn->query("CREATE TABLE IF NOT EXISTS ingredient_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ingredient_id INT NOT NULL,
+    change_type ENUM('order_deduct','order_restore','quick_restock','po_received','manual_adjust') NOT NULL,
+    amount DECIMAL(10,4) NOT NULL,
+    order_id INT NULL,
+    reference VARCHAR(255) NULL,
+    created_by VARCHAR(100) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_ing (ingredient_id),
+    INDEX idx_created (created_at)
+) DEFAULT CHARSET=utf8mb4");
+$conn->query("ALTER TABLE ingredient_history MODIFY COLUMN change_type ENUM('order_deduct','order_restore','quick_restock','po_received','manual_adjust') NOT NULL");
+
 // ── New tables: categories, customers, cafe_tables ──
 $conn->query("CREATE TABLE IF NOT EXISTS categories (
     category_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -129,13 +143,14 @@ if ((int)$conn->query("SELECT COUNT(*) FROM roles")->fetch_row()[0] === 0) {
         ('staff',            'Cashier',          'fa-user',         '#55e087', 'Limited access — configure below',         1),
         ('barista',          'Barista',          'fa-mug-hot',      '#d1904b', 'Kitchen display + recipe reference',        0),
         ('supervisor',       'Supervisor',       'fa-user-check',   '#f39c12', 'Shift runner — operational oversight',      0),
-        ('inventory_clerk',  'Inventory Clerk',  'fa-box-open',     '#1abc9c', 'Stock and procurement management',          0)");
+        ('inventory_clerk',  'Inventory',        'fa-box-open',     '#1abc9c', 'Stock and procurement management',          0)");
 }
 // Ensure custom roles exist on existing installs (INSERT IGNORE is safe — no-op if already present)
 $conn->query("INSERT IGNORE INTO roles (slug, name, icon, color, description, is_system) VALUES
-    ('barista',         'Barista',          'fa-mug-hot',     '#d1904b', 'Kitchen display + recipe reference',   0),
-    ('supervisor',      'Supervisor',       'fa-user-check',  '#f39c12', 'Shift runner — operational oversight', 0),
-    ('inventory_clerk', 'Inventory Clerk',  'fa-box-open',    '#1abc9c', 'Stock and procurement management',     0)");
+    ('barista',         'Barista',     'fa-mug-hot',     '#d1904b', 'Kitchen display + recipe reference',   0),
+    ('supervisor',      'Supervisor',  'fa-user-check',  '#f39c12', 'Shift runner — operational oversight', 0),
+    ('inventory_clerk', 'Inventory',   'fa-box-open',    '#1abc9c', 'Stock and procurement management',     0)");
+$conn->query("UPDATE roles SET name='Inventory' WHERE slug='inventory_clerk' AND name='Inventory Clerk'");
 
 // ── RBAC: seed permissions + defaults (runs once) ──
 if ((int)$conn->query("SELECT COUNT(*) FROM permissions")->fetch_row()[0] === 0) {
