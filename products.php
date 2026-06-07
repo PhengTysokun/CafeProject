@@ -46,9 +46,7 @@ foreach ($products as $p) {
 }
 arsort($catCounts);
 $top   = array_key_first($catCounts) ?? '';
-$prices = array_column($products, 'price');
-$minP  = $prices ? (float)min($prices) : 0;
-$maxP  = $prices ? (float)max($prices) : 0;
+
 $availPct = $totalProducts > 0 ? round($availCount / $totalProducts * 100) : 0;
 ?>
 <!DOCTYPE html>
@@ -316,11 +314,14 @@ body {
 /* ========== STATS BAR ========== */
 .stats-bar {
     display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
     gap: 12px;
     margin-bottom: 20px;
-    flex-wrap: wrap;
-    align-items: stretch;
+    overflow-x: auto;
+    scrollbar-width: none;
 }
+.stats-bar::-webkit-scrollbar { display: none; }
 
 .stat-card {
     display: flex;
@@ -332,7 +333,7 @@ body {
     border-radius: 14px;
     font-size: 13px;
     transition: var(--transition);
-    flex: 1;
+    flex: 1 1 0;
     min-width: 140px;
 }
 .stat-card:hover { border-color: var(--border-hover); }
@@ -350,7 +351,6 @@ body {
 .stat-card.total .stat-icon    { background: rgba(209,144,75,0.12); color: var(--accent); }
 .stat-card.avail .stat-icon    { background: rgba(85,224,135,0.12); color: var(--success); }
 .stat-card.unavail .stat-icon  { background: rgba(255,107,107,0.12); color: var(--danger); }
-.stat-card.price .stat-icon    { background: rgba(91,192,222,0.12); color: var(--info); }
 .stat-card.top-cat .stat-icon  { background: rgba(209,144,75,0.12); color: var(--accent); }
 
 .stat-card .stat-body { flex: 1; min-width: 0; }
@@ -943,6 +943,7 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
     .hide-sm { display: inline; }
 }
 @media (max-width: 768px) {
+
     .navbar { padding: 10px 14px; }
     .navbar-title { display: none; }
     .search-box { min-width: 0; flex: 1; }
@@ -950,16 +951,15 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
     .container { padding: 16px 12px 100px; }
     .product-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
     .product-card .image-wrapper { height: 150px; }
-    .stat-card.price { display: none; }
 }
 @media (max-width: 480px) {
+    .stats-bar { grid-template-columns: repeat(3, 1fr); }
     .product-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
     .product-card .content { padding: 9px 10px 11px; }
     .product-card .content h3 { font-size: 13px; }
     .price { font-size: 16px; }
     .product-card .content .actions { display: none; }
     .product-card .image-wrapper { height: 120px; }
-    .stat-card { min-width: 110px; }
 }
 
 /* ========== QUICK-VIEW DRAWER ========== */
@@ -1342,16 +1342,6 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             </div>
         </div>
 
-        <?php if ($prices): ?>
-        <div class="stat-card price">
-            <div class="stat-icon"><i class="fa-solid fa-dollar-sign"></i></div>
-            <div class="stat-body">
-                <div class="stat-label">Price Range</div>
-                <div class="stat-value">$<?= number_format($minP,2) ?></div>
-                <div class="stat-sub">to $<?= number_format($maxP,2) ?></div>
-            </div>
-        </div>
-        <?php endif; ?>
 
         <?php if ($top): ?>
         <div class="stat-card top-cat">
