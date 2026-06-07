@@ -1,4 +1,5 @@
 <?php
+require 'auth.php';
 require 'config.php';
 require 'dompdf/dompdf/autoload.inc.php';
 
@@ -6,6 +7,16 @@ use Dompdf\Dompdf;
 use Dompdf\Options;
 
 $type = $_GET['type'] ?? 'daily';
+
+// Gate by report type: daily = managers only, stock = anyone who can see ingredients
+if ($type === 'daily' && !can('report')) {
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    exit;
+}
+if ($type === 'stock' && !can('ingredients')) {
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    exit;
+}
 
 date_default_timezone_set('Asia/Phnom_Penh');
 $today = date('d M Y');

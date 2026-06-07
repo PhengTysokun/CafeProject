@@ -1,6 +1,7 @@
 <?php
-require 'admin_only.php';
+require 'auth.php';
 require 'config.php';
+if (!can('ingredients')) { header('Location: dashboard.php?denied=1'); exit; }
 require 'dompdf/dompdf/autoload.inc.php';
 
 use Dompdf\Dompdf;

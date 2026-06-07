@@ -49,6 +49,8 @@ if (!defined('FREE_ITEM_PRODUCT_ID')) define('FREE_ITEM_PRODUCT_ID', (int)($_caf
 unset($_cafe_settings, $_sr, $_today, $_hh_sd, $_hh_ed, $_hh_in_range, $_bx_sd, $_bx_ed, $_bx_in_range);
 
 // ── One-time schema migrations ──
+$conn->query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS prepared_by VARCHAR(100) NULL DEFAULT NULL");
+$conn->query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS prepared_by_role VARCHAR(50) NULL DEFAULT NULL");
 $conn->query("ALTER TABLE employees ADD COLUMN IF NOT EXISTS user_id INT NULL");
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
 $conn->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_text VARCHAR(40) NULL DEFAULT NULL");
@@ -122,10 +124,18 @@ $conn->query("CREATE TABLE IF NOT EXISTS roles (
 
 if ((int)$conn->query("SELECT COUNT(*) FROM roles")->fetch_row()[0] === 0) {
     $conn->query("INSERT INTO roles (slug, name, icon, color, description, is_system) VALUES
-        ('admin',   'Admin',   'fa-user-shield',  '#d1904b', 'Full system access — cannot be restricted', 1),
-        ('manager', 'Manager', 'fa-user-tie',     '#3498db', 'Operational access — configure below',     1),
-        ('staff',   'Staff',   'fa-user',         '#55e087', 'Limited access — configure below',         1)");
+        ('admin',            'Admin',            'fa-user-shield',  '#d1904b', 'Full system access — cannot be restricted', 1),
+        ('manager',          'Manager',          'fa-user-tie',     '#3498db', 'Operational access — configure below',     1),
+        ('staff',            'Cashier',          'fa-user',         '#55e087', 'Limited access — configure below',         1),
+        ('barista',          'Barista',          'fa-mug-hot',      '#d1904b', 'Kitchen display + recipe reference',        0),
+        ('supervisor',       'Supervisor',       'fa-user-check',   '#f39c12', 'Shift runner — operational oversight',      0),
+        ('inventory_clerk',  'Inventory Clerk',  'fa-box-open',     '#1abc9c', 'Stock and procurement management',          0)");
 }
+// Ensure custom roles exist on existing installs (INSERT IGNORE is safe — no-op if already present)
+$conn->query("INSERT IGNORE INTO roles (slug, name, icon, color, description, is_system) VALUES
+    ('barista',         'Barista',          'fa-mug-hot',     '#d1904b', 'Kitchen display + recipe reference',   0),
+    ('supervisor',      'Supervisor',       'fa-user-check',  '#f39c12', 'Shift runner — operational oversight', 0),
+    ('inventory_clerk', 'Inventory Clerk',  'fa-box-open',    '#1abc9c', 'Stock and procurement management',     0)");
 
 // ── RBAC: seed permissions + defaults (runs once) ──
 if ((int)$conn->query("SELECT COUNT(*) FROM permissions")->fetch_row()[0] === 0) {
@@ -146,17 +156,18 @@ if ((int)$conn->query("SELECT COUNT(*) FROM permissions")->fetch_row()[0] === 0)
         ['Attendance',         'attendance',      'Staff',       13],
         ['Promotions',         'promotions',      'Staff',       14],
         ['Manage Roles',       'manage_roles',    'Admin',       15],
+        ['Reset Password',     'reset_password',  'Staff',       18],
     ];
     $ps = $conn->prepare("INSERT IGNORE INTO permissions (name,slug,module,sort_order) VALUES (?,?,?,?)");
     foreach ($perms as $p) { $ps->bind_param("sssi",$p[0],$p[1],$p[2],$p[3]); $ps->execute(); }
 
     // Default manager permissions
     foreach (['dashboard','find_orders','view_orders','loyalty','products','ingredients',
-              'recipes','manage_recipes','suppliers','purchase_orders','report','announcements','attendance','promotions'] as $slug)
+              'recipes','manage_recipes','suppliers','purchase_orders','report','announcements','attendance','promotions','reset_password'] as $slug)
         $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'manager',id FROM permissions WHERE slug='$slug'");
 
     // Default staff permissions
-    foreach (['dashboard','find_orders','view_orders','loyalty','announcements','attendance'] as $slug)
+    foreach (['dashboard','find_orders','loyalty','tables'] as $slug)
         $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'staff',id FROM permissions WHERE slug='$slug'");
 }
 
@@ -169,6 +180,26 @@ $conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT '
 $conn->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Manage Recipes', 'manage_recipes', 'Inventory', 17)");
 // Managers previously could edit recipes via 'recipes' — preserve that on upgrade (other roles, e.g. barista, keep view-only access)
 $conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='manage_recipes'");
+
+// 'promotions' is in the manager-defaults list but this install's one-time seed ran before that slug was added — grant it now to match
+$conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='promotions'");
+
+// barista: kitchen view + recipe reference only (no dashboard — view_order.php is their entire workspace)
+$conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'barista', id FROM permissions WHERE slug IN ('view_orders','recipes')");
+
+// supervisor = shift runner: orders, loyalty, stock visibility, recipes, suppliers — not reports, promotions, or purchase decisions
+$conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'supervisor', id FROM permissions WHERE slug IN (
+    'dashboard','find_orders','view_orders','tables','loyalty',
+    'ingredients','recipes','manage_recipes','suppliers',
+    'announcements','attendance'
+)");
+
+// inventory_clerk: stock and procurement only — view-only recipes (no editing), no orders or reports
+$conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'inventory_clerk', id FROM permissions WHERE slug IN ('products','ingredients','recipes','suppliers','purchase_orders')");
+
+// reset_password was hardcoded to admin+manager — convert to a proper permission so it appears in the editor
+$conn->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Reset Password', 'reset_password', 'Staff', 18)");
+$conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='reset_password'");
 
 // ── SANITIZE FUNCTION ──
 if (!function_exists('sanitizeForReceipt')) {

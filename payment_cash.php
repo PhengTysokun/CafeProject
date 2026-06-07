@@ -1,6 +1,6 @@
 <?php
-session_start();
-require 'config.php';
+require 'auth.php';
+require_once 'config.php';
 
 $_SESSION['cart'] = [];
 

@@ -2,6 +2,8 @@
 require 'auth.php';
 require 'config.php';
 if (!can('products')) { header("Location: dashboard.php?denied=1"); exit; }
+$_can_manage_products = in_array($_SESSION['role'] ?? '', ['admin', 'manager']);
+$_flash_welcome = !empty($_SESSION['flash_welcome']); unset($_SESSION['flash_welcome']);
 
 $result = $conn->query("SELECT * FROM products ORDER BY product_id DESC");
 $products = [];
@@ -981,6 +983,7 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <span class="hide-sm">Export</span>
         </button>
 
+        <?php if ($_can_manage_products): ?>
         <!-- Select Mode -->
         <button class="btn-icon" id="selectModeBtn" title="Select products" onclick="toggleSelectMode()">
             <i class="fa-solid fa-check-square"></i>
@@ -992,6 +995,7 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <i class="fa-solid fa-plus"></i>
             <span class="hide-sm">Add Product</span>
         </a>
+        <?php endif; ?>
 
         <!-- Theme -->
         <button class="theme-toggle" onclick="toggleTheme()">
@@ -1145,6 +1149,7 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                     <?php if (!empty($row['badge_text'])): ?>
                     <span class="product-badge"><?= htmlspecialchars($row['badge_text']) ?></span>
                     <?php endif; ?>
+                    <?php if ($_can_manage_products): ?>
                     <div class="overlay">
                         <a href="edit_product.php?id=<?= $row['product_id'] ?>" class="overlay-btn edit-btn">
                             <i class="fa-solid fa-pen-to-square"></i> Edit
@@ -1158,6 +1163,7 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
                     </div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="content">
@@ -1170,6 +1176,7 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                         $<?= number_format($row['price'], 2) ?>
                     </span>
 
+                    <?php if ($_can_manage_products): ?>
                     <div class="actions">
                         <a href="edit_product.php?id=<?= $row['product_id'] ?>" class="btn-action edit">
                             <i class="fa-solid fa-pen-to-square"></i> Edit
@@ -1189,6 +1196,7 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
                     </div>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -1197,9 +1205,11 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                 <i class="fa-regular fa-mug-hot empty-icon"></i>
                 <h3>No Products Yet</h3>
                 <p>Add your first product to get the menu started.</p>
+                <?php if ($_can_manage_products): ?>
                 <a href="add_product.php" class="btn-add" style="display:inline-flex;margin:0 auto;">
                     <i class="fa-solid fa-plus"></i> Add Product
                 </a>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
 
@@ -1565,11 +1575,12 @@ function duplicateProduct(id, name) {
 }
 
 // ─────────────────────────────────────────────
-// INLINE PRICE EDIT (double-click)
+// INLINE PRICE EDIT (double-click) — admin/manager only
 // ─────────────────────────────────────────────
+const canManageProducts = <?= json_encode($_can_manage_products) ?>;
 document.querySelectorAll('.price').forEach(span => {
     span.addEventListener('dblclick', function (e) {
-        if (selectMode) return;
+        if (selectMode || !canManageProducts) return;
         e.stopPropagation();
         const card = this.closest('.product-card');
         const id   = card.dataset.id;
@@ -1772,5 +1783,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 </script>
+<?php if ($_flash_welcome): ?>
+<script>document.addEventListener('DOMContentLoaded',()=>showToast('Welcome back, <?= htmlspecialchars($_SESSION['username'] ?? 'User', ENT_QUOTES) ?>!','success'));</script>
+<?php endif; ?>
 </body>
 </html>

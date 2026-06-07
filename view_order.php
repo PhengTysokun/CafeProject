@@ -13,6 +13,20 @@ if ((int)$now->format("H") < 6) {
 
 $action = $_GET['action'] ?? "";
 
+$_flash_welcome = !empty($_SESSION['flash_welcome']); unset($_SESSION['flash_welcome']);
+unset($_SESSION['flash_stock_alert']); // not applicable on this page
+
+// Greeting + role display
+$_hour = (int)(new DateTime())->format('H');
+$_greeting = $_hour < 12 ? 'Good morning' : ($_hour < 18 ? 'Good afternoon' : 'Good evening');
+$_vo_username = htmlspecialchars($_SESSION['username'] ?? 'User', ENT_QUOTES, 'UTF-8');
+$_role_labels = ['admin'=>'Admin','manager'=>'Manager','staff'=>'Cashier','barista'=>'Barista','supervisor'=>'Supervisor','inventory_clerk'=>'Inventory Clerk'];
+$_role_colors = ['admin'=>'#e74c3c','manager'=>'#3498db','staff'=>'#55e087','barista'=>'#d1904b','supervisor'=>'#f39c12','inventory_clerk'=>'#1abc9c'];
+$_vo_role     = $_SESSION['role'] ?? 'staff';
+$_role_label  = $_role_labels[$_vo_role] ?? ucfirst($_vo_role);
+$_role_color  = $_role_colors[$_vo_role] ?? '#888';
+$_date_str    = date('l, d F Y');
+
 // Clock-in status
 $_is_clocked_in = false;
 $_clock_since   = null;
@@ -240,62 +254,94 @@ if ($action === ""):
         font-size: 16px;
     }
 
-    /* ── Header ── */
-    .header {
-        text-align: center;
-        margin-bottom: 40px;
-        padding-top: 20px;
-        position: relative;
-        z-index: 1;
+    /* ── Page Header ── */
+    .vo-page-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        max-width: 1100px;
+        margin: 0 auto 32px;
+        padding: 20px 28px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 18px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 4px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
     }
-
-    .header h1 {
-        color: var(--accent);
-        font-size: 32px;
+    .vo-page-header-left h2 {
+        font-size: 17px;
         font-weight: 700;
-        margin-bottom: 4px;
+        color: var(--text);
+        margin: 0 0 4px;
+        letter-spacing: .2px;
+    }
+    .vo-page-header-left h2 span { color: var(--accent); }
+    .vo-page-header-left small {
+        font-size: 11px;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .vo-page-header-center {
+        text-align: center;
+    }
+    .vo-page-header-center h1 {
+        font-size: 22px;
+        font-weight: 800;
+        color: var(--accent);
+        margin: 0 0 6px;
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 12px;
-        text-shadow: 0 0 30px rgba(209, 144, 75, 0.15);
+        gap: 9px;
+        text-shadow: 0 0 24px rgba(209,144,75,.2);
+        letter-spacing: .3px;
     }
-
-    .header h1 i {
-        font-size: 28px;
-    }
-
-    .header p {
-        color: var(--text-muted);
-        font-size: 14px;
-        font-weight: 400;
-    }
-
-    .header .live-indicator {
+    .vo-live-badge {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        margin-top: 8px;
-        padding: 6px 16px;
-        background: rgba(85, 224, 135, 0.1);
+        gap: 6px;
+        padding: 3px 12px;
+        background: rgba(85,224,135,0.1);
+        border: 1px solid rgba(85,224,135,0.2);
         border-radius: 50px;
-        font-size: 12px;
+        font-size: 11px;
         color: var(--success);
-        border: 1px solid rgba(85, 224, 135, 0.2);
+        font-weight: 500;
     }
-
-    .header .live-indicator .dot {
-        width: 8px;
-        height: 8px;
+    .vo-live-badge .dot {
+        width: 7px; height: 7px;
         background: var(--success);
         border-radius: 50%;
         animation: pulse-dot 1.5s infinite;
+    }
+    .vo-role-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 16px;
+        border-radius: 50px;
+        font-size: 12px;
+        font-weight: 600;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        white-space: nowrap;
+        letter-spacing: .4px;
+    }
+    .vo-role-badge .dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        animation: pulse-dot 2s infinite;
     }
 
     @keyframes pulse-dot {
         0%, 100% { opacity: 1; transform: scale(1); }
         50% { opacity: 0.5; transform: scale(0.8); }
     }
+
+    /* keep .header class for old mobile overrides that reference it */
+    .header { display: none; }
 
     /* ── STATUS TABS ── */
     .status-tabs {
@@ -1118,18 +1164,43 @@ if ($action === ""):
     <div class="steam"></div>
 </div>
 
-<!-- Back Buttons -->
-<div style="position:fixed;top:24px;left:24px;display:flex;gap:10px;z-index:100;">
-    <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
-    <a href="menu.php" class="back" style="position:static;">
-        <i class="fa-solid fa-mug-hot"></i> Menu
-    </a>
-    <?php endif; ?>
-    <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'barista'])): ?>
-    <a href="dashboard.php" class="back" style="position:static;">
-        <i class="fa-solid fa-gauge"></i> Dashboard
-    </a>
-    <?php endif; ?>
+<!-- Top-left: Nav + Identity -->
+<div style="position:fixed;top:24px;left:24px;display:flex;flex-direction:column;gap:18px;z-index:100;">
+    <div style="display:flex;gap:10px;">
+        <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
+        <a href="menu.php" class="back" style="position:static;">
+            <i class="fa-solid fa-mug-hot"></i> Menu
+        </a>
+        <?php endif; ?>
+        <?php if (($_SESSION['role'] ?? '') === 'barista'): ?>
+        <a href="recipes_view.php" class="back" style="position:static;">
+            <i class="fa-solid fa-book-open"></i> Drink Recipe
+        </a>
+        <?php else: ?>
+        <a href="dashboard.php" class="back" style="position:static;">
+            <i class="fa-solid fa-gauge"></i> Dashboard
+        </a>
+        <?php endif; ?>
+    </div>
+    <div style="padding-left:4px;">
+        <div style="font-size:16px;font-weight:700;color:#f5f5f5;line-height:1.3;margin-bottom:3px;">
+            <?= $_greeting ?>, <span style="color:var(--accent);"><?= $_vo_username ?></span>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px;margin-bottom:7px;">
+            <i class="fa-regular fa-calendar" style="font-size:11px;"></i> <?= $_date_str ?>
+        </div>
+        <div style="display:inline-flex;align-items:center;gap:6px;
+                    padding:4px 12px;border-radius:50px;font-size:12px;font-weight:600;
+                    color:<?= $_role_color ?>;
+                    background:<?= $_role_color ?>18;
+                    border:1px solid <?= $_role_color ?>40;
+                    letter-spacing:.3px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:<?= $_role_color ?>;
+                         box-shadow:0 0 5px <?= $_role_color ?>;
+                         animation:pulse-dot 2s infinite;display:inline-block;"></span>
+            <?= $_role_label ?>
+        </div>
+    </div>
 </div>
 
 <!-- Top-right: Clock + Profile + Logout -->
@@ -1160,15 +1231,14 @@ if ($action === ""):
 </div>
 
 <!-- Header -->
-<div class="header">
-    <h1>
-        <i class="fa-solid fa-receipt"></i>
-        Orders
+<div style="text-align:center;padding-top:28px;margin-bottom:32px;">
+    <h1 style="color:var(--accent);font-size:28px;font-weight:800;display:inline-flex;align-items:center;
+               gap:10px;margin:0 0 8px;text-shadow:0 0 24px rgba(209,144,75,.2);">
+        <i class="fa-solid fa-receipt"></i> Orders
     </h1>
-    <p>Manage and track all incoming orders in real-time</p>
-    <div class="live-indicator">
-        <span class="dot"></span>
-        Live
+    <br>
+    <div class="vo-live-badge" style="display:inline-flex;">
+        <span class="dot"></span> Live
     </div>
 </div>
 
@@ -1304,9 +1374,6 @@ function showClockToast(msg, isErr) {
         ⏳ Pending <span class="badge" id="count-PendingPayment">0</span>
     </button>
     <?php endif; ?>
-    <button class="status-tab" data-status="Paid" onclick="filterStatus('Paid')">
-        💳 Paid <span class="badge" id="count-Paid">0</span>
-    </button>
     <button class="status-tab" data-status="Preparing" onclick="filterStatus('Preparing')">
         👨‍🍳 Preparing <span class="badge" id="count-Preparing">0</span>
     </button>
@@ -1337,12 +1404,6 @@ function showClockToast(msg, isErr) {
     </button>
 </div>
 
-<!-- Toggle Completed Button -->
-<div class="toggle-container">
-    <button class="toggle-btn" id="toggleCompletedBtn" onclick="toggleCompleted()">
-        <i class="fa-solid fa-eye"></i> Show Completed/Refunded
-    </button>
-</div>
 
 <!-- Orders Grid -->
 <div class="container">
@@ -1428,7 +1489,7 @@ function showClockToast(msg, isErr) {
 const tbody = document.getElementById("ordersBody");
 const known = new Set();
 let currentFilter = 'all';
-let showCompleted = false;
+let showCompleted = true;
 let searchQuery = '';
 let currentCancelId = 0;
 let currentRefundId = 0;
@@ -1451,6 +1512,11 @@ function escapeHtml(text) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+function roleLabel(role) {
+    const map = {admin:'Admin',manager:'Manager',staff:'Cashier',barista:'Barista',supervisor:'Supervisor',inventory_clerk:'Inventory Clerk'};
+    return map[role] || role;
 }
 
 // ── Build Items HTML ──
@@ -1485,7 +1551,7 @@ function getStatusBadge(status) {
     if (status === 'PendingPayment') {
         statusText = '⏳ Pending';
     } else if (status === 'Paid') {
-        statusText = '💳 Paid';
+        statusText = '🕐 Queued';
     } else if (status === 'Preparing') {
         statusText = '👨‍🍳 Preparing';
     } else if (status === 'Completed') {
@@ -1538,9 +1604,18 @@ function buildCardInner(o) {
         ${buildItems(o.items || [])}
         <div class="card-footer">
             <div class="card-employee">
-                <i class="fa-solid fa-user-tie" style="font-size:11px;opacity:.5"></i>
+                <i class="fa-solid fa-cash-register" style="font-size:11px;opacity:.85"></i>
+                <span style="opacity:.65;font-size:10px;">Taken by:</span>
                 ${escapeHtml(o.employee_name || 'Unknown')}
+                ${o.employee_role ? `<span style="opacity:.55;font-size:10px;">(${roleLabel(o.employee_role)})</span>` : ''}
             </div>
+            ${o.prepared_by ? `
+            <div class="card-employee" style="margin-top:3px;">
+                <i class="fa-solid fa-mug-hot" style="font-size:11px;opacity:.85;color:#d1904b"></i>
+                <span style="opacity:.65;font-size:10px;">Prepared by:</span>
+                ${escapeHtml(o.prepared_by)}
+                ${o.prepared_by_role ? `<span style="opacity:.55;font-size:10px;">(${roleLabel(o.prepared_by_role)})</span>` : ''}
+            </div>` : ''}
         </div>
         <div class="card-actions">${getActionButtons(o)}</div>
     `;
@@ -1573,20 +1648,11 @@ function getActionButtons(o) {
         `;
     }
     
-    // Paid button - only for PendingPayment
-    if (o.status === 'PendingPayment') {
+    // Paid button - only for PendingPayment, and not for barista (cashier/manager job)
+    if (o.status === 'PendingPayment' && userRole !== 'barista') {
         buttons += `
             <button class="paid-btn" onclick="markPaid(${Number(o.order_id)})" title="Mark as paid">
                 <i class="fa-solid fa-credit-card"></i> Paid
-            </button>
-        `;
-    }
-    
-    // Prepare button - only for Paid
-    if (o.status === 'Paid') {
-        buttons += `
-            <button class="prepare-btn" onclick="markPrepare(${Number(o.order_id)})" title="Start preparing">
-                <i class="fa-solid fa-utensils"></i> Prepare
             </button>
         `;
     }
@@ -1600,8 +1666,8 @@ function getActionButtons(o) {
         `;
     }
     
-    // Cancel button - for PendingPayment, Paid, Preparing (not Completed or Cancelled)
-    if (o.status !== 'Completed' && o.status !== 'Cancelled' && o.status !== 'Refunded') {
+    // Cancel button - for PendingPayment, Paid, Preparing (not Completed or Cancelled), not for barista
+    if (o.status !== 'Completed' && o.status !== 'Cancelled' && o.status !== 'Refunded' && userRole !== 'barista') {
         buttons += `
             <button class="cancel-btn" onclick="showCancelModal(${Number(o.order_id)}, ${Number(o.daily_order_no)})" title="Cancel order">
                 <i class="fa-solid fa-ban"></i> Cancel
@@ -1720,16 +1786,6 @@ function updateCounts(data) {
     setCount('count-Refunded', counts.Refunded);
 }
 
-// ── Toggle Completed Orders ──
-function toggleCompleted() {
-    showCompleted = !showCompleted;
-    applyFilters();
-    
-    const toggleBtn = document.getElementById('toggleCompletedBtn');
-    toggleBtn.innerHTML = showCompleted 
-        ? '<i class="fa-solid fa-eye-slash"></i> Hide Completed/Refunded' 
-        : '<i class="fa-solid fa-eye"></i> Show Completed/Refunded';
-}
 
 // ── Load Orders ──
 async function loadOrders() {
@@ -2186,6 +2242,9 @@ setInterval(() => {
 }, 30000);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+<?php if ($_flash_welcome): ?>
+<script>document.addEventListener('DOMContentLoaded',()=>showToast('Welcome back, <?= htmlspecialchars($_SESSION['username'] ?? 'User', ENT_QUOTES) ?>!','success'));</script>
+<?php endif; ?>
 </body>
 </html>
 <?php
@@ -2209,6 +2268,9 @@ if ($action === "fetch") {
             o.token_number,
             o.employee_id,
             o.employee_name,
+            u.role AS employee_role,
+            o.prepared_by,
+            o.prepared_by_role,
             o.table_number,
             oi.product_name,
             oi.sweetness,
@@ -2216,6 +2278,7 @@ if ($action === "fetch") {
             oi.milk,
             oi.quantity
         FROM orders o
+        LEFT JOIN users u ON u.user_id = o.employee_id
         LEFT JOIN order_items oi ON o.order_id = oi.order_id
         WHERE o.business_date = ?
         ORDER BY 
@@ -2249,6 +2312,9 @@ if ($action === "fetch") {
                 "token_number" => $r['token_number'],
                 "employee_id" => $r['employee_id'],
                 "employee_name" => $r['employee_name'],
+                "employee_role" => $r['employee_role'] ?? '',
+                "prepared_by" => $r['prepared_by'] ?? '',
+                "prepared_by_role" => $r['prepared_by_role'] ?? '',
                 "table_number" => $r['table_number'],
                 "items" => []
             ];
@@ -2284,6 +2350,11 @@ if ($action === "fetch") {
 if ($action === "paid") {
     header('Content-Type: application/json');
 
+    if (($_SESSION['role'] ?? '') === 'barista') {
+        echo json_encode(["ok" => 0, "error" => "Unauthorized"]);
+        exit;
+    }
+
     $order_id = (int)($_GET['id'] ?? 0);
     if ($order_id <= 0) {
         echo json_encode(["ok" => 0, "error" => "Invalid order id"]);
@@ -2292,7 +2363,7 @@ if ($action === "paid") {
 
     $conn->begin_transaction();
     try {
-        $s1 = $conn->prepare("UPDATE orders SET status = 'Paid' WHERE order_id = ?");
+        $s1 = $conn->prepare("UPDATE orders SET status = 'Preparing' WHERE order_id = ?");
         $s1->bind_param("i", $order_id);
         $s1->execute();
 
@@ -2369,9 +2440,17 @@ if ($action === "complete") {
         // Stock was already deducted at order creation (confirm_order.php).
         // Deducting again here would double-consume ingredients and cause
         // "Not enough stock" errors on busy days. Only mark the order complete.
-        $stmt_update = $conn->prepare("UPDATE orders SET status = 'Completed' WHERE order_id = ?");
-        $stmt_update->bind_param("i", $order_id);
+        $prepared_by      = $_SESSION['username'] ?? '';
+        $prepared_by_role = $_SESSION['role']     ?? '';
+        $stmt_update = $conn->prepare("UPDATE orders SET status = 'Completed', prepared_by = ?, prepared_by_role = ?, completed_at = NOW() WHERE order_id = ?");
+        $stmt_update->bind_param("ssi", $prepared_by, $prepared_by_role, $order_id);
         $stmt_update->execute();
+
+        // ── Free the table now that the order is done ──
+        if (!empty($order['table_number']) && $order['order_type'] === 'drink_in') {
+            $tbl = $conn->real_escape_string($order['table_number']);
+            $conn->query("UPDATE cafe_tables SET status = 'available' WHERE table_number = '$tbl'");
+        }
 
         $conn->commit();
         echo json_encode(["ok" => 1]);

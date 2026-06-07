@@ -21,7 +21,8 @@ if ($order_id <= 0) {
 }
 
 $stmt = $conn->prepare("
-    SELECT order_id, daily_order_no, customer_name, total, status, is_refunded
+    SELECT order_id, daily_order_no, customer_name, total, status, is_refunded,
+           loyalty_card_id, points_earned
     FROM orders WHERE order_id = ?
 ");
 $stmt->bind_param("i", $order_id);
@@ -39,9 +40,9 @@ if ($order['is_refunded'] == 1) {
 }
 
 // ── Allow refunds on Completed OR Paid orders ──
-$refundable_statuses = ['Completed', 'Paid'];
+$refundable_statuses = ['Completed', 'Preparing'];
 if (!in_array($order['status'], $refundable_statuses)) {
-    echo json_encode(["ok" => 0, "error" => "Only Paid or Completed orders can be refunded (current status: {$order['status']})"]);
+    echo json_encode(["ok" => 0, "error" => "Only paid or Completed orders can be refunded (current status: {$order['status']})"]);
     exit;
 }
 
@@ -82,6 +83,20 @@ try {
     }
 
     $conn->commit();
+
+    // ── Reverse loyalty points earned on this order ──
+    $card_id    = (int)($order['loyalty_card_id'] ?? 0);
+    $pts_earned = (int)($order['points_earned']   ?? 0);
+    if ($card_id > 0 && $pts_earned > 0) {
+        $stmt_pts = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points - ?), last_used = NOW() WHERE card_id = ?");
+        $stmt_pts->bind_param("ii", $pts_earned, $card_id);
+        $stmt_pts->execute();
+        $neg = -$pts_earned;
+        $stmt_hist = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, 'adjusted_deduct', 'Points reversed — order refunded')");
+        $stmt_hist->bind_param("iii", $card_id, $order_id, $neg);
+        $stmt_hist->execute();
+    }
+
     echo json_encode(["ok" => 1, "message" => "Order #{$order['daily_order_no']} refunded $" . number_format($refund_amount, 2) . " successfully"]);
 
 } catch (Exception $e) {

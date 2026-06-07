@@ -1,7 +1,5 @@
 <?php
-require 'auth.php';
-require 'config.php';
-if (!can('products')) { header("Location: products.php"); exit; }
+require 'admin_only.php';
 header('Content-Type: application/json');
 
 $id = (int)($_POST['product_id'] ?? 0);

@@ -1,5 +1,7 @@
 <?php
+require 'auth.php';
 require 'config.php';
+if (!can('loyalty')) { header('Location: dashboard.php?denied=1'); exit; }
 
 $loyalty_id = $_GET['id'] ?? '';
 

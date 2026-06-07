@@ -9,7 +9,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-if (!in_array($_SESSION['role'], ['admin', 'manager', 'staff'])) {
+if (!in_array($_SESSION['role'], ['admin', 'manager', 'supervisor', 'staff'])) {
     echo json_encode(["ok" => 0, "error" => "You don't have permission to cancel orders"]);
     exit;
 }
@@ -20,7 +20,7 @@ if ($order_id <= 0) {
     exit;
 }
 
-$stmt = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, status FROM orders WHERE order_id = ?");
+$stmt = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, status, loyalty_card_id, points_earned FROM orders WHERE order_id = ?");
 $stmt->bind_param("i", $order_id);
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
@@ -38,8 +38,8 @@ if (in_array($order['status'], $non_cancellable)) {
 }
 
 // ── Only admin can cancel Paid/Completed orders ──
-if (in_array($order['status'], ['Paid']) && !in_array($_SESSION['role'], ['admin', 'manager'])) {
-    echo json_encode(["ok" => 0, "error" => "Only admin can cancel paid orders"]);
+if ($order['status'] === 'Preparing' && $order['is_open'] == 0 && !in_array($_SESSION['role'], ['admin', 'manager'])) {
+    echo json_encode(["ok" => 0, "error" => "Only admin or manager can cancel orders already being prepared"]);
     exit;
 }
 
@@ -72,6 +72,20 @@ try {
     }
 
     $conn->commit();
+
+    // ── Reverse loyalty points earned on this order ──
+    $card_id     = (int)($order['loyalty_card_id'] ?? 0);
+    $pts_earned  = (int)($order['points_earned']   ?? 0);
+    if ($card_id > 0 && $pts_earned > 0) {
+        $stmt_pts = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points - ?), last_used = NOW() WHERE card_id = ?");
+        $stmt_pts->bind_param("ii", $pts_earned, $card_id);
+        $stmt_pts->execute();
+        $neg = -$pts_earned;
+        $stmt_hist = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, 'adjusted_deduct', 'Points reversed — order cancelled')");
+        $stmt_hist->bind_param("iii", $card_id, $order_id, $neg);
+        $stmt_hist->execute();
+    }
+
     echo json_encode(["ok" => 1, "message" => "Order #{$order['daily_order_no']} cancelled successfully"]);
 
 } catch (Exception $e) {

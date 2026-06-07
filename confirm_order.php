@@ -1,5 +1,5 @@
 <?php
-require 'admin_only.php';
+require 'auth.php';
 
 // ── Migrate: add order_type and completed_at if missing ──
 if ($conn->query("SHOW COLUMNS FROM orders LIKE 'order_type'")->num_rows === 0) {
@@ -203,9 +203,9 @@ if (abs($total_paid - $total) > 0.01) {
 }
 
 // ── ORDER STATUS LOGIC ──
-// Pay Later → Preparing (open for additions)
+// Pay Later → Preparing, open (customer settles later at counter)
 // Bakong    → PendingPayment (awaiting QR scan)
-// Cash only → Paid (immediate)
+// Cash only → Preparing, closed (paid immediately, goes straight to kitchen)
 // Split (cash+bakong) → PendingPayment (Bakong leg must complete)
 $has_paylater = in_array('paylater', $payment_methods);
 $has_bakong   = in_array('bakong',   $payment_methods);
@@ -217,7 +217,7 @@ if ($has_paylater) {
     $order_status = 'PendingPayment';
     $is_open      = 0;
 } else {
-    $order_status = 'Paid';
+    $order_status = 'Preparing';
     $is_open      = 0;
 }
 
@@ -269,7 +269,8 @@ try {
     $employee_id     = (int)$employee_id;
     $employee_name   = (string)$employee_name;
 
-    $completed_at = ($order_status === 'Paid') ? date('Y-m-d H:i:s') : null;
+    // Only stamp completed_at for fully-paid orders (not paylater which is still open)
+    $completed_at = ($order_status === 'Preparing' && $is_open === 0) ? date('Y-m-d H:i:s') : null;
 
     $stmt_order = $conn->prepare("
         INSERT INTO orders

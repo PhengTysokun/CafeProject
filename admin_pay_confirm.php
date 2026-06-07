@@ -11,7 +11,7 @@ if ($order_id <= 0) {
 }
 
 // Mark order as PAID
-$stmt = $conn->prepare("UPDATE orders SET status = 'Paid' WHERE order_id = ?");
+$stmt = $conn->prepare("UPDATE orders SET status = 'Preparing' WHERE order_id = ?");
 $stmt->bind_param("i", $order_id);
 $stmt->execute();
 

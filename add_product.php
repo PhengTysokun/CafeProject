@@ -1,7 +1,5 @@
 <?php
-require 'auth.php';
-require 'config.php';
-if (!can('products')) { header("Location: products.php"); exit; }
+require 'admin_only.php';
 
 /* ================= ADD PRODUCT ONLY ================= */
 if (isset($_POST['add_product'])) {

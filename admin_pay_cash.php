@@ -33,7 +33,7 @@ if (!$order) {
 // Mark order as Paid, close it, and sync all payment records atomically
 $conn->begin_transaction();
 try {
-    $stmt = $conn->prepare("UPDATE orders SET status = 'Paid', is_open = 0, completed_at = NOW() WHERE order_id = ?");
+    $stmt = $conn->prepare("UPDATE orders SET status = 'Preparing', is_open = 0, completed_at = NOW() WHERE order_id = ?");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
 

@@ -340,6 +340,8 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
         .btn-lp-confirm:hover:not(:disabled) { filter: brightness(1.15); }
         .btn-lp-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-close:hover { color: var(--danger); border-color: var(--danger); }
+        .btn-cancel-order { background: transparent; color: var(--danger); border: 1px solid rgba(231,76,60,.35); }
+        .btn-cancel-order:hover { background: rgba(231,76,60,.1); border-color: var(--danger); }
         .btn-edit { background: transparent; color: var(--purple); border: 1px solid rgba(155,89,182,.4); }
         .btn-edit:hover { background: var(--purple); color: #fff; border-color: var(--purple); transform: translateY(-2px); box-shadow: 0 4px 15px rgba(155,89,182,.3); }
 
@@ -556,6 +558,9 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
                     <i class="fa-solid fa-lock"></i>
                 </button>
                 <?php endif; ?>
+                <button class="btn btn-cancel-order" onclick="cancelOrderFromFind(<?= $order['order_id'] ?>, this)" title="Cancel this order">
+                    <i class="fa-solid fa-ban"></i>
+                </button>
             </div>
         </div>
 
@@ -707,6 +712,29 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ── Close order (lock from additions) ──
+function cancelOrderFromFind(orderId, btn) {
+    const reason = prompt('Reason for cancellation (required):');
+    if (reason === null) return;
+    if (!reason.trim()) { alert('Please provide a reason.'); return; }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    fetch('cancel_order.php?order_id=' + orderId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'cancel_reason=' + encodeURIComponent(reason.trim())
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            btn.closest('.order-card').remove();
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-ban"></i>';
+            alert(data.error || 'Failed to cancel order.');
+        }
+    });
+}
+
 function closeOrder(orderId, btn) {
     if (!confirm('Mark this order as closed? Staff will no longer be able to add items to it.')) return;
     btn.disabled = true;

@@ -77,7 +77,7 @@ if ($manual === 1) {
             if ($order['payment_method'] === 'paylater') {
                 // Paylater order settled via Bakong at the counter → mark as Paid and close
                 $stmt_status = $conn->prepare("
-                    UPDATE orders SET status = 'Paid', is_open = 0
+                    UPDATE orders SET status = 'Preparing', is_open = 0
                     WHERE order_id = ? AND status = 'Preparing'
                 ");
             } else {
@@ -185,7 +185,7 @@ try {
                 if ($order['payment_method'] === 'paylater') {
                     // Paylater order settled via Bakong at the counter → mark as Paid and close
                     $stmt_status = $conn->prepare("
-                        UPDATE orders SET status = 'Paid', is_open = 0
+                        UPDATE orders SET status = 'Preparing', is_open = 0
                         WHERE order_id = ? AND status = 'Preparing'
                     ");
                 } else {

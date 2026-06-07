@@ -3,6 +3,11 @@ session_start();
 require_once 'config.php';
 header('Content-Type: application/json');
 
+if (!isset($_SESSION['user_id'])) {
+    echo json_encode(['found' => false, 'message' => 'Unauthorized']);
+    exit;
+}
+
 $loyalty_id = $_GET['loyalty_id'] ?? '';
 
 if (empty($loyalty_id)) {

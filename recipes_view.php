@@ -537,7 +537,11 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 <!-- ── TOPBAR ── -->
 <div class="topbar">
     <div class="topbar-left">
+        <?php if (($_SESSION['role'] ?? '') === 'barista'): ?>
+        <a href="view_order.php" class="btn-nav"><i class="fa-solid fa-arrow-left"></i> Orders</a>
+        <?php else: ?>
         <a href="dashboard.php" class="btn-nav"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
+        <?php endif; ?>
         <?php if (can('manage_recipes')): ?>
         <a href="manage_recipe.php" class="btn-nav"><i class="fa-solid fa-pen-to-square"></i> Manage</a>
         <?php endif; ?>

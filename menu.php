@@ -1,6 +1,7 @@
 <?php
-session_start();
-require 'config.php';
+require 'auth.php';
+require_once 'config.php';
+if (!can('find_orders')) { header('Location: dashboard.php?denied=1'); exit; }
 
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -18,7 +19,7 @@ function cat_anchor_id($key) {
 }
 
 /* ── NAV: view_order.php (Kitchen) is for roles that prep/track orders; cashiers just take orders and go back to their dashboard ── */
-$_show_kitchen_btn = in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'barista']);
+$_show_kitchen_btn = in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'supervisor', 'barista']);
 
 /* ── CART CALCULATIONS ── */
 $cart = $_SESSION['cart'] ?? [];

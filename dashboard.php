@@ -3,7 +3,7 @@ require 'auth.php';
 require_once "config.php";
 
 $admin_name = $_SESSION['username'] ?? 'Admin';
-$_is_mgr = in_array($_SESSION['role'] ?? '', ['admin', 'manager']);
+$_is_mgr = in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'supervisor']);
 
 // Load roles for badge colours and nav icon lookups
 $_roles_db = [];
@@ -56,12 +56,12 @@ $low_recipe_result = mysqli_query($conn, "
 ");
 $low_recipe_count = mysqli_fetch_assoc($low_recipe_result)['low_recipe_count'];
 
-$unpaid_result = mysqli_query($conn, "SELECT COUNT(*) AS unpaid_count FROM orders WHERE status!='Completed' AND status!='Cancelled' AND status!='Paid'");
+$unpaid_result = mysqli_query($conn, "SELECT COUNT(*) AS unpaid_count FROM orders WHERE status='PendingPayment'");
 $unpaid_count  = mysqli_fetch_assoc($unpaid_result)['unpaid_count'];
 
-$unpaid_orders_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number FROM orders WHERE status!='Completed' AND status!='Cancelled' AND status!='Paid' ORDER BY order_date DESC LIMIT 5");
+$unpaid_orders_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number FROM orders WHERE status='PendingPayment' ORDER BY order_date DESC LIMIT 5");
 
-$paid_open_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number FROM orders WHERE status='Paid' AND is_open=1 ORDER BY order_date DESC LIMIT 5");
+$paid_open_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number FROM orders WHERE status='Preparing' AND is_open=0 ORDER BY order_date DESC LIMIT 5");
 
 $refund_result = mysqli_query($conn, "SELECT IFNULL(SUM(refund_amount),0) AS total_refunds, COUNT(*) AS refund_count FROM orders WHERE DATE(refunded_at)=CURDATE() AND is_refunded=1");
 $refund_data   = mysqli_fetch_assoc($refund_result);
@@ -72,7 +72,7 @@ $status_result = mysqli_query($conn, "SELECT status, COUNT(*) as count FROM orde
 $status_counts = [];
 while ($row = mysqli_fetch_assoc($status_result)) { $status_counts[$row['status']] = $row['count']; }
 $pending_count   = $status_counts['PendingPayment'] ?? 0;
-$paid_count      = $status_counts['Paid']           ?? 0;
+$paid_count      = $status_counts['Preparing']      ?? 0;
 $preparing_count = $status_counts['Preparing']      ?? 0;
 $completed_count = $status_counts['Completed']      ?? 0;
 $cancelled_count = $status_counts['Cancelled']      ?? 0;
@@ -82,7 +82,7 @@ $items_sold = mysqli_fetch_assoc($items_sold_result)['total_items'];
 
 $kitchen_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, order_date, token_number FROM orders WHERE DATE(order_date)=CURDATE() AND status='Preparing' ORDER BY order_date ASC LIMIT 8");
 
-$recent_sql = "SELECT order_id, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() ORDER BY order_date DESC LIMIT 8";
+$recent_sql = "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() ORDER BY order_date DESC LIMIT 8";
 $recent_orders = mysqli_query($conn, $recent_sql);
 
 $top_selling_result = mysqli_query($conn, "SELECT p.name, p.image, SUM(oi.quantity) as total_sold, p.price FROM products p JOIN order_items oi ON p.product_id=oi.product_id JOIN orders o ON oi.order_id=o.order_id WHERE o.status='Completed' GROUP BY p.product_id ORDER BY total_sold DESC LIMIT 5");
@@ -91,8 +91,12 @@ $activity_result = mysqli_query($conn, "SELECT * FROM (SELECT 'order' as type, o
 
 $filter_status = isset($_GET['status']) ? $conn->real_escape_string($_GET['status']) : '';
 if ($filter_status) {
-    $recent_orders = mysqli_query($conn, "SELECT order_id, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() AND status='$filter_status' ORDER BY order_date DESC LIMIT 8");
+    $recent_orders = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() AND status='$filter_status' ORDER BY order_date DESC LIMIT 8");
 }
+
+// Flash toasts — only show once (right after login), then clear
+$_flash_welcome     = !empty($_SESSION['flash_welcome']);     unset($_SESSION['flash_welcome']);
+$_flash_stock_alert = !empty($_SESSION['flash_stock_alert']); unset($_SESSION['flash_stock_alert']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -384,17 +388,18 @@ body.no-sidebar{--sidebar-w:0px;}
 .header-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
 
 .role-badge{
-    display:inline-flex;align-items:center;gap:6px;
+    display:inline-flex;align-items:center;gap:8px;
     background:var(--glass);border:1px solid var(--border);
-    border-radius:50px;padding:3px 12px;margin-left:8px;
-    font-size:11px;font-weight:600;color:var(--text-muted);
+    border-radius:50px;padding:6px 18px;margin-left:10px;
+    font-size:14px;font-weight:600;color:var(--text);
+    letter-spacing:.02em;
     vertical-align:middle;
 }
 .role-badge::before{
     content:'';flex-shrink:0;
-    width:6px;height:6px;border-radius:50%;
+    width:9px;height:9px;border-radius:50%;
     background:var(--role-color,var(--amber));
-    box-shadow:0 0 6px var(--role-color,var(--amber));
+    box-shadow:0 0 9px var(--role-color,var(--amber));
 }
 
 .logout-btn{
@@ -724,14 +729,30 @@ body.no-sidebar{--sidebar-w:0px;}
 .qa-hero-btn{
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     align-self:center;gap:16px;padding:42px 38px;
-    background:var(--amber);color:#000;text-decoration:none;
-    border-radius:var(--r);font-size:16px;font-weight:700;
+    background:linear-gradient(135deg,var(--amber-light) 0%,var(--amber) 100%);
+    color:#000;text-decoration:none;
+    border:1px solid rgba(255,255,255,.22);
+    border-radius:calc(var(--r) + 8px);font-size:16px;font-weight:700;letter-spacing:.015em;
     min-width:180px;min-height:150px;
+    position:relative;overflow:hidden;
     box-shadow:0 6px 28px var(--amber-glow);
-    transition:background .2s,transform .15s,box-shadow .2s;
+    transition:transform .25s var(--ease),box-shadow .3s var(--ease);
+    animation:heroGlow 2.8s ease-in-out infinite;
 }
-.qa-hero-btn i{font-size:44px;color:#000;}
-.qa-hero-btn:hover{background:var(--amber-light);transform:translateY(-2px);box-shadow:0 10px 36px var(--amber-glow);}
+.qa-hero-btn::after{
+    content:'';position:absolute;inset:0;
+    background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.45) 50%,transparent 65%);
+    background-size:240% 100%;background-position:160% 0;
+    transition:background-position .8s ease;pointer-events:none;
+}
+.qa-hero-btn:hover::after{background-position:-60% 0;}
+.qa-hero-btn i{font-size:44px;color:#000;display:inline-block;transition:transform .5s cubic-bezier(.34,1.56,.64,1);}
+.qa-hero-btn:hover i{transform:rotate(180deg) scale(1.18);}
+.qa-hero-btn:hover{transform:translateY(-3px) scale(1.02);box-shadow:0 14px 42px var(--amber-glow);animation-play-state:paused;}
+@keyframes heroGlow{
+    0%,100%{box-shadow:0 6px 28px var(--amber-glow),0 0 0 0 rgba(209,144,75,.35);}
+    50%{box-shadow:0 6px 28px var(--amber-glow),0 0 0 14px rgba(209,144,75,0);}
+}
 
 /* ── TOAST ── */
 .toast-container{position:fixed;bottom:22px;right:22px;z-index:9999;display:flex;flex-direction:column;gap:9px;}
@@ -810,7 +831,7 @@ body.no-sidebar{--sidebar-w:0px;}
         <h2>Bird's Nest</h2>
     </div>
 
-    <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'supervisor', 'cashier', 'staff'])): ?>
+    <?php if (can('find_orders')): ?>
     <a href="menu.php" class="sidebar-quick-btn">
         <i class="fa-solid fa-plus"></i> Take New Order
     </a>
@@ -961,7 +982,7 @@ body.no-sidebar{--sidebar-w:0px;}
                 <span class="nav-label">Manage Roles</span>
             </a>
             <?php endif; ?>
-            <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'manager'])): ?>
+            <?php if (can('reset_password')): ?>
             <a class="nav-item" href="admin_reset_password.php">
                 <i class="fa-solid fa-key"></i>
                 <span class="nav-label">Reset Password</span>
@@ -1253,7 +1274,7 @@ body.no-sidebar{--sidebar-w:0px;}
                 if (!in_array($sc, ['pending','paid','preparing','completed','cancelled','refunded','pendingpayment'])) $sc = 'pending';
             ?>
             <tr>
-                <td><span class="o-no">#<?= (int)$ro['order_id'] ?></span></td>
+                <td><span class="o-no">#<?= (int)$ro['daily_order_no'] ?></span></td>
                 <td>
                     <div class="cust-cell">
                         <div class="cust-av"><i class="fa-regular fa-user"></i></div>
@@ -1283,7 +1304,7 @@ body.no-sidebar{--sidebar-w:0px;}
 
     <!-- QUICK ACCESS GRID -->
     <div class="qa-grid fu" style="animation-delay:.1s">
-        <?php if (in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'supervisor', 'cashier', 'staff'])): ?>
+        <?php if (can('find_orders')): ?>
         <a href="menu.php" class="qa-hero-btn">
             <i class="fa-solid fa-plus"></i>
             <span>Take New Order</span>
@@ -1440,10 +1461,13 @@ function updateSidebarClock(){
     const el=document.getElementById('sidebarClock');
     if(!el)return;
     const now=new Date();
-    el.textContent=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    let h=now.getHours();
+    const ampm=h>=12?'PM':'AM';
+    h=h%12; if(h===0)h=12;
+    el.textContent=h+':'+String(now.getMinutes()).padStart(2,'0')+' '+ampm;
 }
 updateSidebarClock();
-setInterval(updateSidebarClock,10000);
+setInterval(updateSidebarClock,1000);
 
 /* ── Time of day greeting ── */
 (function(){
@@ -1509,7 +1533,9 @@ function showToast(msg,type='success'){
     c.appendChild(t);
     setTimeout(()=>{ if(t.parentElement){ t.style.opacity='0'; t.style.transform='translateX(18px)'; setTimeout(()=>t.remove(),400); }},5000);
 }
+<?php if ($_flash_welcome): ?>
 document.addEventListener('DOMContentLoaded',()=>showToast('Welcome back, <?= htmlspecialchars($admin_name, ENT_QUOTES) ?>!','success'));
+<?php endif; ?>
 
 async function toggleClock(){
     var btn = document.getElementById('clockBtn');
@@ -1553,7 +1579,7 @@ async function toggleClock(){
     btn.disabled = false;
     btn.style.opacity = '1';
 }
-<?php if ($low_stock > 0 && can('ingredients')): ?>
+<?php if ($_flash_stock_alert && $low_stock > 0 && can('ingredients')): ?>
 document.addEventListener('DOMContentLoaded',()=>showToast('<?= $low_stock ?> ingredient<?= $low_stock!=1?"s are":" is"?> low on stock','error'));
 <?php endif; ?>
 

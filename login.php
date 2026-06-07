@@ -16,6 +16,20 @@ elseif (isset($_GET['error'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+    // ── Rate limiting: max 5 attempts per 15 minutes per IP ──
+    $conn->query("DELETE FROM login_attempts WHERE attempted_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $rate = $conn->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $rate->bind_param("s", $ip);
+    $rate->execute();
+    $attempts = (int)$rate->get_result()->fetch_row()[0];
+
+    if ($attempts >= 5) {
+        header("Location: login.php?error=locked");
+        exit;
+    }
+
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
@@ -28,10 +42,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $result->fetch_assoc();
 
         if (password_verify($password, $user['password'])) {
+            session_regenerate_id(true); // prevent session fixation
+
             $_SESSION['user_id']       = $user['user_id'];
             $_SESSION['username']      = $user['username'];
             $_SESSION['role']          = $user['role'];
             $_SESSION['last_activity'] = time();
+            $_SESSION['flash_welcome']     = true;
+            $_SESSION['flash_stock_alert'] = true;
+
+            // Clear failed attempts for this IP on success
+            $del = $conn->prepare("DELETE FROM login_attempts WHERE ip = ?");
+            $del->bind_param("s", $ip);
+            $del->execute();
 
             // Force password change if flagged
             if (!empty($user['must_change_password'])) {
@@ -39,12 +62,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            header("Location: dashboard.php");
+            $role = $user['role'] ?? '';
+            if ($role === 'barista') {
+                header("Location: view_order.php");
+            } elseif ($role === 'inventory_clerk') {
+                header("Location: products.php");
+            } else {
+                header("Location: dashboard.php");
+            }
             exit;
         }
     }
 
-    $error = "Invalid username or password.";
+    // ── Failed attempt — log it ──
+    $log = $conn->prepare("INSERT INTO login_attempts (ip) VALUES (?)");
+    $log->bind_param("s", $ip);
+    $log->execute();
+
+    $remaining = max(0, 4 - $attempts);
+    header("Location: login.php?error=1&left=" . $remaining);
+    exit;
 }
 ?>
 <!DOCTYPE html>
@@ -218,6 +255,7 @@ body {
     background:rgba(209,144,75,0.09);
     transform:translateX(5px);
 }
+.brand-feature.fading { opacity:0; }
 .brand-feature-icon {
     width:34px; height:34px;
     border-radius:9px;
@@ -494,26 +532,26 @@ body {
             <h2 class="brand-heading">Manage your<br><span>café with ease.</span></h2>
             <p class="brand-tagline">One place for orders, sales, and everything that keeps your café running smoothly.</p>
 
-            <div class="brand-features">
-                <div class="brand-feature">
-                    <div class="brand-feature-icon"><i class="fa-solid fa-clipboard-list"></i></div>
+            <div class="brand-features" id="brandFeatures">
+                <div class="brand-feature" id="featCard0">
+                    <div class="brand-feature-icon"><i class="fa-solid fa-clipboard-list" id="featIcon0"></i></div>
                     <div class="brand-feature-text">
-                        <span class="brand-feature-title">Order Management</span>
-                        <span class="brand-feature-desc">Track and process orders in real time</span>
+                        <span class="brand-feature-title" id="featTitle0">Order Management</span>
+                        <span class="brand-feature-desc" id="featDesc0">Track and process orders in real time</span>
                     </div>
                 </div>
-                <div class="brand-feature">
-                    <div class="brand-feature-icon"><i class="fa-solid fa-chart-bar"></i></div>
+                <div class="brand-feature" id="featCard1">
+                    <div class="brand-feature-icon"><i class="fa-solid fa-mug-hot" id="featIcon1"></i></div>
                     <div class="brand-feature-text">
-                        <span class="brand-feature-title">Sales Dashboard</span>
-                        <span class="brand-feature-desc">Monitor daily revenue and performance</span>
+                        <span class="brand-feature-title" id="featTitle1">Fast Counter Service</span>
+                        <span class="brand-feature-desc" id="featDesc1">Built for fast-paced counter service</span>
                     </div>
                 </div>
-                <div class="brand-feature">
-                    <div class="brand-feature-icon"><i class="fa-solid fa-star"></i></div>
+                <div class="brand-feature" id="featCard2">
+                    <div class="brand-feature-icon"><i class="fa-solid fa-star" id="featIcon2"></i></div>
                     <div class="brand-feature-text">
-                        <span class="brand-feature-title">Loyalty Rewards</span>
-                        <span class="brand-feature-desc">Delight customers with points &amp; perks</span>
+                        <span class="brand-feature-title" id="featTitle2">Loyalty Rewards</span>
+                        <span class="brand-feature-desc" id="featDesc2">Delight customers with points &amp; perks</span>
                     </div>
                 </div>
             </div>
@@ -601,6 +639,49 @@ body {
     const h = new Date().getHours();
     const greet = h < 12 ? '☀️ Good morning' : h < 17 ? '🌤 Good afternoon' : '🌙 Good evening';
     document.getElementById('timeGreeting').textContent = greet;
+})();
+
+// Rotating highlights — cycles between sets that speak to different roles
+// (the portal is shared by baristas, inventory clerks, supervisors, managers & admins)
+(function () {
+    const sets = [
+        [
+            {icon:'fa-clipboard-list', title:'Order Management',     desc:'Track and process orders in real time'},
+            {icon:'fa-mug-hot',        title:'Fast Counter Service', desc:'Built for fast-paced counter service'},
+            {icon:'fa-star',           title:'Loyalty Rewards',      desc:'Delight customers with points & perks'}
+        ],
+        [
+            {icon:'fa-box-open',   title:'Inventory Tracking', desc:'Track ingredients and stock levels'},
+            {icon:'fa-truck',      title:'Suppliers & Orders', desc:'Manage suppliers and purchase orders'},
+            {icon:'fa-mug-saucer', title:'Recipe Management',  desc:'Keep every drink recipe consistent'}
+        ],
+        [
+            {icon:'fa-chart-bar',     title:'Sales Dashboard', desc:'Monitor daily revenue and performance'},
+            {icon:'fa-users',         title:'Team & Shifts',   desc:'Manage staff schedules and attendance'},
+            {icon:'fa-shield-halved', title:'Full Control',    desc:'Configure roles and system settings'}
+        ]
+    ];
+    const cards = [0, 1, 2].map(function (i) {
+        return {
+            card:  document.getElementById('featCard'  + i),
+            icon:  document.getElementById('featIcon'  + i),
+            title: document.getElementById('featTitle' + i),
+            desc:  document.getElementById('featDesc'  + i)
+        };
+    });
+    let setIndex = 0;
+    setInterval(function () {
+        setIndex = (setIndex + 1) % sets.length;
+        cards.forEach(function (c) { c.card.classList.add('fading'); });
+        setTimeout(function () {
+            sets[setIndex].forEach(function (item, i) {
+                cards[i].icon.className    = 'fa-solid ' + item.icon;
+                cards[i].title.textContent = item.title;
+                cards[i].desc.textContent  = item.desc;
+                cards[i].card.classList.remove('fading');
+            });
+        }, 320);
+    }, 5000);
 })();
 
 // Filled-state class for valid indicator

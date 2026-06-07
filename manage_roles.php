@@ -125,11 +125,17 @@ foreach ($roles as $_slug => $_rinfo) {
 }
 
 $module_meta = [
-    'Dashboard'   => ['icon' => 'fa-gauge',         'color' => '#d1904b'],
+    // ── core module names — must match the `module` column in the permissions table ──
+    'Overview'    => ['icon' => 'fa-gauge',          'color' => '#d1904b'],
     'Orders'      => ['icon' => 'fa-receipt',        'color' => '#3498db'],
     'Loyalty'     => ['icon' => 'fa-star',           'color' => '#9b59b6'],
     'Inventory'   => ['icon' => 'fa-boxes-stacked',  'color' => '#27ae60'],
     'Procurement' => ['icon' => 'fa-truck',          'color' => '#e67e22'],
+    'Analytics'   => ['icon' => 'fa-chart-bar',      'color' => '#e74c3c'],
+    'Staff'       => ['icon' => 'fa-users',          'color' => '#1abc9c'],
+    'Admin'       => ['icon' => 'fa-shield-halved',  'color' => '#c0392b'],
+    // ── legacy / alternate spellings kept so old seeds still render correctly ──
+    'Dashboard'   => ['icon' => 'fa-gauge',          'color' => '#d1904b'],
     'Reports'     => ['icon' => 'fa-chart-bar',      'color' => '#e74c3c'],
     'People'      => ['icon' => 'fa-users',          'color' => '#1abc9c'],
     'Content'     => ['icon' => 'fa-bullhorn',       'color' => '#f39c12'],
@@ -791,7 +797,7 @@ tr:last-child td { border-bottom:none; }
                 <span class="mod-badge"><?= $total_perm_count ?></span>
             </button>
             <?php foreach ($all_perms as $module => $mperms):
-                $meta = $module_meta[$module] ?? ['icon' => 'fa-circle', 'color' => '#888'];
+                $meta = $module_meta[$module] ?? ['icon' => 'fa-puzzle-piece', 'color' => '#888'];
             ?>
             <button class="mod-filter-btn" data-module="<?= htmlspecialchars($module) ?>">
                 <i class="fa-solid <?= $meta['icon'] ?>" style="color:<?= $meta['color'] ?>"></i>
@@ -817,10 +823,10 @@ tr:last-child td { border-bottom:none; }
             </thead>
             <tbody id="permTableBody">
             <?php foreach ($all_perms as $module => $mperms):
-                $meta = $module_meta[$module] ?? ['icon' => 'fa-circle', 'color' => '#888'];
+                $meta = $module_meta[$module] ?? ['icon' => 'fa-puzzle-piece', 'color' => '#888'];
             ?>
                 <tr class="module-row" data-module="<?= htmlspecialchars($module) ?>">
-                    <td colspan="4">
+                    <td colspan="<?= count($roles) + 1 ?>">
                         <div class="module-row-inner">
                             <div class="module-icon-wrap" style="background:<?= $meta['color'] ?>1a;color:<?= $meta['color'] ?>">
                                 <i class="fa-solid <?= $meta['icon'] ?>"></i>
@@ -968,7 +974,7 @@ function openModal(role) {
 function renderModal() {
     let html = '';
     for (const [module, perms] of Object.entries(ALL_PERMS)) {
-        const meta     = MOD_META[module] || { icon:'fa-circle', color:'#888' };
+        const meta = MOD_META[module] || { icon:'fa-puzzle-piece', color:'#888' };
         const checkedN = perms.filter(p => selected.has(parseInt(p.id))).length;
         html += `<div class="module-group">
             <div class="module-group-hdr">

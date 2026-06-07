@@ -1,5 +1,12 @@
 <?php
+require 'auth.php';
 require_once 'config.php';
+
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Unauthorized']);
+    exit;
+}
 
 // ── TODAY SALES ──
 $sales_sql = "
@@ -23,7 +30,7 @@ $total_orders = mysqli_fetch_assoc($order_result)['total_orders'];
 $unpaid_sql = "
 SELECT COUNT(*) AS unpaid_count
 FROM orders
-WHERE status != 'Completed' AND status != 'Cancelled' AND status != 'Paid'
+WHERE status = 'PendingPayment'
 ";
 $unpaid_result = mysqli_query($conn, $unpaid_sql);
 $unpaid_count = mysqli_fetch_assoc($unpaid_result)['unpaid_count'];
@@ -65,7 +72,7 @@ while ($row = mysqli_fetch_assoc($status_result)) {
 }
 
 $pending_count = $status_counts['PendingPayment'] ?? 0;
-$paid_count = $status_counts['Paid'] ?? 0;
+$paid_count = $status_counts['Preparing'] ?? 0;
 $preparing_count = $status_counts['Preparing'] ?? 0;
 $completed_count = $status_counts['Completed'] ?? 0;
 $cancelled_count = $status_counts['Cancelled'] ?? 0;
@@ -74,7 +81,7 @@ $cancelled_count = $status_counts['Cancelled'] ?? 0;
 $unpaid_orders_sql = "
 SELECT order_id, daily_order_no, customer_name, total, status, DATE_FORMAT(order_date, '%d %b %H:%i') as date, is_open
 FROM orders
-WHERE status != 'Completed' AND status != 'Cancelled' AND status != 'Paid'
+WHERE status = 'PendingPayment'
 ORDER BY order_date DESC
 LIMIT 5
 ";

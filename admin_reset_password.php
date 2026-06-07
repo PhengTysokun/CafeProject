@@ -1,6 +1,7 @@
 <?php
-require 'admin_only.php';
+require 'auth.php';
 require 'config.php';
+if (!can('reset_password')) { header('Location: dashboard.php?denied=1'); exit; }
 
 $toast      = '';
 $toast_type = '';
@@ -12,6 +13,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Force-reset: generate a temporary password and set must_change_password
     if ($action === 'force_reset' && $target > 0) {
+        // Manager cannot reset admin passwords — only admin can do that
+        if (($_SESSION['role'] ?? '') !== 'admin') {
+            $check = $conn->prepare("SELECT role FROM users WHERE user_id = ?");
+            $check->bind_param("i", $target);
+            $check->execute();
+            $tgt_role = $check->get_result()->fetch_assoc()['role'] ?? '';
+            if ($tgt_role === 'admin') {
+                $toast = "You cannot reset an admin password.";
+                $toast_type = 'error';
+                goto render;
+            }
+        }
+
         $chars    = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#';
         $tmp_pass = substr(str_shuffle($chars), 0, 4)
                   . rand(10,99)
@@ -39,11 +53,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// ── Load all staff/admin users ───────────────────────────────────────
+render:
+// ── Load users: admin sees everyone; manager cannot see/reset other admins ──
+$_is_admin_role = ($_SESSION['role'] ?? '') === 'admin';
+$_user_where    = $_is_admin_role ? "1=1" : "role != 'admin'";
 $users_result = $conn->query(
     "SELECT user_id, username, role, security_question, must_change_password
      FROM users
-     WHERE role IN ('admin','staff')
+     WHERE {$_user_where}
      ORDER BY role DESC, username ASC"
 );
 $all_users = [];
