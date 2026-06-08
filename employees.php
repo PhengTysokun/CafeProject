@@ -788,7 +788,7 @@ foreach ($leaderboard as $i => $emp):
     </button>
     <?php endforeach; ?>
     <div class="shift-sep"></div>
-    <button class="filter-pill shift-pill active-shift" data-shift-filter="" onclick="setShiftFilter(this,'')">
+    <button class="filter-pill shift-pill active-shift shift-active" data-shift-filter="" onclick="setShiftFilter(this,'')">
         <i class="fa-solid fa-clock-rotate-left"></i> All Shifts
     </button>
     <button class="filter-pill shift-pill" data-shift-filter="morning" onclick="setShiftFilter(this,'morning')" style="--sb-active:#f39c12">
@@ -1746,6 +1746,24 @@ async function refreshStats() {
                         titleEl.textContent = job;
                     }
                 }
+            }
+
+            // Sync table row data-shift + shift-inline from polling
+            const rowEl = document.querySelector(`#tableBody tr[data-id="${eid}"]`);
+            if (rowEl && rowEl.dataset.shift !== (s.shift || '')) {
+                rowEl.dataset.shift = s.shift || '';
+                const shiftMeta3 = { morning:['#f39c12','fa-sun','Morning'], afternoon:['#3498db','fa-cloud-sun','Afternoon'], night:['#9b59b6','fa-moon','Night'] };
+                const titleEl3 = rowEl.querySelector('.emp-title');
+                if (titleEl3) {
+                    let si3 = titleEl3.querySelector('.shift-inline');
+                    if (s.shift && shiftMeta3[s.shift]) {
+                        const [sc3, si3icon, sl3] = shiftMeta3[s.shift];
+                        if (!si3) { si3 = document.createElement('span'); si3.className = 'shift-inline'; si3.style.marginLeft = '4px'; si3.style.fontSize = '9px'; si3.style.opacity = '.9'; titleEl3.appendChild(si3); }
+                        si3.style.color = sc3;
+                        si3.innerHTML = `<i class="fa-solid ${si3icon}"></i> ${sl3}`;
+                    } else if (si3) { si3.remove(); }
+                }
+                recalcShiftCounts();
             }
         }
     } catch (_) { /* silent — no disruption on network error */ }

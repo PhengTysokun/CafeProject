@@ -152,18 +152,38 @@ $generated   = date('d M Y, g:i A');
 $reportId    = 'SAL-' . date('Ymd-Hi');
 $modeLabel   = match($mode) { 'monthly'=>'Monthly Report', 'range'=>'Date Range Report', default=>'Daily Report' };
 
+// ── Refunds ──
+$totalRefunded = 0;
+$refundCount   = 0;
+$qRef = mysqli_query($conn, "SELECT COALESCE(SUM(refund_amount),0) as total, COUNT(*) as cnt FROM orders WHERE is_refunded=1 AND refunded_at BETWEEN '$startStr' AND '$endStr'");
+if ($rf = mysqli_fetch_assoc($qRef)) { $totalRefunded = (float)$rf['total']; $refundCount = (int)$rf['cnt']; }
+$netRevenue = $totalSales - $totalRefunded;
+
+// ── Peak hour (daily only) ──
+$peakHour = null;
+if ($mode === 'daily') {
+    $qPH = mysqli_query($conn, "SELECT HOUR(order_date) as h, SUM(total) as rev FROM orders WHERE status='Completed' AND order_date BETWEEN '$startStr' AND '$endStr' GROUP BY HOUR(order_date) ORDER BY rev DESC LIMIT 1");
+    if ($ph = mysqli_fetch_assoc($qPH)) $peakHour = date('g:i A', mktime((int)$ph['h'], 0, 0));
+}
+
 // Top performer
 $topProdName = array_key_first($topProducts) ?? null;
 $topProdData = $topProdName ? $topProducts[$topProdName] : null;
 
-// Executive summary
+// Executive summary (HTML — do NOT wrap in he())
+$refundNote = $refundCount > 0
+    ? "<strong>{$refundCount}</strong> " . ($refundCount === 1 ? 'order was' : 'orders were') . " refunded totalling <strong>\$" . number_format($totalRefunded,2) . "</strong>, reducing net revenue to <strong>\$" . number_format($netRevenue,2) . "</strong>."
+    : "No refunds were issued.";
+$peakNote  = ($mode === 'daily' && $peakHour) ? " Busiest sales hour: <strong>{$peakHour}</strong>." : '';
+$topNote   = $topProdName ? " Best seller: <strong>" . he($topProdName) . "</strong> ({$topProdData['qty']} sold, \$" . number_format($topProdData['revenue'],2) . " revenue)." : '';
+$marginNote = $margin >= 30 ? 'healthy' : 'below the 30% target';
+
 if ($orderCount === 0) {
-    $exec_summary = "No completed orders were recorded for the period: {$label}. This may indicate the restaurant was closed, or data has not yet been entered for this period.";
+    $exec_summary = "No completed orders were recorded for <strong>" . he($label) . "</strong>. The café may have been closed or data has not been entered yet.";
 } else {
-    $exec_summary = "For the period {$label}, a total of {$orderCount} orders were completed generating \$" . number_format($totalSales,2) . " in revenue across {$totalItemsSold} items sold. " .
-        "Cost of goods sold (COGS) amounted to \$" . number_format($totalCOGS,2) . ", resulting in a gross profit of \$" . number_format($totalProfit,2) . " (" . number_format($margin,1) . "% margin). " .
-        "Average order value was \$" . number_format($avgOrder,2) . ". " .
-        ($topProdName ? "Top-performing product: {$topProdName} with \$" . number_format($topProdData['revenue'],2) . " revenue ({$topProdData['qty']} sold)." : '');
+    $exec_summary = "For <strong>" . he($label) . "</strong>, the café completed <strong>{$orderCount}</strong> " . ($orderCount === 1 ? 'order' : 'orders') . " generating <strong>\$" . number_format($totalSales,2) . "</strong> in sales across <strong>{$totalItemsSold}</strong> items (avg <strong>\$" . number_format($avgOrder,2) . "</strong> per order). "
+        . "After ingredient costs of <strong>\$" . number_format($totalCOGS,2) . "</strong>, the gross profit was <strong>\$" . number_format($totalProfit,2) . "</strong> — a margin of <strong>" . number_format($margin,1) . "%</strong> ({$marginNote}). "
+        . $refundNote . $peakNote . $topNote;
 }
 
 // ── Product rows ──
@@ -305,15 +325,15 @@ table.cat-table tfoot td { padding: 6px 8px; border-top: 2px solid #374151; font
 </div>
 
 <div class="exec-box">
-    <div class="exec-label">Executive Summary</div>
-    '.he($exec_summary).'
+    <div class="exec-label">Period Summary</div>
+    '.$exec_summary.'
 </div>
 
 <div class="stats">
     <div class="stat-cell orange">
         <div class="stat-num">'.$orderCount.'</div>
         <div class="stat-lbl">Orders</div>
-        <div class="stat-sub">Completed</div>
+        <div class="stat-sub">$'.number_format($avgOrder,2).' avg each</div>
     </div>
     <div class="stat-gap"></div>
     <div class="stat-cell gray">
@@ -324,26 +344,32 @@ table.cat-table tfoot td { padding: 6px 8px; border-top: 2px solid #374151; font
     <div class="stat-gap"></div>
     <div class="stat-cell green">
         <div class="stat-num">$'.number_format($totalSales,2).'</div>
-        <div class="stat-lbl">Revenue</div>
-        <div class="stat-sub">$'.number_format($avgOrder,2).' avg/order</div>
+        <div class="stat-lbl">Sales</div>
+        <div class="stat-sub">Paid orders</div>
     </div>
     <div class="stat-gap"></div>
     <div class="stat-cell blue">
         <div class="stat-num">$'.number_format($totalCOGS,2).'</div>
-        <div class="stat-lbl">COGS</div>
-        <div class="stat-sub">Cost of goods</div>
+        <div class="stat-lbl">Food Cost</div>
+        <div class="stat-sub">Ingredients used</div>
     </div>
     <div class="stat-gap"></div>
     <div class="stat-cell purple">
         <div class="stat-num">$'.number_format($totalProfit,2).'</div>
-        <div class="stat-lbl">Gross Profit</div>
-        <div class="stat-sub">After COGS</div>
+        <div class="stat-lbl">Profit</div>
+        <div class="stat-sub">'.number_format($margin,1).'% margin</div>
     </div>
     <div class="stat-gap"></div>
-    <div class="stat-cell teal">
-        <div class="stat-num">'.number_format($margin,1).'%</div>
-        <div class="stat-lbl">Margin</div>
-        <div class="stat-sub">Gross margin</div>
+    <div class="stat-cell" style="border-top:3px solid #dc2626;">
+        <div class="stat-num" style="color:'.($refundCount>0?'#dc2626':'#6b7280').';">$'.number_format($totalRefunded,2).'</div>
+        <div class="stat-lbl">Refunds</div>
+        <div class="stat-sub">'.$refundCount.' order'.($refundCount===1?'':'s').'</div>
+    </div>
+    <div class="stat-gap"></div>
+    <div class="stat-cell" style="border-top:3px solid #16a34a;">
+        <div class="stat-num" style="color:#16a34a;">$'.number_format($netRevenue,2).'</div>
+        <div class="stat-lbl">Take Home</div>
+        <div class="stat-sub">Sales minus refunds</div>
     </div>
 </div>
 
@@ -355,7 +381,7 @@ table.cat-table tfoot td { padding: 6px 8px; border-top: 2px solid #374151; font
             <th>Product</th>
             <th class="center" style="width:34px">Qty</th>
             <th class="right" style="width:65px">Revenue</th>
-            <th class="right" style="width:58px">COGS</th>
+            <th class="right" style="width:58px">Food Cost</th>
             <th class="right" style="width:60px">Profit</th>
             <th class="center" style="width:44px">Rev %</th>
             <th class="center" style="width:48px">Margin</th>
@@ -381,7 +407,7 @@ table.cat-table tfoot td { padding: 6px 8px; border-top: 2px solid #374151; font
             <th>Category</th>
             <th class="center">Items Sold</th>
             <th class="right">Revenue</th>
-            <th class="right">COGS</th>
+            <th class="right">Food Cost</th>
             <th class="right">Gross Profit</th>
             <th class="center">Rev Share</th>
             <th class="center">Margin</th>

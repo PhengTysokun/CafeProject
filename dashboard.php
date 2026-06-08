@@ -82,7 +82,7 @@ $items_sold = mysqli_fetch_assoc($items_sold_result)['total_items'];
 
 $kitchen_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, order_date, token_number FROM orders WHERE DATE(order_date)=CURDATE() AND status='Preparing' ORDER BY order_date ASC LIMIT 8");
 
-$recent_sql = "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() ORDER BY order_date DESC LIMIT 8";
+$recent_sql = "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() ORDER BY order_date DESC LIMIT 20";
 $recent_orders = mysqli_query($conn, $recent_sql);
 
 $top_selling_result = mysqli_query($conn, "SELECT p.name, p.image, SUM(oi.quantity) as total_sold, p.price FROM products p JOIN order_items oi ON p.product_id=oi.product_id JOIN orders o ON oi.order_id=o.order_id WHERE o.status='Completed' GROUP BY p.product_id ORDER BY total_sold DESC LIMIT 5");
@@ -91,7 +91,7 @@ $activity_result = mysqli_query($conn, "SELECT * FROM (SELECT 'order' as type, o
 
 $filter_status = isset($_GET['status']) ? $conn->real_escape_string($_GET['status']) : '';
 if ($filter_status) {
-    $recent_orders = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() AND status='$filter_status' ORDER BY order_date DESC LIMIT 8");
+    $recent_orders = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() AND status='$filter_status' ORDER BY order_date DESC LIMIT 20");
 }
 
 // Flash toasts — only show once (right after login), then clear
@@ -548,8 +548,27 @@ body.no-sidebar{--sidebar-w:0px;}
 }
 @keyframes pdot{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.45;transform:scale(.75);}}
 
+/* ── PREMIUM SCROLLBAR ── */
+.kitchen-body::-webkit-scrollbar,
+.orders-tbl tbody::-webkit-scrollbar { width:4px; }
+.kitchen-body::-webkit-scrollbar-track,
+.orders-tbl tbody::-webkit-scrollbar-track { background:transparent; }
+.kitchen-body::-webkit-scrollbar-thumb,
+.orders-tbl tbody::-webkit-scrollbar-thumb {
+    background:linear-gradient(180deg,var(--amber),rgba(209,144,75,.35));
+    border-radius:99px;
+}
+.kitchen-body::-webkit-scrollbar-thumb:hover,
+.orders-tbl tbody::-webkit-scrollbar-thumb:hover { background:var(--amber-light); }
+
 /* ── KITCHEN ITEMS ── */
-.kitchen-body{padding:4px 0;}
+.kitchen-body{
+    padding:4px 0;
+    max-height:245px;
+    overflow-y:auto;
+    scrollbar-width:thin;
+    scrollbar-color:rgba(209,144,75,.35) transparent;
+}
 
 .k-item{
     display:flex;align-items:center;gap:12px;
@@ -651,7 +670,16 @@ body.no-sidebar{--sidebar-w:0px;}
 }
 
 /* ── ORDERS TABLE ── */
-.orders-tbl{width:100%;border-collapse:collapse;}
+.orders-tbl{width:100%;border-collapse:collapse;table-layout:fixed;}
+.orders-tbl thead{display:table;width:100%;table-layout:fixed;}
+.orders-tbl tbody{
+    display:block;
+    max-height:255px;
+    overflow-y:auto;
+    scrollbar-width:thin;
+    scrollbar-color:rgba(209,144,75,.35) transparent;
+}
+.orders-tbl tbody tr{display:table;width:100%;table-layout:fixed;}
 .orders-tbl th{
     font-size:10.5px;font-weight:700;
     text-transform:uppercase;letter-spacing:.08em;
@@ -1256,15 +1284,13 @@ body.no-sidebar{--sidebar-w:0px;}
             <h3><i class="fa-solid fa-clock-rotate-left"></i> Recent Orders</h3>
             <a href="view_order.php" class="panel-link">View all <i class="fa-solid fa-arrow-right"></i></a>
         </div>
-        <div style="overflow-x:auto">
         <table class="orders-tbl">
             <thead>
                 <tr>
                     <th style="width:72px">Order</th>
                     <th>Customer</th>
-                    <th style="width:90px;text-align:right">Total</th>
-                    <th style="width:150px">Status</th>
-                    <th style="width:140px">Time</th>
+                    <th style="width:100px;text-align:right">Total</th>
+                    <th style="width:155px">Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -1283,21 +1309,16 @@ body.no-sidebar{--sidebar-w:0px;}
                 </td>
                 <td style="text-align:right;font-weight:700">$<?= number_format((float)$ro['total'], 2) ?></td>
                 <td><span class="badge <?= $sc ?>"><?= htmlspecialchars($ro['status']) ?></span></td>
-                <td style="color:var(--text-muted);font-size:12px">
-                    <i class="fa-regular fa-clock" style="margin-right:4px"></i>
-                    <?= date("g:i A", strtotime($ro['order_date'])) ?>
-                </td>
             </tr>
             <?php endwhile; ?>
             <?php else: ?>
-            <tr><td colspan="5"><div class="tbl-empty">
+            <tr><td colspan="4"><div class="tbl-empty">
                 <i class="fa-regular fa-rectangle-list"></i>
                 <span>No orders today yet</span>
             </div></td></tr>
             <?php endif; ?>
             </tbody>
         </table>
-        </div>
     </div>
 
     <?php else: /* non-admin/manager: show quick-access tiles */ ?>

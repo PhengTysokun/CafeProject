@@ -28,6 +28,15 @@ function fmtMoney($n): string {
     return number_format((float)$n, 2);
 }
 
+function deltaStr(float $current, float $prev): string {
+    if ($prev <= 0) return '';
+    $pct = round(($current - $prev) / $prev * 100, 1);
+    if ($pct === 0.0) return '<span class="delta neutral">= same</span>';
+    $cls = $pct > 0 ? 'up' : 'down';
+    $arrow = $pct > 0 ? '&#9650;' : '&#9660;';
+    return "<span class=\"delta {$cls}\">{$arrow} " . abs($pct) . "%</span>";
+}
+
 /* =========================
    INPUT
 ========================= */
@@ -65,6 +74,18 @@ if ($mode === 'monthly') {
 
     $label = (new DateTime($date))->format("d M Y");
 }
+
+// ── Daily sales target (edit this number to set your goal) ──
+$dailyTarget = 500.00;
+
+// ── Is this period "live" (includes today)? ──
+$_today = getBusinessDateToday();
+$isLive = match($mode) {
+    'monthly' => isset($month)    && $month    === (new DateTime())->format("Y-m"),
+    'range'   => isset($toDate)   && $toDate   >= $_today,
+    default   => isset($date)     && $date     === $_today,
+};
+unset($_today);
 
 /* =========================
    LOAD INGREDIENT COST MAP
@@ -129,6 +150,7 @@ $avgOrder = $orderCount > 0 ? $totalSales / $orderCount : 0;
 $totalCOGS = 0;
 $totalProfit = 0;
 $margin = 0;
+$totalItemsSold = 0;
 $topProducts = [];
 $categorySales = [];
 
@@ -234,7 +256,8 @@ if (count($orderIds) > 0) {
             }
         }
 
-        $totalCOGS += $itemCost;
+        $totalCOGS     += $itemCost;
+        $totalItemsSold += $qty;
 
         $itemRevenue = (float)($it['price'] ?? 0) * $qty;
 
@@ -295,7 +318,7 @@ if ($mode === 'daily') {
             'count'   => $hourMap[$h]['count']   ?? 0,
             'revenue' => $rev,
         ];
-        if ($rev > $maxRev) { $maxRev = $rev; $peakHour = sprintf('%02d:00', $h); }
+        if ($rev > $maxRev) { $maxRev = $rev; $peakHour = date('g:i A', mktime($h, 0, 0)); }
     }
 }
 
@@ -384,6 +407,29 @@ while ($r = mysqli_fetch_assoc($qRefunds)) {
 }
 
 $netRevenue = $totalSales - $totalRefunded;
+
+/* =========================
+   PREVIOUS PERIOD COMPARISON
+========================= */
+$prevSales = 0.0; $prevOrderCount = 0;
+if ($mode === 'daily') {
+    $prevD     = (new DateTime($date))->modify('-1 day');
+    $prevStart2 = new DateTime($prevD->format('Y-m-d') . ' 06:00:00');
+    $prevEnd2   = clone $prevStart2; $prevEnd2->modify('+1 day')->modify('-1 second');
+} elseif ($mode === 'monthly') {
+    $prevStart2 = new DateTime($month . '-01 06:00:00'); $prevStart2->modify('-1 month');
+    $prevEnd2   = clone $prevStart2; $prevEnd2->modify('+1 month')->modify('-1 second');
+} else {
+    $rangeDays  = (new DateTime($fromDate))->diff(new DateTime($toDate))->days + 1;
+    $prevEnd2   = new DateTime($fromDate . ' 06:00:00'); $prevEnd2->modify('-1 second');
+    $prevStart2 = clone $prevEnd2; $prevStart2->modify('+1 second')->modify("-{$rangeDays} days");
+}
+$prevStartStr2 = $prevStart2->format('Y-m-d H:i:s');
+$prevEndStr2   = $prevEnd2->format('Y-m-d H:i:s');
+$qPrev = mysqli_query($conn, "SELECT COUNT(*) as cnt, COALESCE(SUM(total),0) as rev FROM orders WHERE status='Completed' AND order_date BETWEEN '$prevStartStr2' AND '$prevEndStr2'");
+if ($rp = mysqli_fetch_assoc($qPrev)) { $prevOrderCount = (int)$rp['cnt']; $prevSales = (float)$rp['rev']; }
+$deltaOrders = deltaStr((float)$orderCount, (float)$prevOrderCount);
+$deltaSales  = deltaStr($totalSales, $prevSales);
 
 /* =========================
    GET DAILY REFUNDS FOR CHART (NEW)
@@ -1154,6 +1200,71 @@ select option {
         padding: 6px 14px;
     }
 }
+
+/* ── SECTION HEADER ── */
+.section-hdr { margin-bottom: 18px; }
+.section-hdr-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.section-hdr-row > i { color:var(--accent-2); font-size:16px; flex-shrink:0; }
+.section-hdr-title { color:var(--gold); font-weight:700; font-size:17px; }
+.section-hdr-badge { color:var(--text-muted); font-size:12px; font-weight:400; }
+.section-hdr-tag { margin-left:auto; background:rgba(209,144,75,.15); color:var(--accent-2); border:1px solid rgba(209,144,75,.3); border-radius:50px; padding:4px 14px; font-size:12px; font-weight:600; white-space:nowrap; }
+.section-desc { font-size:12px; color:var(--text-muted); margin-top:5px; padding-left:26px; line-height:1.55; }
+
+/* ── INSIGHTS STRIP ── */
+.insights-row { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:24px; }
+.insight-chip {
+    display:flex; align-items:center; gap:10px;
+    background:rgba(255,255,255,.03); border:1px solid var(--border);
+    border-radius:12px; padding:11px 16px; flex:1; min-width:150px;
+    transition:var(--transition);
+}
+.insight-chip:hover { border-color:var(--border-hover); }
+.insight-chip > i { font-size:18px; color:var(--accent-2); flex-shrink:0; }
+.insight-chip.ic-good > i { color:#63f1a0; }
+.insight-chip.ic-warn > i { color:#f0b45a; }
+.insight-chip.ic-alert > i { color:var(--refund-color); }
+.ic-label { font-size:10px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+.ic-val { font-size:13px; font-weight:600; color:var(--text); margin-top:2px; }
+[data-theme="light"] .insight-chip { background:rgba(0,0,0,.025); }
+
+.report-summary { font-size:14px; line-height:1.8; color:var(--text); margin:10px 0 0; padding:14px 18px; background:rgba(255,255,255,.03); border-left:3px solid var(--accent-2); border-radius:0 8px 8px 0; }
+.report-summary strong.good { color:#63f1a0; }
+.report-summary strong.ok   { color:var(--accent-2); }
+.report-summary strong.warn { color:#f0b45a; }
+
+/* ── Live indicator ── */
+.live-bar { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-muted); margin:10px 0 16px; padding:6px 14px; background:rgba(99,241,160,.06); border:1px solid rgba(99,241,160,.15); border-radius:50px; width:fit-content; }
+.live-dot { width:7px; height:7px; border-radius:50%; background:#63f1a0; flex-shrink:0; }
+.live-dot.pulsing { animation:livePulse 1.8s ease-in-out infinite; }
+@keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.75)} }
+@keyframes kpiFlash { 0%{background:rgba(99,241,160,.18)} 100%{background:transparent} }
+.kpi-flash { animation:kpiFlash .7s ease-out forwards; }
+
+/* ── Delta badges ── */
+.kpi-delta { font-size:11px; margin-top:4px; line-height:1.3; }
+.delta { font-weight:700; font-size:11px; padding:2px 6px; border-radius:20px; }
+.delta.up      { color:#63f1a0; background:rgba(99,241,160,.12); }
+.delta.down    { color:#ff6b6b; background:rgba(255,107,107,.12); }
+.delta.neutral { color:var(--text-muted); background:rgba(255,255,255,.05); }
+
+/* ── Daily goal progress bar ── */
+.goal-bar-wrap { margin-top:8px; }
+.goal-bar-track { height:5px; background:rgba(255,255,255,.08); border-radius:99px; overflow:hidden; margin-bottom:4px; }
+.goal-bar-fill  { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); border-radius:99px; transition:width .6s ease; }
+.goal-label     { font-size:11px; color:var(--text-muted); }
+
+/* ── PRINT ── */
+@media print {
+    body { padding:20px; background:#fff !important; color:#000 !important; }
+    .top { background:#fff !important; border-color:#ddd !important; box-shadow:none !important; }
+    .btn-generate, .theme-toggle, a.back { display:none !important; }
+    .card { box-shadow:none !important; border:1px solid #ddd !important; background:#fff !important; break-inside:avoid; }
+    .kpi { background:#f9f9f9 !important; }
+    .chart-wrap { border:1px solid #ddd !important; background:#fff !important; }
+    .section-desc { color:#555 !important; }
+    .insight-chip { border-color:#ddd !important; background:#fafafa !important; }
+    .report-summary { border-left-color:#aaa !important; background:#f9f9f9 !important; color:#000 !important; }
+}
 </style>
 </head>
 
@@ -1169,12 +1280,15 @@ select option {
         <?= htmlspecialchars($label) ?>
     </div>
     
-    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-        <button class="btn-generate" onclick="exportPDF()">
-            <i class="fa-solid fa-file-pdf"></i> Export PDF
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-generate" onclick="exportPDF()" title="Export as PDF">
+            <i class="fa-solid fa-file-pdf"></i> PDF
         </button>
-        <button class="btn-generate" onclick="generateReport()">
-            <i class="fa-solid fa-file-pdf"></i> Email Report
+        <button class="btn-generate" onclick="exportCSV()" title="Export product data as CSV">
+            <i class="fa-solid fa-file-csv"></i> CSV
+        </button>
+        <button class="btn-generate" onclick="window.print()" title="Print this report">
+            <i class="fa-solid fa-print"></i> Print
         </button>
         <button class="theme-toggle" onclick="toggleTheme()">
             <i class="fa-solid fa-moon" id="themeIcon"></i>
@@ -1225,37 +1339,45 @@ select option {
             <div class="kpi-icon">
                 <i class="fa-solid fa-receipt"></i>
             </div>
-            <span>Orders Completed</span>
-            <h3 class="num"><?= $orderCount ?></h3>
-            <div class="small">Avg $<?= fmtMoney($avgOrder) ?> / order</div>
+            <span>Orders</span>
+            <h3 class="num" id="kv-orders"><?= $orderCount ?></h3>
+            <div class="small" id="kv-avg">Avg $<?= fmtMoney($avgOrder) ?> &middot; <span id="kv-items"><?= $totalItemsSold ?></span> items</div>
+            <?php if ($deltaOrders): ?><div class="kpi-delta" id="kv-delta-orders"><?= $deltaOrders ?> vs prev</div><?php endif; ?>
         </div>
 
         <div class="kpi">
             <div class="kpi-icon">
                 <i class="fa-solid fa-dollar-sign"></i>
             </div>
-            <span>Total Sales</span>
-            <h3 class="num">$<?= fmtMoney($totalSales) ?></h3>
-            <div class="small">Completed orders only</div>
+            <span>Sales</span>
+            <h3 class="num" id="kv-sales">$<?= fmtMoney($totalSales) ?></h3>
+            <?php if ($deltaSales): ?><div class="kpi-delta" id="kv-delta-sales"><?= $deltaSales ?> vs prev</div><?php endif; ?>
+            <?php if ($mode === 'daily' && $dailyTarget > 0): ?>
+            <div class="goal-bar-wrap" id="goal-bar-wrap">
+                <?php $goalPct = min(100, $totalSales / $dailyTarget * 100); ?>
+                <div class="goal-bar-track"><div class="goal-bar-fill" id="goal-fill" style="width:<?= round($goalPct, 1) ?>%"></div></div>
+                <div class="goal-label">$<span id="goal-current"><?= fmtMoney($totalSales) ?></span> of $<?= fmtMoney($dailyTarget) ?> goal &middot; <span id="goal-pct"><?= round($goalPct) ?>%</span></div>
+            </div>
+            <?php endif; ?>
         </div>
 
         <div class="kpi">
             <div class="kpi-icon">
                 <i class="fa-solid fa-boxes-stacked"></i>
             </div>
-            <span>Ingredient Cost</span>
-            <h3 class="num">$<?= fmtMoney($totalCOGS) ?></h3>
-            <div class="small">Based on product recipes</div>
+            <span>Food Cost</span>
+            <h3 class="num" id="kv-foodcost">$<?= fmtMoney($totalCOGS) ?></h3>
+            <div class="small">Ingredients used</div>
         </div>
 
         <div class="kpi">
             <div class="kpi-icon">
                 <i class="fa-solid fa-coins"></i>
             </div>
-            <span>Net Profit</span>
-            <h3 class="num">$<?= fmtMoney($totalProfit) ?></h3>
+            <span>Profit</span>
+            <h3 class="num" id="kv-profit">$<?= fmtMoney($totalProfit) ?></h3>
             <div class="small">
-                <span class="badge <?= ($margin >= 30 ? 'good' : 'warn') ?>">
+                <span id="kv-margin" class="badge <?= ($margin >= 30 ? 'good' : 'warn') ?>">
                     <i class="fa-solid fa-percent"></i> Margin: <?= number_format($margin, 1) ?>%
                 </span>
             </div>
@@ -1266,10 +1388,10 @@ select option {
             <div class="kpi-icon">
                 <i class="fa-solid fa-rotate-left"></i>
             </div>
-            <span>Total Refunds</span>
-            <h3 class="num">$<?= fmtMoney($totalRefunded) ?></h3>
+            <span>Refunds</span>
+            <h3 class="num" id="kv-refunds">$<?= fmtMoney($totalRefunded) ?></h3>
             <div class="small">
-                <span class="badge refund">
+                <span id="kv-refcount" class="badge refund">
                     <i class="fa-solid fa-receipt"></i> <?= $refundCount ?> orders refunded
                 </span>
             </div>
@@ -1280,9 +1402,9 @@ select option {
             <div class="kpi-icon">
                 <i class="fa-solid fa-sack-dollar"></i>
             </div>
-            <span>Net Revenue</span>
-            <h3 class="num" style="color:#63f1a0;">$<?= fmtMoney($netRevenue) ?></h3>
-            <div class="small">After refunds deducted</div>
+            <span>Take Home</span>
+            <h3 class="num" id="kv-takehome" style="color:#63f1a0;">$<?= fmtMoney($netRevenue) ?></h3>
+            <div class="small">Sales minus refunds</div>
         </div>
 
         <?php if ($mode === 'daily' && $peakHour): ?>
@@ -1291,18 +1413,98 @@ select option {
             <div class="kpi-icon">
                 <i class="fa-solid fa-fire"></i>
             </div>
-            <span>Peak Hour</span>
-            <h3 class="num" style="color:var(--gold); font-size:22px;"><?= $peakHour ?></h3>
-            <div class="small">Busiest sales window today</div>
+            <span>Busiest Hour</span>
+            <h3 class="num" id="kv-peak" style="color:var(--gold); font-size:22px;"><?= $peakHour ?></h3>
+            <div class="small">Most orders this hour</div>
         </div>
         <?php endif; ?>
     </div>
+
+    <?php if ($isLive): ?>
+    <div class="live-bar" id="live-bar">
+        <span class="live-dot pulsing" id="live-dot"></span>
+        Live &nbsp;&bull;&nbsp; updated <span id="live-ts">now</span>
+    </div>
+    <?php endif; ?>
 </div>
 
+<!-- ── INSIGHTS STRIP ── -->
+<?php if ($orderCount > 0): ?>
+<div class="insights-row">
+    <?php if (!empty($topProducts)): $topProdName = array_key_first($topProducts); ?>
+    <div class="insight-chip" id="ic-bestseller">
+        <i class="fa-solid fa-trophy"></i>
+        <div><div class="ic-label">Best Seller</div><div class="ic-val" id="ic-bestseller-val"><?= htmlspecialchars($topProdName) ?> &mdash; <?= (int)$topProducts[$topProdName]['qty'] ?> sold</div></div>
+    </div>
+    <?php endif; ?>
+    <?php if (!empty($categorySales)): $topCatName = array_key_first($categorySales); ?>
+    <div class="insight-chip" id="ic-topcat">
+        <i class="fa-solid fa-tags"></i>
+        <div><div class="ic-label">Top Category</div><div class="ic-val" id="ic-topcat-val"><?= htmlspecialchars($topCatName) ?> &mdash; <?= (int)$categorySales[$topCatName]['qty'] ?> items</div></div>
+    </div>
+    <?php endif; ?>
+    <div class="insight-chip <?= $margin >= 30 ? 'ic-good' : 'ic-warn' ?>" id="ic-margin">
+        <i class="fa-solid fa-percent"></i>
+        <div><div class="ic-label">Profit Margin</div><div class="ic-val" id="ic-margin-val"><?= number_format($margin, 1) ?>% &mdash; <?= $margin >= 30 ? 'healthy' : 'below 30% target' ?></div></div>
+    </div>
+    <?php if ($mode === 'daily' && $peakHour): ?>
+    <div class="insight-chip" id="ic-peak">
+        <i class="fa-solid fa-fire"></i>
+        <div><div class="ic-label">Busiest Hour</div><div class="ic-val" id="ic-peak-val"><?= $peakHour ?> &mdash; most orders this hour</div></div>
+    </div>
+    <?php endif; ?>
+    <?php if ($refundCount > 0): $refundRate = $orderCount > 0 ? $refundCount / $orderCount * 100 : 0; ?>
+    <div class="insight-chip ic-alert" id="ic-refrate">
+        <i class="fa-solid fa-rotate-left"></i>
+        <div><div class="ic-label">Refund Rate</div><div class="ic-val" id="ic-refrate-val"><?= number_format($refundRate, 1) ?>% of orders &mdash; <?= $refundCount ?> refunded</div></div>
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<!-- ── PERIOD SUMMARY ── -->
+<?php if ($orderCount > 0):
+    $marginHealth = $margin >= 50 ? 'excellent' : ($margin >= 30 ? 'healthy' : 'below the 30% target');
+    $marginClass  = $margin >= 50 ? 'good' : ($margin >= 30 ? 'ok' : 'warn');
+
+    if ($refundCount > 0) {
+        $refundRate2 = round($refundCount / $orderCount * 100, 1);
+        $refundSentence = " <strong>{$refundCount}</strong> " . ($refundCount === 1 ? 'order was' : 'orders were') . " refunded, totalling <strong>\$" . fmtMoney($totalRefunded) . "</strong> ({$refundRate2}% refund rate), bringing the take-home revenue to <strong>\$" . fmtMoney($netRevenue) . "</strong>.";
+    } else {
+        $refundSentence = " No refunds were issued, so the full <strong>\$" . fmtMoney($netRevenue) . "</strong> is the take-home revenue.";
+    }
+
+    $peakSentence = ($mode === 'daily' && $peakHour) ? " The busiest sales hour was <strong>{$peakHour}</strong>." : '';
+
+    $topProdSentence = '';
+    if (!empty($topProducts)) {
+        $tp   = array_key_first($topProducts);
+        $tqty = (int)$topProducts[$tp]['qty'];
+        $topProdSentence = " Best-selling item: <strong>" . htmlspecialchars($tp) . "</strong> with <strong>{$tqty}</strong> " . ($tqty === 1 ? 'unit' : 'units') . " sold.";
+    }
+?>
+<div class="card" style="margin-bottom:16px;">
+    <div class="section-hdr">
+        <div class="section-hdr-row">
+            <i class="fa-solid fa-file-lines"></i>
+            <span class="section-hdr-title">Period Summary</span>
+            <span class="section-hdr-badge">&nbsp;<?= htmlspecialchars($label) ?></span>
+        </div>
+        <p class="section-desc">Auto-generated plain-English overview of this period's performance.</p>
+    </div>
+    <p class="report-summary" id="live-summary">
+        During <strong><?= htmlspecialchars($label) ?></strong>, the café completed <strong><?= $orderCount ?></strong> <?= $orderCount === 1 ? 'order' : 'orders' ?><?= $totalItemsSold > 0 ? ', serving <strong>' . $totalItemsSold . '</strong> items,' : '' ?> totalling <strong>$<?= fmtMoney($totalSales) ?></strong> in sales (avg <strong>$<?= fmtMoney($avgOrder) ?></strong> per order). After ingredient costs of <strong>$<?= fmtMoney($totalCOGS) ?></strong>, the gross profit was <strong>$<?= fmtMoney($totalProfit) ?></strong> — a margin of <strong class="<?= $marginClass ?>"><?= number_format($margin, 1) ?>%</strong>, which is <?= $marginHealth ?>.<?= $refundSentence ?><?= $peakSentence ?><?= $topProdSentence ?>
+    </p>
+</div>
+<?php endif; ?>
+
 <div class="card">
-    <div class="section-title" style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
-        <i class="fa-solid fa-chart-bar" style="color:var(--accent-2);"></i>
-        <span style="color:var(--gold); font-weight:600; font-size:18px;">Sales Analytics</span>
+    <div class="section-hdr">
+        <div class="section-hdr-row">
+            <i class="fa-solid fa-chart-bar"></i>
+            <span class="section-hdr-title">Sales Analytics</span>
+        </div>
+        <p class="section-desc">Quantity sold per category and your top-performing products for this period.</p>
     </div>
 
     <?php if (count($categorySales) > 0 || count($topProducts) > 0): ?>
@@ -1334,10 +1536,12 @@ select option {
 <!-- ── DAILY TREND (monthly / range mode) ── -->
 <?php if ($mode !== 'daily' && !empty($dailyTrendData)): ?>
 <div class="card">
-    <div class="section-title" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-        <i class="fa-solid fa-chart-area" style="color:var(--accent-2);"></i>
-        <span style="color:var(--gold);font-weight:600;font-size:18px;">Daily Sales Trend</span>
-        <span style="color:var(--text-muted);font-size:13px;font-weight:400;">— revenue &amp; orders per day</span>
+    <div class="section-hdr">
+        <div class="section-hdr-row">
+            <i class="fa-solid fa-chart-area"></i>
+            <span class="section-hdr-title">Daily Sales Trend</span>
+        </div>
+        <p class="section-desc">Revenue and order count per day — spot your busiest days and slow periods across the selected range.</p>
     </div>
     <div class="chart-wrap" style="height:280px;">
         <canvas id="dailyTrendChart"></canvas>
@@ -1348,15 +1552,15 @@ select option {
 <!-- ── HOURLY SALES (daily mode only) ── -->
 <?php if ($mode === 'daily' && !empty($hourlyData)): ?>
 <div class="card">
-    <div class="section-title" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-        <i class="fa-solid fa-clock" style="color:var(--accent-2);"></i>
-        <span style="color:var(--gold);font-weight:600;font-size:18px;">Sales by Hour</span>
-        <span style="color:var(--text-muted);font-size:13px;font-weight:400;">— when are customers most active?</span>
-        <?php if ($peakHour): ?>
-        <span style="margin-left:auto;background:rgba(209,144,75,0.15);color:var(--accent-2);border:1px solid rgba(209,144,75,0.3);border-radius:50px;padding:4px 14px;font-size:12px;font-weight:600;">
-            <i class="fa-solid fa-fire"></i> Peak: <?= $peakHour ?>
-        </span>
-        <?php endif; ?>
+    <div class="section-hdr">
+        <div class="section-hdr-row">
+            <i class="fa-solid fa-clock"></i>
+            <span class="section-hdr-title">Sales by Hour</span>
+            <?php if ($peakHour): ?>
+            <span class="section-hdr-tag"><i class="fa-solid fa-fire"></i> Peak: <?= $peakHour ?></span>
+            <?php endif; ?>
+        </div>
+        <p class="section-desc">Hourly revenue and order volume from 06:00–22:00. Highlighted bar = highest-revenue hour. Right panel ranks top 5 hours.</p>
     </div>
     <div class="hourly-grid" style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:stretch;">
         <!-- Main hourly timeline -->
@@ -1378,9 +1582,12 @@ select option {
 <!-- ── PAYMENT METHOD BREAKDOWN ── -->
 <?php if (!empty($paymentMethods)): ?>
 <div class="card">
-    <div class="section-title" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-        <i class="fa-solid fa-credit-card" style="color:var(--accent-2);"></i>
-        <span style="color:var(--gold);font-weight:600;font-size:18px;">Payment Methods</span>
+    <div class="section-hdr">
+        <div class="section-hdr-row">
+            <i class="fa-solid fa-credit-card"></i>
+            <span class="section-hdr-title">Payment Methods</span>
+        </div>
+        <p class="section-desc">How customers paid — useful for cash drawer reconciliation and understanding payment preferences.</p>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center;">
         <div class="chart-wrap" style="height:240px;">
@@ -1404,10 +1611,12 @@ select option {
 <!-- ── TOP PRODUCTS TABLE ── -->
 <?php if (!empty($topProducts)): ?>
 <div class="card">
-    <div class="section-title" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-        <i class="fa-solid fa-table" style="color:var(--accent-2);"></i>
-        <span style="color:var(--gold);font-weight:600;font-size:18px;">Product Breakdown</span>
-        <span style="color:var(--text-muted);font-size:13px;font-weight:400;">— revenue, cost &amp; margin per item</span>
+    <div class="section-hdr">
+        <div class="section-hdr-row">
+            <i class="fa-solid fa-table"></i>
+            <span class="section-hdr-title">Product Breakdown</span>
+        </div>
+        <p class="section-desc">Per-item revenue, ingredient cost (COGS), profit, and margin. Click any column header to sort. Green margin = ≥50%, orange = ≥25%, yellow = below 25%.</p>
     </div>
     <div class="refund-table-wrapper">
         <table class="refund-table" id="productsTable">
@@ -1453,9 +1662,12 @@ select option {
 <!-- ── NEW: REFUND CHART ── -->
 <?php if (count($refundChartData) > 0): ?>
 <div class="card">
-    <div class="section-title" style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
-        <i class="fa-solid fa-rotate-left" style="color:var(--refund-color);"></i>
-        <span style="color:var(--refund-light); font-weight:600; font-size:18px;">Refund Analytics</span>
+    <div class="section-hdr">
+        <div class="section-hdr-row">
+            <i class="fa-solid fa-rotate-left" style="color:var(--refund-color)"></i>
+            <span class="section-hdr-title" style="color:var(--refund-light)">Refund Analytics</span>
+        </div>
+        <p class="section-desc">Refund frequency over time — bars show count, line shows total amount refunded. Helps identify patterns or staff issues.</p>
     </div>
 
     <div class="chart-grid">
@@ -1473,12 +1685,13 @@ select option {
 <!-- ── NEW: REFUND LIST ── -->
 <?php if (count($refundOrders) > 0): ?>
 <div class="card">
-    <div class="section-title" style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
-        <i class="fa-solid fa-list" style="color:var(--refund-color);"></i>
-        <span style="color:var(--refund-light); font-weight:600; font-size:18px;">Refunded Orders</span>
-        <span style="color:var(--text-muted); font-size:14px; font-weight:400;">
-            (<?= $refundCount ?> orders)
-        </span>
+    <div class="section-hdr">
+        <div class="section-hdr-row">
+            <i class="fa-solid fa-list" style="color:var(--refund-color)"></i>
+            <span class="section-hdr-title" style="color:var(--refund-light)">Refunded Orders</span>
+            <span class="section-hdr-badge"><?= $refundCount ?> order<?= $refundCount !== 1 ? 's' : '' ?></span>
+        </div>
+        <p class="section-desc">Full list of refunds processed in this period — original amount, refund amount, stated reason, and who processed it.</p>
     </div>
 
     <div class="refund-table-wrapper">
@@ -1916,7 +2129,7 @@ function buildRefundChart() {
 }
 
 // ── HOURLY SALES CHART ──
-const hourlyRawData = <?= json_encode($hourlyData) ?>;
+let hourlyRawData = <?= json_encode($hourlyData) ?>;
 const hourlyCanvas  = document.getElementById('hourlyChart');
 let hourlyChart     = null;
 
@@ -2239,13 +2452,13 @@ function exportCSV() {
     }
     rows.push([]);
     rows.push(['Metric', 'Value']);
-    rows.push(['Orders Completed', <?= $orderCount ?>]);
-    rows.push(['Total Sales', '$<?= fmtMoney($totalSales) ?>']);
-    rows.push(['Ingredient Cost', '$<?= fmtMoney($totalCOGS) ?>']);
-    rows.push(['Net Profit', '$<?= fmtMoney($totalProfit) ?>']);
+    rows.push(['Orders', <?= $orderCount ?>]);
+    rows.push(['Sales', '$<?= fmtMoney($totalSales) ?>']);
+    rows.push(['Food Cost', '$<?= fmtMoney($totalCOGS) ?>']);
+    rows.push(['Profit', '$<?= fmtMoney($totalProfit) ?>']);
     rows.push(['Profit Margin', '<?= number_format($margin, 1) ?>%']);
-    rows.push(['Avg Order Value', '$<?= fmtMoney($avgOrder) ?>']);
-    rows.push(['Total Refunds', '$<?= fmtMoney($totalRefunded) ?>']);
+    rows.push(['Avg per Order', '$<?= fmtMoney($avgOrder) ?>']);
+    rows.push(['Refunds', '$<?= fmtMoney($totalRefunded) ?>']);
 
     const csv  = rows.map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -2317,69 +2530,177 @@ window.addEventListener('resize', () => {
     }, 250);
 });
 
-// ── GENERATE REPORT ──
-function generateReport() {
-    const btn = document.querySelector('.btn-generate');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
-    
-    const mode = new URLSearchParams(window.location.search).get('mode') || 'daily';
-    const date = new URLSearchParams(window.location.search).get('date') || '';
-    const month = new URLSearchParams(window.location.search).get('month') || '';
-    const fromDate = new URLSearchParams(window.location.search).get('from_date') || '';
-    const toDate = new URLSearchParams(window.location.search).get('to_date') || '';
-    
-    let params = 'type=daily';
-    if (mode === 'monthly') {
-        params = 'type=monthly&month=' + month;
-    } else if (mode === 'range') {
-        params = 'type=range&from_date=' + fromDate + '&to_date=' + toDate;
-    }
-    
-    fetch('send_report.php?' + params)
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                showToast(data.message, 'success');
-            } else {
-                showToast('❌ Failed to generate report: ' + data.message, 'error');
-            }
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Generate Report';
-        })
-        .catch(() => {
-            showToast('❌ Failed to generate report.', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Generate Report';
-        });
+// ── LIVE POLLING ──
+const LIVE_MODE    = <?= json_encode($isLive) ?>;
+const REPORT_PARAMS = <?= json_encode([
+    'mode'      => $mode,
+    'date'      => $date      ?? null,
+    'month'     => $month     ?? null,
+    'from_date' => $fromDate  ?? null,
+    'to_date'   => $toDate    ?? null,
+]) ?>;
+
+function fmt2(n) { return Number(n).toFixed(2); }
+
+function flash(el) {
+    if (!el) return;
+    el.classList.remove('kpi-flash');
+    void el.offsetWidth; // force reflow
+    el.classList.add('kpi-flash');
 }
 
-// ── TOAST FUNCTION ──
-function showToast(message, type = 'success') {
-    const container = document.getElementById('toast-container');
-    if (!container) {
-        const div = document.createElement('div');
-        div.id = 'toast-container';
-        div.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 10px;';
-        document.body.appendChild(div);
+function setEl(id, text, parentForFlash) {
+    const el = document.getElementById(id);
+    if (!el || el.textContent === text) return;
+    el.textContent = text;
+    flash(parentForFlash || el.closest('.kpi') || el);
+}
+
+function applyLiveData(d) {
+    // ── KPI numbers ──
+    setEl('kv-orders',   String(d.orderCount));
+    setEl('kv-avg',      'Avg $' + fmt2(d.avgOrder) + ' · ' + (d.totalItemsSold ?? 0) + ' items');
+    setEl('kv-sales',    '$' + fmt2(d.totalSales));
+    setEl('kv-foodcost', '$' + fmt2(d.totalCOGS));
+    setEl('kv-profit',   '$' + fmt2(d.totalProfit));
+    setEl('kv-refunds',  '$' + fmt2(d.totalRefunded));
+    setEl('kv-takehome', '$' + fmt2(d.netRevenue));
+
+    // Margin badge
+    const mb = document.getElementById('kv-margin');
+    if (mb) {
+        const newText = 'Margin: ' + d.margin + '%';
+        const newClass = 'badge ' + (d.margin >= 30 ? 'good' : 'warn');
+        if (mb.className !== newClass || mb.textContent.trim() !== newText) {
+            mb.className = newClass;
+            mb.innerHTML = '<i class="fa-solid fa-percent"></i> ' + newText;
+            flash(mb.closest('.kpi'));
+        }
     }
-    const container2 = document.getElementById('toast-container');
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        background: var(--bg-card, #333); color: var(--text, white); border: 1px solid var(--border); padding: 14px 24px; border-radius: 50px;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.2); font-weight: 500;
-        border-left: 4px solid ${type === 'success' ? '#55e087' : '#ff6b6b'};
-        transform: translateX(120%); transition: transform 0.4s ease;
-        min-width: 200px;
-    `;
-    toast.textContent = message;
-    container2.appendChild(toast);
-    
-    setTimeout(() => { toast.style.transform = 'translateX(0)'; }, 10);
-    setTimeout(() => {
-        toast.style.transform = 'translateX(120%)';
-        setTimeout(() => toast.remove(), 400);
-    }, 3000);
+
+    // Refund count badge
+    const rb = document.getElementById('kv-refcount');
+    if (rb) {
+        const newRc = d.refundCount + ' orders refunded';
+        if (!rb.textContent.includes(d.refundCount)) {
+            rb.innerHTML = '<i class="fa-solid fa-receipt"></i> ' + newRc;
+            flash(rb.closest('.kpi'));
+        }
+    }
+
+    // Peak hour
+    const pk = document.getElementById('kv-peak');
+    if (pk && d.peakHour) setEl('kv-peak', d.peakHour);
+
+    // ── Insights strip ──
+    if (d.topProduct) {
+        const bsv = document.getElementById('ic-bestseller-val');
+        if (bsv) bsv.textContent = d.topProduct + ' — ' + d.topProductQty + ' sold';
+    }
+    if (d.topCategory) {
+        const tcv = document.getElementById('ic-topcat-val');
+        if (tcv) tcv.textContent = d.topCategory + ' — ' + d.topCategoryQty + ' items';
+    }
+    const mgv = document.getElementById('ic-margin-val');
+    if (mgv) {
+        mgv.textContent = d.margin + '% — ' + (d.margin >= 30 ? 'healthy' : 'below 30% target');
+        const mc = document.getElementById('ic-margin');
+        if (mc) mc.className = 'insight-chip ' + (d.margin >= 30 ? 'ic-good' : 'ic-warn');
+    }
+    if (d.peakHour) {
+        const pkv = document.getElementById('ic-peak-val');
+        if (pkv) pkv.textContent = d.peakHour + ' — most orders this hour';
+    }
+    if (d.refundCount > 0) {
+        const rrv = document.getElementById('ic-refrate-val');
+        if (rrv) rrv.textContent = d.refundRate + '% of orders — ' + d.refundCount + ' refunded';
+    }
+
+    // ── Period summary ──
+    const sumEl = document.getElementById('live-summary');
+    if (sumEl && d.orderCount > 0) {
+        const marginHealth = d.margin >= 50 ? 'excellent' : d.margin >= 30 ? 'healthy' : 'below the 30% target';
+        const marginCls    = d.margin >= 50 ? 'good' : d.margin >= 30 ? 'ok' : 'warn';
+        const refNote = d.refundCount > 0
+            ? ' <strong>' + d.refundCount + '</strong> ' + (d.refundCount === 1 ? 'order was' : 'orders were') + ' refunded, totalling <strong>$' + fmt2(d.totalRefunded) + '</strong>, bringing take-home to <strong>$' + fmt2(d.netRevenue) + '</strong>.'
+            : ' No refunds were issued, so the full <strong>$' + fmt2(d.netRevenue) + '</strong> is the take-home revenue.';
+        const pkNote  = d.peakHour ? ' The busiest sales hour was <strong>' + d.peakHour + '</strong>.' : '';
+        const tpNote  = d.topProduct ? ' Best-selling item: <strong>' + d.topProduct + '</strong> with <strong>' + d.topProductQty + '</strong> ' + (d.topProductQty === 1 ? 'unit' : 'units') + ' sold.' : '';
+        const itemsNote = (d.totalItemsSold > 0) ? ', serving <strong>' + d.totalItemsSold + '</strong> items,' : '';
+        sumEl.innerHTML = 'During <strong>' + sumEl.dataset.label + '</strong>, the café completed <strong>' + d.orderCount + '</strong> ' + (d.orderCount === 1 ? 'order' : 'orders') + itemsNote + ' totalling <strong>$' + fmt2(d.totalSales) + '</strong> in sales (avg <strong>$' + fmt2(d.avgOrder) + '</strong> per order). After ingredient costs of <strong>$' + fmt2(d.totalCOGS) + '</strong>, the gross profit was <strong>$' + fmt2(d.totalProfit) + '</strong> — a margin of <strong class="' + marginCls + '">' + d.margin + '%</strong>, which is ' + marginHealth + '.' + refNote + pkNote + tpNote;
+    }
+
+    // ── Hourly chart (daily mode only) ──
+    if (d.hourlyData && d.hourlyData.length && typeof hourlyChart !== 'undefined' && hourlyChart) {
+        hourlyRawData = d.hourlyData;
+        const revenue = d.hourlyData.map(h => h.revenue);
+        const counts  = d.hourlyData.map(h => h.count);
+        const maxRev  = Math.max(...revenue);
+        const bgColors = revenue.map(v => v > 0 && v === maxRev ? 'rgba(227,179,130,0.95)' : 'rgba(209,144,75,0.65)');
+        hourlyChart.data.datasets[0].data = revenue;
+        hourlyChart.data.datasets[0].backgroundColor = bgColors;
+        hourlyChart.data.datasets[1].data = counts;
+        hourlyChart.update('none');
+        buildTopHoursChart();
+    }
+
+    // ── Goal progress bar ──
+    const goalFill = document.getElementById('goal-fill');
+    if (goalFill) {
+        const target = <?= json_encode($dailyTarget) ?>;
+        const pct = target > 0 ? Math.min(100, d.totalSales / target * 100) : 0;
+        goalFill.style.width = pct.toFixed(1) + '%';
+        const gc = document.getElementById('goal-current');
+        if (gc) gc.textContent = fmt2(d.totalSales);
+        const gp = document.getElementById('goal-pct');
+        if (gp) gp.textContent = Math.round(pct) + '%';
+    }
+
+    // ── Page title ──
+    document.title = 'Report — $' + fmt2(d.totalSales) + ' · Café';
+
+    // ── Timestamp ──
+    const ts = document.getElementById('live-ts');
+    if (ts) ts.textContent = d.ts;
+}
+
+if (LIVE_MODE) {
+    // Store label on summary el for JS rebuild
+    const sumEl = document.getElementById('live-summary');
+    if (sumEl) sumEl.dataset.label = <?= json_encode($label) ?>;
+
+    const liveInterval = <?= $mode === 'daily' ? 30000 : 60000 ?>;
+
+    let _pollFails = 0;
+
+    function _setDotState(ok) {
+        const dot = document.getElementById('live-dot');
+        const ts  = document.getElementById('live-ts');
+        if (!dot) return;
+        if (ok) {
+            dot.style.background = '';
+            dot.classList.add('pulsing');
+        } else {
+            dot.style.background = '#f0b45a';
+            dot.classList.remove('pulsing');
+            if (ts && !ts.textContent.startsWith('reconnecting')) ts.textContent = 'reconnecting…';
+        }
+    }
+
+    function pollLive() {
+        if (document.hidden) return;
+        const url = new URL('report_live.php', window.location.href);
+        Object.entries(REPORT_PARAMS).forEach(([k,v]) => { if (v !== null) url.searchParams.set(k, v); });
+        fetch(url)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => {
+                if (d && !d.error) { _pollFails = 0; _setDotState(true); applyLiveData(d); }
+                else { _pollFails++; if (_pollFails >= 3) _setDotState(false); }
+            })
+            .catch(() => { _pollFails++; if (_pollFails >= 3) _setDotState(false); });
+    }
+
+    setInterval(pollLive, liveInterval);
 }
 </script>
 <script src="animations.js"></script>
