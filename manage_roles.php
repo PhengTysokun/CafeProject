@@ -7,6 +7,14 @@ if (($_SESSION['role'] ?? '') !== 'admin') {
     header("Location: dashboard.php"); exit;
 }
 
+function audit_log(mysqli $db, string $action, string $role_slug, string $detail = ''): void {
+    if (session_status() === PHP_SESSION_NONE) session_start();
+    $by = $_SESSION['username'] ?? (isset($_SESSION['user_id']) ? 'user#'.$_SESSION['user_id'] : 'unknown');
+    $s  = $db->prepare("INSERT INTO role_audit_log (action, role_slug, detail, performed_by) VALUES (?,?,?,?)");
+    $s->bind_param("ssss", $action, $role_slug, $detail, $by);
+    $s->execute();
+}
+
 /* ── POST: Create role ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create_role') {
     $name = trim($_POST['role_name'] ?? '');
@@ -18,11 +26,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         $s = $conn->prepare("INSERT IGNORE INTO roles (slug, name, icon, color, description, is_system) VALUES (?,?,?,?,?,0)");
         $s->bind_param("sssss", $slug, $name, $icon, $color, $desc);
         $s->execute();
+        if ($s->affected_rows > 0) audit_log($conn, 'create', $slug, "name=$name");
         $tpl = trim($_POST['role_template'] ?? '');
         if ($tpl !== '' && in_array($tpl, ['manager', 'staff'])) {
-            $esc = $conn->real_escape_string($slug);
-            $esct = $conn->real_escape_string($tpl);
-            $conn->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT '$esc', permission_id FROM role_permissions WHERE role='$esct'");
+            $st = $conn->prepare("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT ?, permission_id FROM role_permissions WHERE role=?");
+            $st->bind_param("ss", $slug, $tpl);
+            $st->execute();
         }
     }
     header("Location: manage_roles.php"); exit;
@@ -30,10 +39,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
 
 /* ── POST: Delete role ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_role') {
-    $slug = trim($_POST['role_slug'] ?? '');
-    if ($slug !== '') {
-        $conn->query("DELETE FROM roles WHERE slug='".($conn->real_escape_string($slug))."' AND is_system=0");
-        $conn->query("DELETE FROM role_permissions WHERE role='".($conn->real_escape_string($slug))."'");
+    $slug     = trim($_POST['role_slug'] ?? '');
+    $reassign = trim($_POST['reassign_to'] ?? '');
+    if ($slug !== '' && $slug !== 'admin') {
+        // Validate reassign target exists (if provided)
+        if ($reassign !== '' && $reassign !== $slug) {
+            $vr = $conn->prepare("SELECT slug FROM roles WHERE slug=?");
+            $vr->bind_param("s", $reassign); $vr->execute();
+            if (!$vr->get_result()->fetch_assoc()) $reassign = '';
+        }
+        // Reassign employees before deleting
+        if ($reassign !== '') {
+            $sr = $conn->prepare("UPDATE users SET role=? WHERE role=?");
+            $sr->bind_param("ss", $reassign, $slug);
+            $sr->execute();
+        }
+        $sd = $conn->prepare("DELETE FROM roles WHERE slug=? AND is_system=0");
+        $sd->bind_param("s", $slug); $sd->execute();
+        if ($sd->affected_rows > 0) {
+            $detail = $reassign !== '' ? "reassigned_to=$reassign" : 'no_employees';
+            audit_log($conn, 'delete', $slug, $detail);
+        }
+        $sp = $conn->prepare("DELETE FROM role_permissions WHERE role=?");
+        $sp->bind_param("s", $slug); $sp->execute();
     }
     header("Location: manage_roles.php"); exit;
 }
@@ -49,8 +77,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
         $s = $conn->prepare("UPDATE roles SET name=?, icon=?, color=?, description=? WHERE slug=? AND slug != 'admin'");
         $s->bind_param("sssss", $name, $icon, $color, $desc, $slug);
         $s->execute();
+        if ($s->affected_rows > 0) audit_log($conn, 'edit_meta', $slug, "name=$name");
     }
     header("Location: manage_roles.php"); exit;
+}
+
+/* ── AJAX: Get employees for a role ── */
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'role_employees') {
+    header('Content-Type: application/json');
+    $slug = trim($_GET['slug'] ?? '');
+    if ($slug === '') { ob_clean(); echo json_encode(['names' => []]); exit; }
+    $q = $conn->prepare("SELECT e.name FROM employees e JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) WHERE u.role=? ORDER BY e.name ASC LIMIT 20");
+    $q->bind_param("s", $slug); $q->execute();
+    $res = $q->get_result();
+    $names = [];
+    while ($row = $res->fetch_assoc()) $names[] = $row['name'];
+    ob_clean(); echo json_encode(['names' => $names]); exit;
 }
 
 /* ── AJAX: Save permissions ── */
@@ -64,15 +106,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         ob_clean(); echo json_encode(['success' => false, 'message' => 'Invalid role']); exit;
     }
     $ids = array_map('intval', $_POST['permissions'] ?? []);
-    $conn->query("DELETE FROM role_permissions WHERE role = '".$conn->real_escape_string($role)."'");
+    $sdp = $conn->prepare("DELETE FROM role_permissions WHERE role=?");
+    $sdp->bind_param("s", $role); $sdp->execute();
     if (!empty($ids)) {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $s  = $conn->prepare("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT ?, id FROM permissions WHERE id IN ($ph)");
         $s->bind_param('s' . str_repeat('i', count($ids)), $role, ...$ids);
         $s->execute();
     }
+    audit_log($conn, 'save_permissions', $role, count($ids).' permissions');
     ob_clean(); echo json_encode(['success' => true]);
     exit;
+}
+
+/* ── POST: Bulk reassign ── */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_reassign') {
+    $from = trim($_POST['from_role'] ?? '');
+    $to   = trim($_POST['to_role']   ?? '');
+    if ($from !== '' && $to !== '' && $from !== $to && $from !== 'admin') {
+        $vt = $conn->prepare("SELECT slug FROM roles WHERE slug=?");
+        $vt->bind_param("s", $to); $vt->execute();
+        if ($vt->get_result()->fetch_assoc()) {
+            $su = $conn->prepare("UPDATE users SET role=? WHERE role=?");
+            $su->bind_param("ss", $to, $from); $su->execute();
+            if ($su->affected_rows > 0) audit_log($conn, 'bulk_reassign', $from, "to=$to,count={$su->affected_rows}");
+        }
+    }
+    header("Location: manage_roles.php"); exit;
 }
 
 /* ── DATA ── */
@@ -475,6 +535,13 @@ tr:last-child td { border-bottom:none; }
     display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;
 }
 .btn-delete-role:hover { background:#e74c3c;color:#fff;border-color:#e74c3c; }
+/* ── Bulk reassign button ── */
+.btn-reassign-role {
+    width:28px;height:28px;border-radius:7px;border:1px solid rgba(52,152,219,.2);
+    background:rgba(52,152,219,.08);color:#3498db;cursor:pointer;font-size:11px;
+    display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;
+}
+.btn-reassign-role:hover { background:#3498db;color:#fff;border-color:#3498db; }
 
 /* ── Create Role modal ── */
 .cr-overlay {
@@ -641,11 +708,18 @@ tr:last-child td { border-bottom:none; }
                     onclick="openEditRoleMeta(this)">
                     <i class="fa-solid fa-pen-to-square"></i>
                 </button>
-                <form method="POST" style="margin:0" onsubmit="return confirm('Delete role \'<?= htmlspecialchars($rinfo['label']) ?>\'? Employees with this role won\'t be affected.')">
-                    <input type="hidden" name="action" value="delete_role">
-                    <input type="hidden" name="role_slug" value="<?= $rkey ?>">
-                    <button type="submit" class="btn-delete-role" title="Delete role"><i class="fa-solid fa-trash-can"></i></button>
-                </form>
+                <?php if (($emp_counts[$rkey] ?? 0) > 0): ?>
+                <button class="btn-reassign-role" title="Bulk reassign employees"
+                    onclick="openBulkReassignModal('<?= htmlspecialchars($rkey, ENT_QUOTES) ?>','<?= htmlspecialchars($rinfo['label'], ENT_QUOTES) ?>',<?= $emp_counts[$rkey] ?? 0 ?>)">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </button>
+                <?php endif; ?>
+                <?php if (!$rinfo['system']): ?>
+                <button class="btn-delete-role" title="Delete role"
+                    onclick="openDeleteModal('<?= htmlspecialchars($rkey, ENT_QUOTES) ?>','<?= htmlspecialchars($rinfo['label'], ENT_QUOTES) ?>',<?= $emp_counts[$rkey] ?? 0 ?>)">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+                <?php endif; ?>
                 <?php endif; ?>
             </div>
             <div class="role-desc"><?= htmlspecialchars($rinfo['desc']) ?></div>
@@ -773,6 +847,66 @@ tr:last-child td { border-bottom:none; }
                     </div>
                 </div>
                 <button type="submit" class="cr-submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- DELETE ROLE MODAL -->
+    <div class="cr-overlay" id="deleteRoleModal" onclick="if(event.target===this)closeDeleteModal()">
+        <div class="cr-modal" style="max-width:420px">
+            <div class="cr-modal-head">
+                <span><i class="fa-solid fa-trash-can" style="color:#e74c3c;margin-right:7px"></i>Delete Role</span>
+                <button class="cr-close" onclick="closeDeleteModal()">&times;</button>
+            </div>
+            <form method="POST" id="deleteRoleForm">
+                <input type="hidden" name="action" value="delete_role">
+                <input type="hidden" name="role_slug" id="dr-slug">
+                <input type="hidden" name="reassign_to" id="dr-reassign">
+
+                <p id="dr-msg" style="font-size:13px;color:var(--text-muted);margin-bottom:10px;line-height:1.6"></p>
+                <div id="dr-names-list" style="margin-bottom:14px;line-height:1.8"></div>
+
+                <div id="dr-reassign-wrap" style="display:none;margin-bottom:18px">
+                    <label style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px">
+                        Reassign employees to
+                    </label>
+                    <div id="dr-role-options" style="display:flex;flex-direction:column;gap:6px"></div>
+                </div>
+
+                <div style="display:flex;gap:10px">
+                    <button type="button" onclick="closeDeleteModal()" class="btn-cancel-modal" style="flex:1">Cancel</button>
+                    <button type="submit" id="dr-confirm-btn" class="cr-submit" style="flex:1;background:#e74c3c;margin-top:0">
+                        <i class="fa-solid fa-trash-can"></i> Delete
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- BULK REASSIGN MODAL -->
+    <div class="cr-overlay" id="bulkReassignModal" onclick="if(event.target===this)closeBulkReassign()">
+        <div class="cr-modal" style="max-width:400px">
+            <div class="cr-modal-head">
+                <span><i class="fa-solid fa-arrows-rotate" style="color:#3498db;margin-right:7px"></i>Bulk Reassign</span>
+                <button class="cr-close" onclick="closeBulkReassign()">&times;</button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="bulk_reassign">
+                <input type="hidden" name="from_role" id="br-from">
+                <p id="br-msg" style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6"></p>
+                <div style="margin-bottom:18px">
+                    <label style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px">
+                        Move all employees to
+                    </label>
+                    <div id="br-role-options" style="display:flex;flex-direction:column;gap:6px"></div>
+                    <input type="hidden" name="to_role" id="br-to">
+                </div>
+                <div style="display:flex;gap:10px">
+                    <button type="button" onclick="closeBulkReassign()" class="btn-cancel-modal" style="flex:1">Cancel</button>
+                    <button type="submit" id="br-confirm-btn" class="cr-submit" style="flex:1;background:#3498db;margin-top:0">
+                        <i class="fa-solid fa-arrows-rotate"></i> Reassign
+                    </button>
+                </div>
             </form>
         </div>
     </div>
@@ -1146,6 +1280,95 @@ function closeEditMeta() {
     document.getElementById('editRoleMetaModal').classList.remove('open');
 }
 
+/* ── DELETE ROLE MODAL ── */
+async function openDeleteModal(slug, label, empCount) {
+    document.getElementById('dr-slug').value = slug;
+    document.getElementById('dr-reassign').value = '';
+
+    const msg  = document.getElementById('dr-msg');
+    const wrap = document.getElementById('dr-reassign-wrap');
+    const opts = document.getElementById('dr-role-options');
+    const namesList = document.getElementById('dr-names-list');
+
+    if (empCount > 0) {
+        msg.innerHTML = `<strong style="color:var(--text)">${empCount} employee${empCount !== 1 ? 's' : ''}</strong> currently have the <strong style="color:var(--text)">${label}</strong> role. Choose a role to reassign them to before deleting.`;
+        wrap.style.display = 'block';
+
+        // Fetch employee names async
+        if (namesList) {
+            namesList.textContent = 'Loading…';
+            try {
+                const r = await fetch(`manage_roles.php?action=role_employees&slug=${encodeURIComponent(slug)}`);
+                const d = await r.json();
+                if (d.names && d.names.length) {
+                    namesList.innerHTML = d.names.map(n => `<span style="display:inline-block;background:rgba(255,255,255,.07);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;margin:2px">${n}</span>`).join('');
+                    if (empCount > d.names.length) namesList.innerHTML += `<span style="font-size:11px;color:var(--text-muted)"> +${empCount - d.names.length} more</span>`;
+                } else { namesList.textContent = ''; }
+            } catch(_) { namesList.textContent = ''; }
+        }
+
+        // Build role options
+        opts.innerHTML = '';
+        let first = true;
+        for (const [rs, ri] of Object.entries(ROLES_INFO)) {
+            if (rs === slug || rs === 'admin') continue;
+            if (first) { document.getElementById('dr-reassign').value = rs; first = false; }
+            opts.innerHTML += `
+                <label style="display:flex;align-items:center;gap:10px;padding:9px 13px;border-radius:9px;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;transition:all .2s;font-size:13px;font-weight:500"
+                    onclick="document.getElementById('dr-reassign').value='${rs}';document.querySelectorAll('#dr-role-options label').forEach(l=>l.style.borderColor='');this.style.borderColor='${ri.color}'">
+                    <i class="fa-solid ${ri.icon}" style="color:${ri.color};width:16px;text-align:center"></i>
+                    ${ri.label}
+                </label>`;
+        }
+        document.getElementById('dr-confirm-btn').innerHTML = '<i class="fa-solid fa-trash-can"></i> Reassign & Delete';
+
+        const firstLabel = opts.querySelector('label');
+        const firstSlug  = Object.keys(ROLES_INFO).find(rs => rs !== slug && rs !== 'admin');
+        if (firstLabel && firstSlug) firstLabel.style.borderColor = ROLES_INFO[firstSlug].color;
+    } else {
+        msg.innerHTML = `Are you sure you want to delete the <strong style="color:var(--text)">${label}</strong> role? This cannot be undone.`;
+        wrap.style.display = 'none';
+        if (namesList) namesList.textContent = '';
+        document.getElementById('dr-reassign').value = '';
+        document.getElementById('dr-confirm-btn').innerHTML = '<i class="fa-solid fa-trash-can"></i> Delete';
+    }
+
+    document.getElementById('deleteRoleModal').classList.add('open');
+}
+function closeDeleteModal() {
+    document.getElementById('deleteRoleModal').classList.remove('open');
+}
+
+/* ── BULK REASSIGN MODAL ── */
+function openBulkReassignModal(slug, label, empCount) {
+    document.getElementById('br-from').value = slug;
+    document.getElementById('br-to').value   = '';
+    document.getElementById('br-msg').innerHTML =
+        `Move all <strong style="color:var(--text)">${empCount} employee${empCount !== 1 ? 's' : ''}</strong> currently assigned to <strong style="color:var(--text)">${label}</strong> to a different role.`;
+
+    const opts = document.getElementById('br-role-options');
+    opts.innerHTML = '';
+    let first = true;
+    for (const [rs, ri] of Object.entries(ROLES_INFO)) {
+        if (rs === slug || rs === 'admin') continue;
+        if (first) { document.getElementById('br-to').value = rs; first = false; }
+        opts.innerHTML += `
+            <label style="display:flex;align-items:center;gap:10px;padding:9px 13px;border-radius:9px;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;transition:all .2s;font-size:13px;font-weight:500"
+                onclick="document.getElementById('br-to').value='${rs}';document.querySelectorAll('#br-role-options label').forEach(l=>l.style.borderColor='');this.style.borderColor='${ri.color}'">
+                <i class="fa-solid ${ri.icon}" style="color:${ri.color};width:16px;text-align:center"></i>
+                ${ri.label}
+            </label>`;
+    }
+    const firstLabel = opts.querySelector('label');
+    const firstSlug  = Object.keys(ROLES_INFO).find(rs => rs !== slug && rs !== 'admin');
+    if (firstLabel && firstSlug) firstLabel.style.borderColor = ROLES_INFO[firstSlug].color;
+
+    document.getElementById('bulkReassignModal').classList.add('open');
+}
+function closeBulkReassign() {
+    document.getElementById('bulkReassignModal').classList.remove('open');
+}
+
 /* ── THEME ── */
 function toggleTheme() {
     const html  = document.documentElement;
@@ -1158,7 +1381,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (localStorage.getItem('theme') === 'light')
         document.getElementById('themeIcon').className = 'fa-solid fa-sun';
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeEditMeta(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeEditMeta(); closeDeleteModal(); closeBulkReassign(); } });
 </script>
 </body>
 </html>

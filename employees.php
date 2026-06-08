@@ -19,6 +19,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'get_emp
     exit;
 }
 
+/* ── Real-time stats (AJAX GET) ── */
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'get_stats') {
+    header('Content-Type: application/json');
+    $hasBizDate = $conn->query("SHOW COLUMNS FROM `orders` LIKE 'business_date'")->num_rows > 0;
+    $dc = $hasBizDate ? 'business_date' : 'created_at';
+    $res = $conn->query("
+        SELECT e.employee_id, e.user_id, e.shift, e.job_title,
+            COALESCE(s.total_orders,      0) AS total_orders,
+            COALESCE(s.total_revenue,     0) AS total_revenue,
+            COALESCE(s.orders_this_month, 0) AS orders_this_month,
+            COALESCE(s.orders_today,      0) AS orders_today,
+            COALESCE(s.avg_order_value,   0) AS avg_order_value
+        FROM employees e
+        LEFT JOIN (
+            SELECT employee_id,
+                COUNT(*)                                                                        AS total_orders,
+                COALESCE(SUM(total), 0)                                                         AS total_revenue,
+                SUM(CASE WHEN DATE_FORMAT(`$dc`,'%Y-%m')=DATE_FORMAT(CURDATE(),'%Y-%m') THEN 1 ELSE 0 END) AS orders_this_month,
+                SUM(CASE WHEN DATE(`$dc`) = CURDATE() THEN 1 ELSE 0 END)                        AS orders_today,
+                AVG(total)                                                                       AS avg_order_value
+            FROM orders
+            WHERE status NOT IN ('cancelled','refunded','void')
+            GROUP BY employee_id
+        ) s ON s.employee_id = e.user_id
+    ");
+    $stats = []; $max = 1;
+    while ($r = $res->fetch_assoc()) {
+        $stats[(int)$r['employee_id']] = [
+            'total_orders'      => (int)$r['total_orders'],
+            'total_revenue'     => (float)$r['total_revenue'],
+            'orders_this_month' => (int)$r['orders_this_month'],
+            'orders_today'      => (int)$r['orders_today'],
+            'avg_order_value'   => (float)$r['avg_order_value'],
+            'shift'             => $r['shift'] ?? null,
+            'job_title'         => $r['job_title'] ?? '',
+        ];
+        if ((int)$r['total_orders'] > $max) $max = (int)$r['total_orders'];
+    }
+    ob_end_clean();
+    echo json_encode(['ok' => true, 'stats' => $stats, 'max_orders' => $max]);
+    exit;
+}
+
 /* ── Save employee from edit modal (AJAX POST) ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_employee') {
     header('Content-Type: application/json');
@@ -31,6 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $hire     = $_POST['hire_date'] ?? '';
     $address  = trim($_POST['address'] ?? '');
     $new_role = trim($_POST['emp_role'] ?? '');
+    $shift_raw = trim($_POST['shift'] ?? '');
+    $shift    = in_array($shift_raw, ['morning','afternoon','night']) ? $shift_raw : null;
 
     if ($eid <= 0 || $name === '') {
         ob_end_clean(); echo json_encode(['ok' => false, 'msg' => 'Invalid data']); exit;
@@ -51,11 +96,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     }
 
     if ($photo) {
-        $st = $conn->prepare("UPDATE employees SET name=?,phone=?,job_title=?,salary=?,date_of_birth=?,hire_date=?,address=?,photo=? WHERE employee_id=?");
-        $st->bind_param("ssssssssi", $name,$phone,$job,$salary,$dob,$hire,$address,$photo,$eid);
+        $st = $conn->prepare("UPDATE employees SET name=?,phone=?,job_title=?,salary=?,date_of_birth=?,hire_date=?,address=?,photo=?,shift=? WHERE employee_id=?");
+        $st->bind_param("sssssssssi", $name,$phone,$job,$salary,$dob,$hire,$address,$photo,$shift,$eid);
     } else {
-        $st = $conn->prepare("UPDATE employees SET name=?,phone=?,job_title=?,salary=?,date_of_birth=?,hire_date=?,address=? WHERE employee_id=?");
-        $st->bind_param("sssssssi", $name,$phone,$job,$salary,$dob,$hire,$address,$eid);
+        $st = $conn->prepare("UPDATE employees SET name=?,phone=?,job_title=?,salary=?,date_of_birth=?,hire_date=?,address=?,shift=? WHERE employee_id=?");
+        $st->bind_param("ssssssssi", $name,$phone,$job,$salary,$dob,$hire,$address,$shift,$eid);
     }
     $st->execute();
 
@@ -70,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
         }
     }
     ob_end_clean();
-    echo json_encode(['ok' => true, 'photo' => $photo, 'name' => $name, 'job' => $job, 'role' => $new_role]);
+    echo json_encode(['ok' => true, 'photo' => $photo, 'name' => $name, 'job' => $job, 'role' => $new_role, 'shift' => $shift]);
     exit;
 }
 
@@ -126,7 +171,7 @@ if ($has_orders) {
         LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id)
         LEFT JOIN (
             SELECT
-                employee_name,
+                employee_id,
                 COUNT(*)                                                                   AS total_orders,
                 COALESCE(SUM(total), 0)                                                    AS total_revenue,
                 SUM(CASE WHEN DATE_FORMAT(`$dc`,'%Y-%m')=DATE_FORMAT(CURDATE(),'%Y-%m') THEN 1 ELSE 0 END) AS orders_this_month,
@@ -135,8 +180,8 @@ if ($has_orders) {
                 MAX(`$dc`)                                                                 AS last_order_date
             FROM orders
             WHERE status NOT IN ('cancelled','refunded','void')
-            GROUP BY employee_name
-        ) s ON s.employee_name = e.name
+            GROUP BY employee_id
+        ) s ON s.employee_id = e.user_id
         ORDER BY total_orders DESC, e.name ASC
     ";
 } else {
@@ -189,6 +234,13 @@ foreach ($employees as $_e) {
 $count_admin   = $role_counts_emp['admin']   ?? 0;
 $count_manager = $role_counts_emp['manager'] ?? 0;
 $count_staff   = $role_counts_emp['staff']   ?? 0;
+
+// Shift counts
+$shift_counts = ['morning' => 0, 'afternoon' => 0, 'night' => 0];
+foreach ($employees as $_e) {
+    $sh = $_e['shift'] ?? '';
+    if (isset($shift_counts[$sh])) $shift_counts[$sh]++;
+}
 
 $sorted_employees = $employees;
 $_role_order = array_keys($_roles_db);
@@ -522,6 +574,16 @@ tbody tr:hover .avatar, tbody tr:hover .avatar-img { border-color:var(--accent);
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; animation:none!important; } }
 
+/* ── SHIFT BADGE ── */
+.shift-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; color:var(--sb-c,#888); margin-top:3px; }
+.shift-badge i { font-size:9px; }
+.shift-pill[data-shift-filter="morning"]  i { color:#f39c12; }
+.shift-pill[data-shift-filter="afternoon"] i { color:#3498db; }
+.shift-pill[data-shift-filter="night"]    i { color:#9b59b6; }
+.filter-pill.shift-active { background:var(--sb-active,var(--accent)); color:#000; border-color:var(--sb-active,var(--accent)); }
+.filter-pill.shift-active i { color:inherit; }
+.shift-sep { width:1px; height:20px; background:var(--border); margin:0 4px; flex-shrink:0; }
+
 /* ── INLINE ROLE SELECTOR ── */
 .role-wrap { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:50px; font-size:10px; font-weight:700; background:var(--rb-bg,rgba(255,255,255,.07)); border:1px solid var(--rb-border,rgba(255,255,255,.12)); transition:var(--transition); white-space:nowrap; }
 .role-wrap.editable:hover { filter:brightness(1.18); cursor:pointer; }
@@ -665,7 +727,7 @@ foreach ($leaderboard as $i => $emp):
     $color = avatarColor($emp['name']);
     $hasPhoto = !empty($emp['photo']) && file_exists($emp['photo']);
 ?>
-    <div class="podium-card <?= $medals[$i] ?>">
+    <div class="podium-card <?= $medals[$i] ?>" data-podium-eid="<?= (int)$emp['employee_id'] ?>">
         <?php if ($i === 0): ?><span class="top-badge"><i class="fa-solid fa-crown"></i> Top Performer</span><?php endif; ?>
         <div class="rank-badge <?= $rbadge[$i] ?>"><?= $rnums[$i] ?></div>
         <?php if ($hasPhoto): ?>
@@ -676,20 +738,28 @@ foreach ($leaderboard as $i => $emp):
             </div>
         <?php endif; ?>
         <div class="podium-name"><?= h($emp['name']) ?></div>
+        <?php
+        $shiftMeta = ['morning'=>['#f39c12','fa-sun','Morning'],'afternoon'=>['#3498db','fa-cloud-sun','Afternoon'],'night'=>['#9b59b6','fa-moon','Night']];
+        if (!empty($emp['shift']) && isset($shiftMeta[$emp['shift']])):
+            [$sc,$si,$sl] = $shiftMeta[$emp['shift']];
+        ?>
+        <div class="podium-title"><?= h($emp['job_title'] ?? '—') ?> <span style="color:<?= $sc ?>;font-size:9px;opacity:.85"><i class="fa-solid <?= $si ?>"></i> <?= $sl ?></span></div>
+        <?php else: ?>
         <div class="podium-title"><?= h($emp['job_title'] ?? '—') ?></div>
+        <?php endif; ?>
         <div class="podium-stats">
             <div class="podium-stat">
-                <div class="ps-val"><?= fmtnum($emp['total_orders']) ?></div>
+                <div class="ps-val ps-orders"><?= fmtnum($emp['total_orders']) ?></div>
                 <div class="ps-lbl">Orders</div>
             </div>
-            <?php if ($sess_role === 'admin' && $emp['total_revenue'] > 0): ?>
-            <div class="podium-stat">
-                <div class="ps-val" style="color:var(--ok)">$<?= fmtnum($emp['total_revenue']) ?></div>
+            <?php if ($sess_role === 'admin'): ?>
+            <div class="podium-stat ps-rev-wrap" <?= $emp['total_revenue'] <= 0 ? 'style="display:none"' : '' ?>>
+                <div class="ps-val ps-revenue" style="color:var(--ok)">$<?= fmtnum($emp['total_revenue']) ?></div>
                 <div class="ps-lbl">Revenue</div>
             </div>
             <?php endif; ?>
             <div class="podium-stat">
-                <div class="ps-val" style="color:var(--blue)"><?= fmtnum($emp['orders_this_month']) ?></div>
+                <div class="ps-val ps-month" style="color:var(--blue)"><?= fmtnum($emp['orders_this_month']) ?></div>
                 <div class="ps-lbl">This Mo.</div>
             </div>
         </div>
@@ -717,6 +787,19 @@ foreach ($leaderboard as $i => $emp):
         <span class="pill-count"><?= $rc ?></span>
     </button>
     <?php endforeach; ?>
+    <div class="shift-sep"></div>
+    <button class="filter-pill shift-pill active-shift" data-shift-filter="" onclick="setShiftFilter(this,'')">
+        <i class="fa-solid fa-clock-rotate-left"></i> All Shifts
+    </button>
+    <button class="filter-pill shift-pill" data-shift-filter="morning" onclick="setShiftFilter(this,'morning')" style="--sb-active:#f39c12">
+        <i class="fa-solid fa-sun"></i> Morning <span class="pill-count"><?= $shift_counts['morning'] ?></span>
+    </button>
+    <button class="filter-pill shift-pill" data-shift-filter="afternoon" onclick="setShiftFilter(this,'afternoon')" style="--sb-active:#3498db">
+        <i class="fa-solid fa-cloud-sun"></i> Afternoon <span class="pill-count"><?= $shift_counts['afternoon'] ?></span>
+    </button>
+    <button class="filter-pill shift-pill" data-shift-filter="night" onclick="setShiftFilter(this,'night')" style="--sb-active:#9b59b6">
+        <i class="fa-solid fa-moon"></i> Night <span class="pill-count"><?= $shift_counts['night'] ?></span>
+    </button>
     <div class="ctrl-right">
         <span class="row-count" id="rowCount">Showing <?= $total_staff ?> of <?= $total_staff ?></span>
         <button class="compact-btn" id="compactBtn" onclick="toggleCompact()">
@@ -776,6 +859,7 @@ foreach ($sorted_employees as $idx => $emp):
                     data-title="<?= h(strtolower($emp['job_title'] ?? '')) ?>"
                     data-orders="<?= (int)$emp['total_orders'] ?>"
                     data-role="<?= h($empRole) ?>"
+                    data-shift="<?= h($emp['shift'] ?? '') ?>"
                     data-id="<?= $eid ?>">
                     <td>
                         <div class="rank-cell <?= $rankCls ?>">
@@ -795,16 +879,36 @@ foreach ($sorted_employees as $idx => $emp):
                             <?php endif; ?>
                             <div>
                                 <div class="emp-name"><?= h($emp['name']) ?></div>
-                                <div class="emp-title"><?= h($emp['job_title'] ?? '—') ?></div>
+                                <div class="emp-title">
+                                    <?= h($emp['job_title'] ?? '—') ?>
+                                    <?php if (!empty($emp['shift'])):
+                                        $shiftMeta = ['morning'=>['#f39c12','fa-sun','Morning'],'afternoon'=>['#3498db','fa-cloud-sun','Afternoon'],'night'=>['#9b59b6','fa-moon','Night']];
+                                        [$sc,$si,$sl] = $shiftMeta[$emp['shift']] ?? ['#888','fa-clock',ucfirst($emp['shift'])];
+                                    ?>
+                                    <span class="shift-inline" style="color:<?= $sc ?>;font-size:9px;margin-left:4px;opacity:.9"><i class="fa-solid <?= $si ?>"></i> <?= $sl ?></span>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
                     </td>
                     <td data-val="<?= h($empRole) ?>">
                         <?php
+                            $_role_exists = isset($_roles_db[$empRole]);
                             $_rinfo  = $_roles_db[$empRole] ?? ['name' => ucfirst($empRole), 'icon' => 'fa-user', 'color' => '#888'];
                             $_rbcol  = $_rinfo['color'] ?? '#888';
                         ?>
-                        <?php if ($empRole === 'admin'): ?>
+                        <?php if (!$_role_exists && $empRole !== 'admin'): ?>
+                        <div class="role-wrap editable" data-eid="<?= $eid ?>" data-current="<?= h($empRole) ?>"
+                             style="--rb-bg:#e74c3c1a;--rb-color:#e74c3c;--rb-border:#e74c3c33" title="Role '<?= h($empRole) ?>' no longer exists — please reassign">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <select class="role-select" onchange="updateRole(<?= $eid ?>, this)" title="Reassign role" style="color:#e74c3c">
+                                <option value="" disabled selected>Reassign…</option>
+                                <?php foreach ($_roles_db as $_rs => $_ri): if ($_rs === 'admin' && ($_SESSION['role'] ?? '') !== 'admin') continue; ?>
+                                <option value="<?= h($_rs) ?>"><?= h($_ri['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <?php elseif ($empRole === 'admin'): ?>
                         <span class="role-wrap" style="--rb-bg:<?= $_rbcol ?>1a;--rb-color:<?= $_rbcol ?>;--rb-border:<?= $_rbcol ?>33">
                             <i class="fa-solid <?= htmlspecialchars($_rinfo['icon']) ?>"></i>
                             <?= htmlspecialchars($_rinfo['name']) ?>
@@ -821,7 +925,7 @@ foreach ($sorted_employees as $idx => $emp):
                         </div>
                         <?php endif; ?>
                     </td>
-                    <td data-val="<?= (int)$emp['total_orders'] ?>">
+                    <td data-val="<?= (int)$emp['total_orders'] ?>" data-stat-orders="<?= $eid ?>">
                         <div class="perf-cell">
                             <div class="perf-top">
                                 <span class="perf-num <?= !$hasOrders ? 'num-zero' : '' ?>"><?= fmtnum($emp['total_orders']) ?></span>
@@ -834,16 +938,16 @@ foreach ($sorted_employees as $idx => $emp):
                             <?php endif; ?>
                         </div>
                     </td>
-                    <td data-val="<?= (int)$emp['orders_this_month'] ?>">
+                    <td data-val="<?= (int)$emp['orders_this_month'] ?>" data-stat-month="<?= $eid ?>">
                         <span class="num-cell <?= (int)$emp['orders_this_month'] === 0 ? 'num-zero' : '' ?>">
                             <?= fmtnum($emp['orders_this_month']) ?>
                         </span>
                         <?php if ((int)$emp['orders_today'] > 0): ?>
-                        <div style="font-size:10px;color:var(--ok);margin-top:2px">+<?= (int)$emp['orders_today'] ?> today</div>
+                        <div class="today-badge" style="font-size:10px;color:var(--ok);margin-top:2px">+<?= (int)$emp['orders_today'] ?> today</div>
                         <?php endif; ?>
                     </td>
                     <?php if ($sess_role === 'admin'): ?>
-                    <td data-val="<?= round((float)$emp['total_revenue'], 2) ?>" class="hide-mob">
+                    <td data-val="<?= round((float)$emp['total_revenue'], 2) ?>" data-stat-rev="<?= $eid ?>" class="hide-mob">
                         <span class="revenue <?= (float)$emp['total_revenue'] <= 0 ? 'num-zero' : '' ?>">
                             $<?= money($emp['total_revenue']) ?>
                         </span>
@@ -931,6 +1035,7 @@ const ROLES_INFO = <?= json_encode(array_combine(
     array_map(fn($r) => ['name' => $r['name'], 'icon' => $r['icon'], 'color' => $r['color'] ?? '#888'], $_roles_db)
 )) ?>;
 let currentFilter = 'all';
+let currentShiftFilter = '';
 let isCompact = false;
 
 /* ── COUNT-UP ── */
@@ -976,12 +1081,20 @@ function resetFilters() {
 const ROLE_FILTERS = <?= json_encode(array_keys($_roles_db)) ?>;
 function setFilter(btn, filter) {
     currentFilter = filter;
-    document.querySelectorAll('.filter-pill').forEach(p => {
+    document.querySelectorAll('.filter-pill:not(.shift-pill)').forEach(p => {
         p.className = 'filter-pill';
         if (p.dataset.filter === filter) {
             if (filter === 'all') p.classList.add('active');
             else p.classList.add('active-' + filter);
         }
+    });
+    applyFilters();
+}
+function setShiftFilter(btn, shift) {
+    currentShiftFilter = (shift !== '' && currentShiftFilter === shift) ? '' : shift;
+    document.querySelectorAll('.shift-pill').forEach(p => {
+        p.classList.remove('active-shift','shift-active');
+        if (p.dataset.shiftFilter === currentShiftFilter) p.classList.add('active-shift','shift-active');
     });
     applyFilters();
 }
@@ -999,7 +1112,8 @@ function applyFilters() {
         else if (currentFilter === 'idle')      filtOk = parseInt(row.dataset.orders) === 0;
         else if (ROLE_FILTERS.includes(currentFilter)) filtOk = row.dataset.role === currentFilter;
         else filtOk = true;
-        const show = nameOk && filtOk;
+        const shiftOk = !currentShiftFilter || row.dataset.shift === currentShiftFilter;
+        const show = nameOk && filtOk && shiftOk;
         row.classList.toggle('hidden', !show);
         if (show) {
             shown++;
@@ -1126,6 +1240,18 @@ function adjustPillCount(slug, delta) {
     const n = Math.max(0, (parseInt(cnt.textContent) || 0) + delta);
     cnt.textContent = n;
     pill.classList.toggle('role-empty', n === 0);
+}
+
+function recalcShiftCounts() {
+    const counts = { morning: 0, afternoon: 0, night: 0 };
+    document.querySelectorAll('#tableBody tr[data-id]').forEach(r => {
+        const s = r.dataset.shift;
+        if (s && counts[s] !== undefined) counts[s]++;
+    });
+    ['morning', 'afternoon', 'night'].forEach(s => {
+        const pill = document.querySelector(`.shift-pill[data-shift-filter="${s}"]`);
+        if (pill) { const cnt = pill.querySelector('.pill-count'); if (cnt) cnt.textContent = counts[s]; }
+    });
 }
 
 function getOrCreateGroupSep(tbody, role, info) {
@@ -1317,6 +1443,31 @@ window.addEventListener('resize', resizeTable);
             <?php endforeach; ?>
           </div>
         </div>
+        <div class="em-tile full">
+          <div class="em-label"><i class="fa-solid fa-clock"></i> Shift</div>
+          <div class="em-role-grid" id="emShiftGrid">
+            <input type="radio" class="em-role-opt" name="shift" id="emShift_none" value="">
+            <label class="em-role-label" for="emShift_none" style="--erc:#888;--erc-bg:#88888822;--erc-glow:#88888826">
+              <div class="em-role-icon"><i class="fa-solid fa-ban"></i></div>
+              <span class="em-role-name">None</span>
+            </label>
+            <input type="radio" class="em-role-opt" name="shift" id="emShift_morning" value="morning">
+            <label class="em-role-label" for="emShift_morning" style="--erc:#f39c12;--erc-bg:#f39c1222;--erc-glow:#f39c1226">
+              <div class="em-role-icon"><i class="fa-solid fa-sun"></i></div>
+              <span class="em-role-name">Morning</span>
+            </label>
+            <input type="radio" class="em-role-opt" name="shift" id="emShift_afternoon" value="afternoon">
+            <label class="em-role-label" for="emShift_afternoon" style="--erc:#3498db;--erc-bg:#3498db22;--erc-glow:#3498db26">
+              <div class="em-role-icon"><i class="fa-solid fa-cloud-sun"></i></div>
+              <span class="em-role-name">Afternoon</span>
+            </label>
+            <input type="radio" class="em-role-opt" name="shift" id="emShift_night" value="night">
+            <label class="em-role-label" for="emShift_night" style="--erc:#9b59b6;--erc-bg:#9b59b622;--erc-glow:#9b59b626">
+              <div class="em-role-icon"><i class="fa-solid fa-moon"></i></div>
+              <span class="em-role-name">Night</span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <!-- footer inside form so submit button works -->
@@ -1381,10 +1532,13 @@ function openEditModal(eid) {
             const role = emp.emp_role || 'staff';
             const rb = document.querySelector(`#emRoleGrid input[value="${role}"]`);
             if (rb) rb.checked = true;
-            else {
-                const all = document.querySelectorAll('#emRoleGrid input[type="radio"]');
-                all.forEach(r => r.checked = false);
-            }
+            else document.querySelectorAll('#emRoleGrid input[type="radio"]').forEach(r => r.checked = false);
+
+            // Shift
+            const shift = emp.shift || '';
+            const sb = document.querySelector(`#emShiftGrid input[value="${shift}"]`);
+            if (sb) sb.checked = true;
+            else { const ns = document.getElementById('emShift_none'); if (ns) ns.checked = true; }
 
             document.getElementById('editOverlay').classList.add('open');
         })
@@ -1436,8 +1590,12 @@ async function submitEditForm(e) {
                 // Update name + job title
                 const nameEl = row.querySelector('.emp-name');
                 const titleEl = row.querySelector('.emp-title');
-                if (nameEl)  nameEl.textContent  = j.name;
-                if (titleEl) titleEl.textContent = j.job;
+                if (nameEl) nameEl.textContent = j.name;
+                if (titleEl) {
+                    const existingShiftSpan = titleEl.querySelector('.shift-inline');
+                    titleEl.textContent = j.job;
+                    if (existingShiftSpan) titleEl.appendChild(existingShiftSpan);
+                }
                 // Keep data-name / data-title in sync for search
                 row.dataset.name  = j.name.toLowerCase();
                 row.dataset.title = j.job.toLowerCase();
@@ -1453,6 +1611,21 @@ async function submitEditForm(e) {
                         av.replaceWith(img);
                     }
                 }
+
+                // Update shift inline span
+                const shiftMeta = { morning:['#f39c12','fa-sun','Morning'], afternoon:['#3498db','fa-cloud-sun','Afternoon'], night:['#9b59b6','fa-moon','Night'] };
+                row.dataset.shift = j.shift || '';
+                const titleEl2 = row.querySelector('.emp-title');
+                if (titleEl2) {
+                    let si2 = titleEl2.querySelector('.shift-inline');
+                    if (j.shift && shiftMeta[j.shift]) {
+                        const [sc, si, sl] = shiftMeta[j.shift];
+                        if (!si2) { si2 = document.createElement('span'); si2.className = 'shift-inline'; si2.style.marginLeft = '4px'; si2.style.fontSize = '9px'; si2.style.opacity = '.9'; titleEl2.appendChild(si2); }
+                        si2.style.color = sc;
+                        si2.innerHTML = `<i class="fa-solid ${si}"></i> ${sl}`;
+                    } else if (si2) { si2.remove(); }
+                }
+                recalcShiftCounts();
 
                 // If role changed, trigger the same real-time logic
                 const prevRole = row.dataset.role;
@@ -1494,6 +1667,92 @@ async function submitEditForm(e) {
     }
 }
 
+/* ── Real-time stats polling (every 30s) ── */
+let _statsMax = <?= $max_orders ?>;
+
+function fmtNum(n) {
+    return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+}
+
+async function refreshStats() {
+    if (document.hidden) return;
+    try {
+        const res  = await fetch('employees.php?action=get_stats');
+        const data = await res.json();
+        if (!data.ok) return;
+        _statsMax = data.max_orders || 1;
+
+        for (const [eidStr, s] of Object.entries(data.stats)) {
+            const eid = parseInt(eidStr);
+
+            // All-time orders cell
+            const ordTd = document.querySelector(`[data-stat-orders="${eid}"]`);
+            if (ordTd) {
+                const pct     = Math.min(100, Math.round(s.total_orders / _statsMax * 100));
+                const hasOrd  = s.total_orders > 0;
+                const numEl   = ordTd.querySelector('.perf-num');
+                const fillEl  = ordTd.querySelector('.perf-fill');
+                const subEl   = ordTd.querySelector('.perf-sub');
+                if (numEl)  { numEl.textContent = fmtNum(s.total_orders); numEl.classList.toggle('num-zero', !hasOrd); }
+                if (fillEl) fillEl.style.width = pct + '%';
+                if (subEl)  subEl.textContent  = hasOrd ? `avg $${s.avg_order_value.toFixed(2)} / order` : 'No orders yet';
+                ordTd.dataset.val = s.total_orders;
+            }
+
+            // This month cell
+            const monTd = document.querySelector(`[data-stat-month="${eid}"]`);
+            if (monTd) {
+                const numEl   = monTd.querySelector('.num-cell');
+                let   todayEl = monTd.querySelector('.today-badge');
+                if (numEl) { numEl.textContent = fmtNum(s.orders_this_month); numEl.classList.toggle('num-zero', s.orders_this_month === 0); }
+                if (s.orders_today > 0) {
+                    if (!todayEl) { todayEl = document.createElement('div'); todayEl.className = 'today-badge'; todayEl.style.cssText = 'font-size:10px;color:var(--ok);margin-top:2px'; monTd.appendChild(todayEl); }
+                    todayEl.textContent = `+${s.orders_today} today`;
+                } else if (todayEl) {
+                    todayEl.remove();
+                }
+                monTd.dataset.val = s.orders_this_month;
+            }
+
+            // Revenue cell
+            const revTd = document.querySelector(`[data-stat-rev="${eid}"]`);
+            if (revTd) {
+                const numEl = revTd.querySelector('.revenue');
+                if (numEl) { numEl.textContent = `$${s.total_revenue.toFixed(2)}`; numEl.classList.toggle('num-zero', s.total_revenue <= 0); }
+                revTd.dataset.val = s.total_revenue.toFixed(2);
+            }
+
+            // Leaderboard podium card
+            const card = document.querySelector(`[data-podium-eid="${eid}"]`);
+            if (card) {
+                const ordEl = card.querySelector('.ps-orders');
+                const revEl = card.querySelector('.ps-revenue');
+                const moEl  = card.querySelector('.ps-month');
+                const revWrap = card.querySelector('.ps-rev-wrap');
+                if (ordEl) ordEl.textContent = fmtNum(s.total_orders);
+                if (moEl)  moEl.textContent  = fmtNum(s.orders_this_month);
+                if (revEl) { revEl.textContent = `$${fmtNum(s.total_revenue)}`; }
+                if (revWrap) revWrap.style.display = s.total_revenue > 0 ? '' : 'none';
+                // Update job title + shift inline
+                const titleEl = card.querySelector('.podium-title');
+                if (titleEl) {
+                    const job = s.job_title || '';
+                    const shiftColors = {morning:'#f39c12',afternoon:'#3498db',night:'#9b59b6'};
+                    const shiftIcons  = {morning:'fa-sun',afternoon:'fa-cloud-sun',night:'fa-moon'};
+                    const shiftLabels = {morning:'Morning',afternoon:'Afternoon',night:'Night'};
+                    if (s.shift && shiftColors[s.shift]) {
+                        titleEl.innerHTML = `${job} <span style="color:${shiftColors[s.shift]};font-size:9px;opacity:.85"><i class="fa-solid ${shiftIcons[s.shift]}"></i> ${shiftLabels[s.shift]}</span>`;
+                    } else {
+                        titleEl.textContent = job;
+                    }
+                }
+            }
+        }
+    } catch (_) { /* silent — no disruption on network error */ }
+}
+
+refreshStats();
+setInterval(refreshStats, 10000);
 </script>
 </body>
 </html>
