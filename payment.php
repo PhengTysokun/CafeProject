@@ -13,6 +13,36 @@ if ($order_id <= 0) {
     die('Invalid order.');
 }
 
+// ── Try QR Again: clear md5 so a fresh QR is generated ──
+if (($_GET['action'] ?? '') === 'refresh') {
+    $s = $conn->prepare("UPDATE orders SET bakong_md5 = NULL WHERE order_id = ?");
+    $s->bind_param("i", $order_id);
+    $s->execute();
+    header("Location: payment.php?order_id=$order_id");
+    exit;
+}
+
+// ── Switch to Cash: swap bakong → cash, move order to Preparing ──
+if (($_GET['action'] ?? '') === 'switch_cash') {
+    $conn->begin_transaction();
+    try {
+        $conn->query("DELETE FROM order_payments WHERE order_id=$order_id AND payment_method='bakong'");
+        $s = $conn->prepare("
+            INSERT INTO order_payments (order_id, payment_method, amount, payment_status)
+            SELECT ?, 'cash', total, 'paid' FROM orders WHERE order_id = ?
+            ON DUPLICATE KEY UPDATE payment_method='cash', payment_status='paid'
+        ");
+        $s->bind_param("ii", $order_id, $order_id);
+        $s->execute();
+        $conn->query("UPDATE orders SET status='Preparing', payment_method='cash', bakong_md5=NULL WHERE order_id=$order_id");
+        $conn->commit();
+    } catch (Exception $e) {
+        $conn->rollback();
+    }
+    header("Location: payment_cash.php?order_id=$order_id");
+    exit;
+}
+
 // ── Get order and payment data ──
 $stmt = $conn->prepare("
     SELECT o.order_id, o.customer_name, o.total, o.status, o.bakong_md5, o.daily_order_no,
@@ -453,63 +483,73 @@ $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urle
             color: var(--success);
         }
 
-        /* ── Manual Confirm ── */
-        .manual-confirm {
-            margin-top: 8px;
-            padding: 10px 14px;
-            background: rgba(255,255,255,0.03);
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            animation: fadeInUp 0.7s ease 0.6s both;
-            display: block;
-            text-align: center;
-            transition: var(--transition);
-        }
 
-        .manual-confirm:hover {
-            border-color: var(--border-hover);
-        }
-
-        .manual-confirm .label {
-            color: var(--text-secondary);
-            font-size: 11px;
-            display: block;
-            margin-bottom: 6px;
-        }
-
-        .manual-confirm .label i {
-            color: var(--orange);
-            margin-right: 4px;
-        }
-
-        .btn-manual {
-            padding: 8px 20px;
-            border-radius: 50px;
-            border: none;
-            background: var(--success);
-            color: var(--text-inverse);
-            font-weight: 600;
-            font-size: 12px;
-            cursor: pointer;
-            transition: var(--transition);
-            font-family: 'Poppins', sans-serif;
-            display: inline-flex;
+        /* ── Custom Confirm Modal ── */
+        .custom-confirm-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
         }
-
-        .btn-manual:hover {
-            transform: scale(1.05);
-            box-shadow: 0 4px 20px rgba(85,224,135,0.3);
+        .custom-confirm-overlay.active { display: flex; }
+        .custom-confirm-box {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 28px 28px 22px;
+            max-width: 340px;
+            width: 90%;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+            animation: fadeInUp 0.2s ease both;
         }
+        .custom-confirm-icon {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+            margin: 0 auto 14px;
+        }
+        .custom-confirm-icon.warn { background: rgba(209,144,75,.12); color: var(--orange); }
+        .custom-confirm-icon.info { background: rgba(52,152,219,.12); color: #3498db; }
+        .custom-confirm-title {
+            font-size: 15px; font-weight: 700;
+            color: var(--text-primary);
+            text-align: center; margin-bottom: 8px;
+        }
+        .custom-confirm-msg {
+            font-size: 12.5px; color: var(--text-secondary);
+            text-align: center; line-height: 1.6; margin-bottom: 20px;
+        }
+        .custom-confirm-btns {
+            display: flex; gap: 8px;
+        }
+        .custom-confirm-btns button {
+            flex: 1; padding: 10px; border-radius: 10px;
+            border: none; font-weight: 600; font-size: 13px;
+            cursor: pointer; transition: var(--transition); font-family: inherit;
+        }
+        .ccb-ok   { background: var(--orange); color: #fff; }
+        .ccb-ok:hover { background: var(--orange-dark); }
+        .ccb-cancel { background: transparent; color: var(--text-secondary); border: 1.5px solid var(--border) !important; }
+        .ccb-cancel:hover { border-color: var(--border-hover) !important; color: var(--text-primary); }
 
         /* ── Actions ── */
+        #fallbackHint {
+            text-align: center;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-top: 10px;
+            min-height: 18px;
+        }
         .actions {
-            display: flex;
+            display: none;
             flex-direction: column;
             gap: 6px;
             margin-top: 10px;
-            animation: fadeInUp 0.7s ease 0.7s both;
         }
 
         .btn {
@@ -562,6 +602,26 @@ $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urle
         .btn-secondary:hover {
             border-color: var(--orange);
             color: var(--text-primary);
+        }
+
+        .btn-retry {
+            background: linear-gradient(135deg,#2980b9,#3498db);
+            color: #fff;
+        }
+
+        .btn-retry:hover {
+            box-shadow: 0 4px 20px rgba(52,152,219,0.35);
+            filter: brightness(1.1);
+        }
+
+        .btn-switch-cash {
+            background: linear-gradient(135deg,#27ae60,#55e087);
+            color: #000;
+        }
+
+        .btn-switch-cash:hover {
+            box-shadow: 0 4px 20px rgba(85,224,135,0.35);
+            filter: brightness(1.05);
         }
 
         /* ── Animations ── */
@@ -711,26 +771,102 @@ $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urle
         </div>
     </div>
 
-    <!-- Manual Confirm -->
-    <div class="manual-confirm" id="manualConfirm">
-        <span class="label"><i class="fa-solid fa-circle-info"></i> Payment already made?</span>
-        <button class="btn-manual" onclick="confirmPaymentManually()">
-            <i class="fa-solid fa-check"></i> Confirm Payment Received
-        </button>
-    </div>
 
-    <!-- Actions -->
+    <!-- Fallback Actions -->
+    <p id="fallbackHint"></p>
     <div class="actions" id="actionsDiv">
+        <a href="payment.php?order_id=<?php echo $order_id; ?>&action=refresh" class="btn btn-retry">
+            <i class="fa-solid fa-rotate-right"></i> Try QR Again
+        </a>
+        <a href="payment.php?order_id=<?php echo $order_id; ?>&action=switch_cash" class="btn btn-switch-cash"
+           id="btnSwitchCash" data-href="payment.php?order_id=<?php echo $order_id; ?>&action=switch_cash">
+            <i class="fa-solid fa-money-bill-wave"></i> Pay with Cash Instead
+        </a>
         <a href="receipt_pdf.php?order_id=<?php echo $order_id; ?>" target="_blank" class="btn btn-print">
             <i class="fa-solid fa-file-pdf"></i> Print Receipt
         </a>
-        <a href="menu.php" class="btn btn-secondary">
+        <a href="menu.php" class="btn btn-secondary" id="btnBackMenu">
             <i class="fa-solid fa-arrow-left"></i> Back to Menu
         </a>
     </div>
 </div>
 
+<!-- Custom Confirm Modal -->
+<div class="custom-confirm-overlay" id="customConfirm">
+    <div class="custom-confirm-box">
+        <div class="custom-confirm-icon" id="ccIcon"><i id="ccIconI"></i></div>
+        <div class="custom-confirm-title" id="ccTitle"></div>
+        <div class="custom-confirm-msg" id="ccMsg"></div>
+        <div class="custom-confirm-btns">
+            <button class="ccb-cancel" id="ccCancel">Cancel</button>
+            <button class="ccb-ok" id="ccOk">Confirm</button>
+        </div>
+    </div>
+</div>
+
 <script>
+// ── Custom confirm helper ──
+function showConfirm({ icon, iconType, title, msg, okText, onOk }) {
+    document.getElementById('ccIconI').className = icon;
+    document.getElementById('ccIcon').className = 'custom-confirm-icon ' + (iconType || 'warn');
+    document.getElementById('ccTitle').textContent = title;
+    document.getElementById('ccMsg').textContent = msg;
+    document.getElementById('ccOk').textContent = okText || 'Confirm';
+    document.getElementById('customConfirm').classList.add('active');
+
+    const ok = document.getElementById('ccOk');
+    const cancel = document.getElementById('ccCancel');
+    const close = () => document.getElementById('customConfirm').classList.remove('active');
+
+    ok.onclick = () => { close(); onOk(); };
+    cancel.onclick = close;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('btnBackMenu').addEventListener('click', function(e) {
+        e.preventDefault();
+        showConfirm({
+            icon: 'fa-solid fa-triangle-exclamation',
+            iconType: 'warn',
+            title: 'Leave without paying?',
+            msg: 'Going back will leave this order unpaid and stuck. Use "Try QR Again" or "Pay with Cash Instead" to properly handle this order.',
+            okText: 'Yes, go back',
+            onOk: () => window.location.href = 'menu.php'
+        });
+    });
+
+    document.getElementById('btnSwitchCash').addEventListener('click', function(e) {
+        e.preventDefault();
+        const href = this.dataset.href;
+        showConfirm({
+            icon: 'fa-solid fa-money-bill-wave',
+            iconType: 'info',
+            title: 'Switch to Cash Payment?',
+            msg: 'This will change the payment method to cash. The order will be marked as paid by cash.',
+            okText: 'Switch to Cash',
+            onOk: () => window.location.href = href
+        });
+    });
+
+    // Show fallback buttons after 20 seconds, hide manual confirm
+    const hint = document.getElementById('fallbackHint');
+    const actionsDiv = document.getElementById('actionsDiv');
+
+    let wait = 20;
+    hint.textContent = 'Waiting for scan… options available in ' + wait + 's';
+    const hintTimer = setInterval(function() {
+        wait--;
+        if (wait > 0) {
+            hint.textContent = 'Waiting for scan… options available in ' + wait + 's';
+        } else {
+            clearInterval(hintTimer);
+            hint.textContent = 'Having trouble? Use the options below.';
+            actionsDiv.style.display = 'flex';
+            actionsDiv.style.animation = 'fadeInUp 0.5s ease both';
+        }
+    }, 1000);
+});
+
 const orderId = <?php echo (int)$order_id; ?>;
 let checkInterval = null;
 
@@ -773,30 +909,6 @@ async function checkPayment() {
     }
 }
 
-// ── Manual confirmation ──
-async function confirmPaymentManually() {
-    const btn = document.querySelector('.btn-manual');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Confirming...';
-
-    try {
-        const res = await fetch('check_payment.php?order_id=' + orderId + '&manual=1', { cache: 'no-store' });
-        const data = await res.json();
-
-        if (data.paid) {
-            showPaymentSuccess();
-        } else {
-            alert('Payment not found. Please scan the QR code or try again.');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-check"></i> Confirm Payment Received';
-        }
-    } catch (e) {
-        console.error('Manual confirmation error:', e);
-        alert('Error confirming payment. Please try again.');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-check"></i> Confirm Payment Received';
-    }
-}
 
 checkInterval = setInterval(checkPayment, 2000);
 checkPayment();

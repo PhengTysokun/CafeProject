@@ -39,7 +39,7 @@ if ($order['is_refunded'] == 1) {
     exit;
 }
 
-// ── Allow refunds on Completed OR Paid orders ──
+// ── Allow refunds on Completed OR Preparing orders (payment goes straight to Preparing) ──
 $refundable_statuses = ['Completed', 'Preparing'];
 if (!in_array($order['status'], $refundable_statuses)) {
     echo json_encode(["ok" => 0, "error" => "Only paid or Completed orders can be refunded (current status: {$order['status']})"]);
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $refund_amount  = (float)($_POST['refund_amount']  ?? 0);
 $refund_reason  = trim($_POST['refund_reason']      ?? '');
-$restore_stock  = isset($_POST['restore_stock']) ? 1 : 0;
+$restore_stock  = 0; // Drink already made — ingredients cannot be restored on refund
 
 if ($refund_amount <= 0 || $refund_amount > $order['total'] + 0.01) {
     echo json_encode(["ok" => 0, "error" => "Invalid refund amount. Max: $" . number_format($order['total'], 2)]);

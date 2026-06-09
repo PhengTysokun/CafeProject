@@ -299,12 +299,12 @@ function avatarColor($name) {
     --radius:14px; --transition:all .22s cubic-bezier(.4,0,.2,1);
 }
 [data-theme="light"] {
-    --bg:#f2ede8; --bg-card:#fff; --bg-input:#ede8e0;
-    --border:#e0d4c4; --border-hover:#c9b89f;
-    --text:#1a1410; --text-muted:#7a6a58; --text-light:#1a1410;
-    --shadow-sm:0 2px 8px rgba(90,60,20,.07); --shadow-md:0 4px 20px rgba(90,60,20,.11);
+    --bg:#F0F2F5; --bg-card:#FFFFFF; --bg-input:#F9FAFB;
+    --border:#E5E7EB; --border-hover:#D1D5DB;
+    --text:#111827; --text-muted:#6B7280; --text-light:#111827;
+    --shadow-sm:0 2px 8px rgba(0,0,0,.06); --shadow-md:0 4px 20px rgba(0,0,0,.08);
 }
-[data-theme="light"] .topbar { background:rgba(255,252,248,.97); }
+[data-theme="light"] .topbar { background:rgba(255,255,255,.97); }
 [data-theme="light"] thead th { background:#fff; }
 [data-theme="light"] tbody tr:hover td { background:rgba(0,0,0,.02); }
 [data-theme="light"] input,[data-theme="light"] select { background:var(--bg-input)!important; color:var(--text)!important; border-color:var(--border)!important; color-scheme:light; }

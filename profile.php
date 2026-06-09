@@ -12,12 +12,14 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
-// Resolve display name for role (e.g. 'staff' → 'Cashier')
-$rn = $conn->prepare("SELECT name FROM roles WHERE slug = ?");
+// Resolve display name, color, icon for role from DB
+$rn = $conn->prepare("SELECT name, color, icon FROM roles WHERE slug = ?");
 $rn->bind_param("s", $role);
 $rn->execute();
-$rn_row = $rn->get_result()->fetch_assoc();
-$role_display = $rn_row['name'] ?? ucfirst(str_replace('_', ' ', $role));
+$rn_row       = $rn->get_result()->fetch_assoc();
+$role_display = $rn_row['name']  ?? ucfirst(str_replace('_', ' ', $role));
+$role_color   = $rn_row['color'] ?? '#888888';
+$role_icon    = $rn_row['icon']  ?? 'fa-user';
 
 $toast      = '';
 $toast_type = '';
@@ -295,8 +297,6 @@ body {
 }
 .badge-ok      { background:rgba(85,224,135,0.12); color:var(--success); border:1px solid rgba(85,224,135,0.25); }
 .badge-missing { background:rgba(243,156,18,0.12); color:var(--warning); border:1px solid rgba(243,156,18,0.25); }
-.badge-admin   { background:rgba(209,144,75,0.12); color:var(--accent);  border:1px solid rgba(209,144,75,0.25); }
-.badge-staff   { background:rgba(255,255,255,0.07); color:var(--text-muted); border:1px solid var(--border); }
 
 /* Profile summary card */
 .profile-summary {
@@ -398,12 +398,8 @@ body {
             <div class="profile-info">
                 <div class="profile-name"><?= htmlspecialchars($username) ?></div>
                 <div class="profile-badges">
-                    <?php
-                        $isPrivRole = in_array($role, ['admin', 'manager']);
-                        $roleIcon   = $role === 'manager' ? 'crown' : ($role === 'admin' ? 'shield-halved' : 'user');
-                    ?>
-                    <span class="badge <?= $isPrivRole ? 'badge-admin' : 'badge-staff' ?>">
-                        <i class="fa-solid fa-<?= $roleIcon ?>"></i>
+                    <span class="badge" style="background:<?= $role_color ?>22;color:<?= $role_color ?>;border:1px solid <?= $role_color ?>44">
+                        <i class="fa-solid <?= htmlspecialchars($role_icon) ?>"></i>
                         <?= htmlspecialchars($role_display) ?>
                     </span>
                     <span class="badge <?= $has_sq ? 'badge-ok' : 'badge-missing' ?>">

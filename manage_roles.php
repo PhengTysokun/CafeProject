@@ -224,12 +224,12 @@ $module_count = count($all_perms);
     --topbar-h:57px;
 }
 [data-theme="light"] {
-    --bg:#f2ede8; --bg-card:#fff; --bg-card-hover:#fdf8f2; --bg-input:#ede8e0;
-    --border:#e0d4c4; --border-hover:#c9b89f;
-    --text:#1a1410; --text-muted:#7a6a58; --text-light:#1a1410;
-    --shadow-sm:0 2px 8px rgba(90,60,20,.07); --shadow-md:0 6px 24px rgba(90,60,20,.13);
+    --bg:#F0F2F5; --bg-card:#FFFFFF; --bg-card-hover:#F5F7FA; --bg-input:#F9FAFB;
+    --border:#E5E7EB; --border-hover:#D1D5DB;
+    --text:#111827; --text-muted:#6B7280; --text-light:#111827;
+    --shadow-sm:0 2px 8px rgba(0,0,0,.06); --shadow-md:0 6px 24px rgba(0,0,0,.10);
 }
-[data-theme="light"] .topbar { background:rgba(255,252,248,.97); }
+[data-theme="light"] .topbar { background:rgba(255,255,255,.97); }
 [data-theme="light"] .table-sticky-head { background:var(--bg-card) !important; }
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
 html { scroll-behavior:smooth; }

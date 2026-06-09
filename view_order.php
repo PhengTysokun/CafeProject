@@ -20,11 +20,12 @@ unset($_SESSION['flash_stock_alert']); // not applicable on this page
 $_hour = (int)(new DateTime())->format('H');
 $_greeting = $_hour < 12 ? 'Good morning' : ($_hour < 18 ? 'Good afternoon' : 'Good evening');
 $_vo_username = htmlspecialchars($_SESSION['username'] ?? 'User', ENT_QUOTES, 'UTF-8');
-$_role_labels = ['admin'=>'Admin','manager'=>'Manager','staff'=>'Cashier','barista'=>'Barista','supervisor'=>'Supervisor','inventory_clerk'=>'Inventory Clerk'];
-$_role_colors = ['admin'=>'#e74c3c','manager'=>'#3498db','staff'=>'#55e087','barista'=>'#d1904b','supervisor'=>'#f39c12','inventory_clerk'=>'#1abc9c'];
-$_vo_role     = $_SESSION['role'] ?? 'staff';
-$_role_label  = $_role_labels[$_vo_role] ?? ucfirst($_vo_role);
-$_role_color  = $_role_colors[$_vo_role] ?? '#888';
+$_vo_role    = $_SESSION['role'] ?? 'staff';
+$_all_roles  = [];
+$_ar_res = $conn->query("SELECT slug, name, color, icon FROM roles");
+while ($_ar = $_ar_res->fetch_assoc()) $_all_roles[$_ar['slug']] = $_ar;
+$_role_label = $_all_roles[$_vo_role]['name']  ?? ucfirst(str_replace('_', ' ', $_vo_role));
+$_role_color = $_all_roles[$_vo_role]['color'] ?? '#888888';
 $_date_str    = date('l, d F Y');
 
 // Clock-in status
@@ -51,6 +52,10 @@ if ($_ann_check && $_ann_check->num_rows > 0) {
 if (!defined('SOCKET_URL')) {
     define('SOCKET_URL', 'http://localhost:3000');
 }
+// Check if socket server is reachable (suppress browser console errors when offline)
+$_socketAvailable = false;
+$_fp = @fsockopen('localhost', 3000, $_errno, $_errstr, 0.3);
+if ($_fp) { $_socketAvailable = true; fclose($_fp); }
 
 /* ===============================
    MAIN PAGE
@@ -636,6 +641,37 @@ if ($action === ""):
     .card-actions .complete-btn{background: rgba(85,224,135,.12); color: var(--success); border-color: rgba(85,224,135,.2);}
     .card-actions .cancel-btn { background: rgba(255,92,92,.12);  color: var(--danger); border-color: rgba(255,92,92,.2); }
     .card-actions .refund-btn { background: rgba(155,89,182,.12); color: #9b59b6; border-color: rgba(155,89,182,.2); }
+    .card-actions .remake-btn { background: rgba(52,152,219,.12); color: #3498db; border-color: rgba(52,152,219,.2); }
+    /* ── Reason notes on cards ── */
+    .card-reason { font-size: 12px; font-style: italic; padding: 5px 10px; border-radius: 8px; margin: 8px 0 2px; display: flex; align-items: flex-start; gap: 7px; line-height: 1.5; }
+    .card-reason i { margin-top: 3px; flex-shrink: 0; font-size: 11px; }
+    .reason-list { margin: 0; padding-left: 14px; list-style: disc; }
+    .reason-list li { margin-bottom: 2px; line-height: 1.4; }
+    .card-reason.cancel-reason  { background: rgba(255,92,92,.08);   color: #ff7070; border-left: 2px solid rgba(255,92,92,.3); }
+    .card-reason.refund-reason  { background: rgba(155,89,182,.08);  color: #b07fd4; border-left: 2px solid rgba(155,89,182,.3); }
+    .card-reason.remake-reason  { background: rgba(241,196,15,.08);  color: #e8c63a; border-left: 2px solid rgba(241,196,15,.3); }
+    /* ── Remade card highlight (Preparing only) ── */
+    .order-card.is-remade[data-status="Preparing"] {
+        border-color: rgba(241,196,15,.6) !important;
+        animation: remade-glow 2s ease-in-out infinite;
+    }
+    @keyframes remade-glow {
+        0%,100% { box-shadow: 0 0 0 1px rgba(241,196,15,.25), 0 4px 20px rgba(241,196,15,.1); }
+        50%      { box-shadow: 0 0 0 2px rgba(241,196,15,.5),  0 4px 28px rgba(241,196,15,.25); }
+    }
+    /* ── Remake adjustment pills ── */
+    .remake-item-block { background: rgba(52,152,219,.06); border: 1px solid rgba(52,152,219,.15); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; text-align: left; }
+    .remake-item-block + .remake-item-block { margin-top: 8px; }
+    .remake-item-name { font-size: 12px; font-weight: 600; color: #3498db; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+    .remake-adj-group { margin-bottom: 8px; }
+    .remake-adj-group:last-child { margin-bottom: 0; }
+    .remake-adj-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+    .pill-group { display: flex; flex-wrap: wrap; gap: 5px; }
+    .pill-opt { padding: 4px 11px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 12px; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+    .pill-opt:hover { border-color: #3498db; color: #3498db; }
+    .pill-opt.selected { background: #3498db; border-color: #3498db; color: #fff; font-weight: 600; }
+    #remakeAdjustments { max-height: 280px; overflow-y: auto; margin-bottom: 4px; }
+    .badge-remade { display:inline-flex; align-items:center; gap:4px; background:rgba(52,152,219,.15); color:#3498db; border:1px solid rgba(52,152,219,.3); border-radius:6px; font-size:10px; font-weight:600; padding:2px 7px; margin-left:6px; }
     .card-actions .delete-btn { background: rgba(255,92,92,.12);  color: var(--danger); border-color: rgba(255,92,92,.2); padding: 8px 14px; min-width: auto; flex: 0; }
 
     /* ── Order ID (legacy, keep for search) ── */
@@ -1365,25 +1401,32 @@ function showClockToast(msg, isErr) {
 </script>
 
 <!-- Status Tabs -->
+<?php $r = $_SESSION['role'] ?? ''; ?>
 <div class="status-tabs" id="statusTabs">
+    <?php if ($r !== 'staff'): ?>
     <button class="status-tab active" data-status="all" onclick="filterStatus('all')">
         📋 All <span class="badge" id="count-all">0</span>
     </button>
-    <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
-    <button class="status-tab" data-status="PendingPayment" onclick="filterStatus('PendingPayment')">
+    <?php endif; ?>
+    <?php if ($r !== 'barista'): ?>
+    <button class="status-tab <?= $r === 'staff' ? 'active' : '' ?>" data-status="PendingPayment" onclick="filterStatus('PendingPayment')">
         ⏳ Pending <span class="badge" id="count-PendingPayment">0</span>
     </button>
     <?php endif; ?>
+    <?php if ($r !== 'staff'): ?>
     <button class="status-tab" data-status="Preparing" onclick="filterStatus('Preparing')">
         👨‍🍳 Preparing <span class="badge" id="count-Preparing">0</span>
     </button>
     <button class="status-tab" data-status="Completed" onclick="filterStatus('Completed')">
         ✅ Completed <span class="badge" id="count-Completed">0</span>
     </button>
-    <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
+    <?php endif; ?>
+    <?php if ($r !== 'barista'): ?>
     <button class="status-tab" data-status="Cancelled" onclick="filterStatus('Cancelled')">
         ❌ Cancelled <span class="badge" id="count-Cancelled">0</span>
     </button>
+    <?php endif; ?>
+    <?php if ($r !== 'barista' && $r !== 'staff'): ?>
     <button class="status-tab" data-status="Refunded" onclick="filterStatus('Refunded')">
         🔄 Refunded <span class="badge" id="count-Refunded">0</span>
     </button>
@@ -1438,6 +1481,28 @@ function showClockToast(msg, isErr) {
     </div>
 </div>
 
+<!-- Remake Modal -->
+<div class="refund-modal" id="remakeModal">
+    <div class="refund-modal-content" style="border-color:rgba(52,152,219,.4);max-width:520px;">
+        <h2 style="color:#3498db;"><i class="fa-solid fa-repeat"></i> Remake Order</h2>
+        <div class="order-number" id="remakeOrderNumber">#001</div>
+        <p style="color: var(--text-muted); margin-bottom: 14px;">Adjust the drink and enter the reason:</p>
+        <div id="remakeAdjustments"></div>
+        <div class="form-group">
+            <label>Reason for Remake</label>
+            <textarea id="remakeReason" placeholder="e.g. Too sweet, wrong milk, customer not satisfied..."></textarea>
+        </div>
+        <div class="btn-group">
+            <button class="btn-refund-yes" style="background:#3498db;" onclick="confirmRemake()">
+                <i class="fa-solid fa-repeat"></i> Log Remake
+            </button>
+            <button class="btn-refund-no" onclick="closeRemakeModal()">
+                <i class="fa-solid fa-times"></i> Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Refund Modal -->
 <div class="refund-modal" id="refundModal">
     <div class="refund-modal-content">
@@ -1453,11 +1518,6 @@ function showClockToast(msg, isErr) {
         <div class="form-group">
             <label>Reason for Refund</label>
             <textarea id="refundReason" placeholder="Why is this order being refunded?"></textarea>
-        </div>
-        
-        <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="restoreStock" checked style="width: 18px; height: 18px; accent-color: #9b59b6;">
-            <label for="restoreStock" style="color: var(--text-muted); font-size: 13px; margin: 0;">Restore ingredients to stock</label>
         </div>
         
         <div class="btn-group">
@@ -1481,27 +1541,29 @@ function showClockToast(msg, isErr) {
 </audio>
 
 <audio id="callSound">
-    <source src="audio/call_order.wav" type="audio/wav">
+    <source src="audio/order_arrived.wav" type="audio/wav">
 </audio>
 
-<script src="<?= SOCKET_URL ?>/socket.io/socket.io.js"></script>
 <script>
 const tbody = document.getElementById("ordersBody");
 const known = new Set();
-let currentFilter = 'all';
+let currentFilter = '<?= ($_SESSION['role'] ?? '') === 'staff' ? 'PendingPayment' : 'all' ?>';
 let showCompleted = true;
 let searchQuery = '';
 let currentCancelId = 0;
 let currentRefundId = 0;
+let currentRemakeId = 0;
+let allOrders = [];
 
 // ── Get user role from PHP ──
 const userRole = "<?= $_SESSION['role'] ?? 'staff' ?>";
 const isAdmin = userRole === 'admin';
+const canManageOrders = userRole === 'admin' || userRole === 'manager';
 
 // ── Play Sound ──
 function play(id) {
     const a = document.getElementById(id);
-    if (a) a.play().catch(() => {});
+    if (a) { a.currentTime = 0; a.play().catch(() => {}); }
 }
 
 // ── Escape HTML ──
@@ -1514,8 +1576,13 @@ function escapeHtml(text) {
         .replace(/'/g, "&#039;");
 }
 
+function truncReason(text, max = 80) {
+    const s = String(text ?? '').trim();
+    return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
 function roleLabel(role) {
-    const map = {admin:'Admin',manager:'Manager',staff:'Cashier',barista:'Barista',supervisor:'Supervisor',inventory_clerk:'Inventory Clerk'};
+    const map = <?= json_encode(array_map(fn($r) => $r['name'], $_all_roles), JSON_UNESCAPED_UNICODE) ?>;
     return map[role] || role;
 }
 
@@ -1587,6 +1654,7 @@ function buildCardInner(o) {
             <div class="card-order-num">#${escapeHtml(String(o.daily_order_no))}</div>
             <div class="card-header-right">
                 ${getStatusBadge(o.status)}
+                ${o.remake_count > 0 ? `<span class="badge-remade"><i class="fa-solid fa-repeat" style="font-size:9px"></i> Remade${o.remake_count > 1 ? ` ×${o.remake_count}` : ''}</span>` : ''}
                 <div class="card-total">$${parseFloat(o.total || 0).toFixed(2)}</div>
             </div>
         </div>
@@ -1617,6 +1685,13 @@ function buildCardInner(o) {
                 ${o.prepared_by_role ? `<span style="opacity:.55;font-size:10px;">(${roleLabel(o.prepared_by_role)})</span>` : ''}
             </div>` : ''}
         </div>
+        ${o.status === 'Cancelled' && o.cancel_reason ? `<div class="card-reason cancel-reason" title="${escapeHtml(o.cancel_reason)}"><i class="fa-solid fa-ban"></i><span>${escapeHtml(truncReason(o.cancel_reason))}${o.cancelled_by ? ` <span style="opacity:.6;font-style:normal;">— ${escapeHtml(o.cancelled_by)}</span>` : ''}</span></div>` : ''}
+        ${o.status === 'Refunded' && o.refund_reason ? `<div class="card-reason refund-reason" title="${escapeHtml(o.refund_reason)}"><i class="fa-solid fa-rotate-left"></i><span>${escapeHtml(truncReason(o.refund_reason))}${o.refunded_by ? ` <span style="opacity:.6;font-style:normal;">— ${escapeHtml(o.refunded_by)}</span>` : ''}</span></div>` : ''}
+        ${o.remake_count > 0 && o.remake_reasons && o.remake_reasons.length > 0 ? `<div class="card-reason remake-reason"><i class="fa-solid fa-repeat"></i>${
+            o.remake_reasons.length === 1
+                ? `<span>${escapeHtml(truncReason(o.remake_reasons[0]))}</span>`
+                : `<ul class="reason-list">${o.remake_reasons.map(r => `<li>${escapeHtml(truncReason(r))}</li>`).join('')}</ul>`
+        }</div>` : ''}
         <div class="card-actions">${getActionButtons(o)}</div>
     `;
 }
@@ -1625,7 +1700,7 @@ function buildCardInner(o) {
 function addRow(o) {
     const card = document.createElement("div");
     card.id = "row-" + o.order_id;
-    card.className = "order-card";
+    card.className = "order-card" + (o.remake_count > 0 ? " is-remade" : "");
     card.dataset.status = o.status;
     card.dataset.orderId = o.order_id;
     if ((o.status === 'Completed' || o.status === 'Refunded') && !showCompleted) {
@@ -1666,8 +1741,10 @@ function getActionButtons(o) {
         `;
     }
     
-    // Cancel button - for PendingPayment, Paid, Preparing (not Completed or Cancelled), not for barista
-    if (o.status !== 'Completed' && o.status !== 'Cancelled' && o.status !== 'Refunded' && userRole !== 'barista') {
+    // Cancel button - staff(cashier): Pending only; others: anything except Completed/Cancelled/Refunded
+    const canCancel = o.status !== 'Completed' && o.status !== 'Cancelled' && o.status !== 'Refunded' && userRole !== 'barista'
+        && (userRole !== 'staff' || o.status === 'PendingPayment');
+    if (canCancel) {
         buttons += `
             <button class="cancel-btn" onclick="showCancelModal(${Number(o.order_id)}, ${Number(o.daily_order_no)})" title="Cancel order">
                 <i class="fa-solid fa-ban"></i> Cancel
@@ -1675,11 +1752,18 @@ function getActionButtons(o) {
         `;
     }
     
-    // Refund button - only for Completed orders (admin only)
-    if (o.status === 'Completed' && isAdmin) {
+    if (o.status === 'Completed' && canManageOrders) {
+        // Refund only if not already remade
+        if (!o.is_remade) {
+            buttons += `
+                <button class="refund-btn" onclick="showRefundModal(${Number(o.order_id)}, ${Number(o.daily_order_no)}, ${parseFloat(o.total).toFixed(2)})" title="Refund order">
+                    <i class="fa-solid fa-rotate-left"></i> Refund
+                </button>
+            `;
+        }
         buttons += `
-            <button class="refund-btn" onclick="showRefundModal(${Number(o.order_id)}, ${Number(o.daily_order_no)}, ${parseFloat(o.total).toFixed(2)})" title="Refund order">
-                <i class="fa-solid fa-rotate-left"></i> Refund
+            <button class="remake-btn" onclick="showRemakeModal(${Number(o.order_id)}, ${Number(o.daily_order_no)})" title="Log remake">
+                <i class="fa-solid fa-repeat"></i> Remake
             </button>
         `;
     }
@@ -1700,12 +1784,19 @@ function getActionButtons(o) {
 function updateExistingRow(o) {
     const card = document.getElementById("row-" + o.order_id);
     if (!card) return;
+
+    // Play bell when a remade order transitions back to Preparing
+    if (o.status === 'Preparing' && o.remake_count > 0 && card.dataset.status !== 'Preparing') {
+        play('bell');
+    }
+
     if ((o.status === 'Completed' || o.status === 'Refunded') && !showCompleted) {
         card.style.display = 'none';
     } else {
         card.style.display = '';
     }
     card.dataset.status = o.status;
+    card.className = "order-card" + (o.remake_count > 0 ? " is-remade" : "");
     card.innerHTML = buildCardInner(o);
 }
 
@@ -1795,6 +1886,7 @@ async function loadOrders() {
 
         // Support both old array format and new {orders, announcements} format
         const data = Array.isArray(raw) ? raw : (raw.orders || []);
+        allOrders = data;
         if (raw.announcements !== undefined) updateAnnouncements(raw.announcements);
 
         const currentIds = new Set();
@@ -1934,7 +2026,6 @@ function showRefundModal(id, orderNumber, total) {
     document.getElementById('refundOrderNumber').textContent = '#' + orderNumber;
     document.getElementById('refundAmount').value = total;
     document.getElementById('refundReason').value = '';
-    document.getElementById('restoreStock').checked = true;
     document.getElementById('refundModal').classList.add('active');
 }
 
@@ -1944,11 +2035,97 @@ function closeRefundModal() {
     currentRefundId = 0;
 }
 
+// ── Remake Modal ──
+const SWEETNESS_OPTS = ['0%', '25%', '50%', '75%', '100%'];
+const ICE_OPTS       = ['No Ice', 'Less Ice', 'Normal Ice', 'More Ice'];
+const MILK_OPTS      = ['Fresh Milk', 'Almond Milk', 'Soy Milk', 'Oat Milk', 'No Milk'];
+
+function buildPillGroup(type, options, current) {
+    let html = `<div class="remake-adj-group"><div class="remake-adj-label">${type.toUpperCase()}</div><div class="pill-group">`;
+    options.forEach(opt => {
+        const sel = opt === current ? ' selected' : '';
+        html += `<button type="button" class="pill-opt${sel}" onclick="selectPill(this)" data-type="${type}">${escapeHtml(opt)}</button>`;
+    });
+    return html + '</div></div>';
+}
+
+function selectPill(btn) {
+    btn.closest('.pill-group').querySelectorAll('.pill-opt').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+}
+
+function showRemakeModal(id, orderNumber) {
+    currentRemakeId = id;
+    document.getElementById('remakeOrderNumber').textContent = '#' + orderNumber;
+    document.getElementById('remakeReason').value = '';
+
+    const order = allOrders.find(o => o.order_id == id);
+    const adjDiv = document.getElementById('remakeAdjustments');
+    adjDiv.innerHTML = '';
+
+    if (order && order.items && order.items.length > 0) {
+        order.items.forEach(item => {
+            const block = document.createElement('div');
+            block.className = 'remake-item-block';
+            block.dataset.itemId = item.item_id;
+            block.innerHTML =
+                `<div class="remake-item-name"><i class="fa-solid fa-mug-hot" style="margin-right:5px"></i>${escapeHtml(item.product_name)}</div>` +
+                buildPillGroup('sweetness', SWEETNESS_OPTS, item.sweetness) +
+                buildPillGroup('ice',       ICE_OPTS,       item.ice) +
+                buildPillGroup('milk',      MILK_OPTS,      item.milk);
+            adjDiv.appendChild(block);
+        });
+    }
+
+    document.getElementById('remakeModal').classList.add('active');
+}
+
+function closeRemakeModal() {
+    document.getElementById('remakeModal').classList.remove('active');
+    currentRemakeId = 0;
+}
+
+async function confirmRemake() {
+    const reason = document.getElementById('remakeReason').value.trim();
+    if (!reason) { alert('Please enter a reason for the remake.'); return; }
+
+    const btn = document.querySelector('#remakeModal .btn-refund-yes');
+    btn.disabled = true;
+
+    const adjustments = [];
+    document.querySelectorAll('#remakeAdjustments .remake-item-block').forEach(block => {
+        adjustments.push({
+            item_id:   block.dataset.itemId,
+            sweetness: block.querySelector('[data-type="sweetness"].selected')?.textContent || '',
+            ice:       block.querySelector('[data-type="ice"].selected')?.textContent || '',
+            milk:      block.querySelector('[data-type="milk"].selected')?.textContent || ''
+        });
+    });
+
+    try {
+        const formData = new FormData();
+        formData.append('reason', reason);
+        formData.append('adjustments', JSON.stringify(adjustments));
+        const r = await fetch(`remake_order.php?order_id=${currentRemakeId}`, { method: 'POST', body: formData });
+        const data = await r.json();
+        if (data.ok) {
+            closeRemakeModal();
+            showToast('🔁 ' + data.message);
+            await loadOrders();
+        } else {
+            alert(data.error || 'Failed to log remake.');
+        }
+    } catch(e) {
+        alert('Network error. Please try again.');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 // ── Confirm Refund ──
 async function confirmRefund() {
     const amount = parseFloat(document.getElementById('refundAmount').value);
     const reason = document.getElementById('refundReason').value.trim();
-    const restoreStock = document.getElementById('restoreStock').checked ? 1 : 0;
     
     if (!amount || amount <= 0) {
         showToast('Please enter a valid refund amount.', 'error');
@@ -1969,7 +2146,6 @@ async function confirmRefund() {
         const formData = new FormData();
         formData.append('refund_amount', amount);
         formData.append('refund_reason', reason);
-        formData.append('restore_stock', restoreStock);
         
         const r = await fetch(`refund_order.php?order_id=${id}`, {
             method: 'POST',
@@ -2011,6 +2187,7 @@ function showToast(message, type = 'success') {
         duration: 3000,
         gravity: "top",
         position: "right",
+        offset: { y: 70 },
         style: {
             background: type === 'success' ? '#55e087' : '#ff5c5c',
             color: '#000',
@@ -2078,8 +2255,7 @@ async function completeOrder(id) {
             btn.style.border = '1px solid rgba(85, 224, 135, 0.2)';
             
             btn.disabled = true;
-            play("action");
-            
+
             try {
                 const r = await fetch(`view_order.php?action=complete&id=${id}`, { cache: "no-store" });
                 const res = await r.json();
@@ -2194,32 +2370,37 @@ function clearSearch() {
 loadOrders().then(() => {
     const tab = new URLSearchParams(window.location.search).get('tab');
     if (tab) filterStatus(tab);
+    else if (userRole === 'staff') filterStatus('PendingPayment');
 });
 setInterval(loadOrders, 4000);
 
 // ── Real-time Socket ──
-const socket = io("<?= SOCKET_URL ?>");
-
-socket.on("connect", () => {
-    console.log("Connected to realtime server");
-});
-
-socket.on("disconnect", () => {
-    console.log("Disconnected from realtime server");
-});
-
-socket.on("new_order", async (data) => {
-    console.log("New order received:", data);
-
-    if (data && data.order_id) {
-        play("bell");
-        await loadOrders();
-
-        const card = document.getElementById("row-" + data.order_id);
-        const orderNum = card?.querySelector('.card-order-num')?.textContent || ('#' + data.order_id);
-        showToast("🔔 New order " + orderNum + " received!");
-    }
-});
+let socket;
+<?php if ($_socketAvailable): ?>
+(function() {
+    const s = document.createElement('script');
+    s.src = "<?= SOCKET_URL ?>/socket.io/socket.io.js";
+    s.onload = function() {
+        try {
+            socket = io("<?= SOCKET_URL ?>");
+            socket.on("connect", () => { console.log("Connected to realtime server"); });
+            socket.on("disconnect", () => { console.log("Disconnected from realtime server"); });
+            socket.on("new_order", async (data) => {
+                if (data && data.order_id) {
+                    play("bell");
+                    await loadOrders();
+                    const card = document.getElementById("row-" + data.order_id);
+                    const orderNum = card?.querySelector('.card-order-num')?.textContent || ('#' + data.order_id);
+                    showToast("🔔 New order " + orderNum + " received!");
+                }
+            });
+        } catch (e) {
+            console.warn("Realtime server unavailable:", e.message);
+        }
+    };
+    document.body.appendChild(s);
+})();
+<?php endif; ?>
 
 // ── Keyboard shortcut for dismissing call ──
 document.addEventListener('keydown', function(e) {
@@ -2231,6 +2412,9 @@ document.addEventListener('keydown', function(e) {
     }
     if (e.key === 'Escape' && document.getElementById('refundModal').classList.contains('active')) {
         closeRefundModal();
+    }
+    if (e.key === 'Escape' && document.getElementById('remakeModal').classList.contains('active')) {
+        closeRemakeModal();
     }
 });
 
@@ -2272,6 +2456,13 @@ if ($action === "fetch") {
             o.prepared_by,
             o.prepared_by_role,
             o.table_number,
+            COUNT(rm.id) AS remake_count,
+            o.cancel_reason,
+            o.cancelled_by,
+            o.refund_reason,
+            o.refunded_by,
+            (SELECT GROUP_CONCAT(reason ORDER BY remade_at ASC SEPARATOR '|||') FROM order_remakes rml WHERE rml.order_id = o.order_id) AS remake_reasons,
+            oi.item_id,
             oi.product_name,
             oi.sweetness,
             oi.ice,
@@ -2279,8 +2470,10 @@ if ($action === "fetch") {
             oi.quantity
         FROM orders o
         LEFT JOIN users u ON u.user_id = o.employee_id
+        LEFT JOIN order_remakes rm ON rm.order_id = o.order_id
         LEFT JOIN order_items oi ON o.order_id = oi.order_id
         WHERE o.business_date = ?
+        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.quantity
         ORDER BY 
             CASE o.status
                 WHEN 'PendingPayment' THEN 1
@@ -2316,17 +2509,25 @@ if ($action === "fetch") {
                 "prepared_by" => $r['prepared_by'] ?? '',
                 "prepared_by_role" => $r['prepared_by_role'] ?? '',
                 "table_number" => $r['table_number'],
+                "remake_count"         => (int)$r['remake_count'],
+                "is_remade"            => (int)$r['remake_count'] > 0 ? 1 : 0,
+                "cancel_reason"        => $r['cancel_reason'] ?? '',
+                "cancelled_by"         => $r['cancelled_by'] ?? '',
+                "refund_reason"        => $r['refund_reason'] ?? '',
+                "refunded_by"          => $r['refunded_by'] ?? '',
+                "remake_reasons" => $r['remake_reasons'] ? explode('|||', $r['remake_reasons']) : [],
                 "items" => []
             ];
         }
 
         if (!empty($r['product_name'])) {
             $map[$id]["items"][] = [
+                "item_id"      => (int)$r["item_id"],
                 "product_name" => $r["product_name"],
-                "sweetness" => $r["sweetness"],
-                "ice" => $r["ice"],
-                "milk" => $r["milk"],
-                "quantity" => $r["quantity"]
+                "sweetness"    => $r["sweetness"],
+                "ice"          => $r["ice"],
+                "milk"         => $r["milk"],
+                "quantity"     => $r["quantity"]
             ];
         }
     }

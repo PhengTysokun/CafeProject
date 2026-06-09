@@ -18,8 +18,8 @@ function cat_anchor_id($key) {
     return 'cat-' . ($slug !== '' ? $slug : 'uncategorized');
 }
 
-/* ── NAV: view_order.php (Kitchen) is for roles that prep/track orders; cashiers just take orders and go back to their dashboard ── */
-$_show_kitchen_btn = in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'supervisor', 'barista']);
+/* ── NAV: view_order.php (Kitchen) is for barista only; admin/manager go to dashboard ── */
+$_show_kitchen_btn = ($_SESSION['role'] ?? '') === 'barista';
 
 /* ── CART CALCULATIONS ── */
 $cart = $_SESSION['cart'] ?? [];
@@ -496,7 +496,13 @@ while ($row = mysqli_fetch_assoc($result)) {
 <!-- HEADER -->
 <header class="menu-header">
   <div class="header-left">
-    <?php if ($_show_kitchen_btn): ?>
+    <?php
+    $_role = $_SESSION['role'] ?? '';
+    if (in_array($_role, ['admin', 'manager'])): ?>
+    <a href="dashboard.php" class="btn-nav btn-orders">
+      <i class="fa-solid fa-arrow-left"></i> Back
+    </a>
+    <?php elseif ($_show_kitchen_btn): ?>
     <a href="view_order.php" class="btn-nav btn-orders">
       <i class="fa-solid fa-fire"></i> Kitchen
       <?php if ($active_orders > 0): ?>

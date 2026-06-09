@@ -196,13 +196,13 @@ foreach ($recipes as $r) {
     --transition:all .25s cubic-bezier(.4,0,.2,1); --radius:14px;
 }
 [data-theme="light"] {
-    --bg:#f2ede8; --bg-card:#fff; --bg-card-hover:#fdf8f2;
-    --bg-input:#ede8e0; --border:#e0d4c4; --border-hover:#c9b89f;
-    --text:#1a1410; --text-muted:#7a6a58; --text-light:#fff;
-    --shadow-sm:0 2px 8px rgba(90,60,20,.07); --shadow-md:0 4px 20px rgba(90,60,20,.11);
-    --shadow-lg:0 8px 40px rgba(90,60,20,.16);
+    --bg:#F0F2F5; --bg-card:#FFFFFF; --bg-card-hover:#F5F7FA;
+    --bg-input:#F9FAFB; --border:#E5E7EB; --border-hover:#D1D5DB;
+    --text:#111827; --text-muted:#6B7280; --text-light:#fff;
+    --shadow-sm:0 2px 8px rgba(0,0,0,.06); --shadow-md:0 4px 20px rgba(0,0,0,.08);
+    --shadow-lg:0 8px 40px rgba(0,0,0,.12);
 }
-[data-theme="light"] .topbar { background:rgba(255,252,248,.97); }
+[data-theme="light"] .topbar { background:rgba(255,255,255,.97); }
 [data-theme="light"] .card   { background:var(--bg-card); }
 [data-theme="light"] .stat-bar { background:var(--bg-card); }
 [data-theme="light"] .ing-row  { background:rgba(0,0,0,.025); }

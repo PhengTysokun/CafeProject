@@ -84,17 +84,17 @@ $availPct = $totalProducts > 0 ? round($availCount / $totalProducts * 100) : 0;
 }
 
 [data-theme="light"] {
-    --bg: #f0ece6;
-    --bg-card: #ffffff;
-    --bg-card-hover: #faf7f3;
-    --border: #e8dfd4;
-    --border-hover: #d4c4b0;
-    --text: #1e1a16;
-    --text-muted: #7a6e64;
+    --bg: #F0F2F5;
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #F5F7FA;
+    --border: #E5E7EB;
+    --border-hover: #D1D5DB;
+    --text: #111827;
+    --text-muted: #6B7280;
     --text-light: #ffffff;
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 20px rgba(0,0,0,0.1);
-    --shadow-lg: 0 8px 40px rgba(0,0,0,0.15);
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 20px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 40px rgba(0,0,0,0.12);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -131,7 +131,7 @@ body {
     flex-wrap: wrap;
 }
 
-[data-theme="light"] .navbar { background: rgba(240,236,230,0.92); }
+[data-theme="light"] .navbar { background: rgba(255,255,255,0.95); }
 
 .navbar-left  { display: flex; align-items: center; gap: 14px; }
 .navbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

@@ -94,6 +94,16 @@ $conn->query("CREATE TABLE IF NOT EXISTS ingredient_history (
 _migrate($conn, 'ingredient_history_enum_v1', function($db) {
     $db->query("ALTER TABLE ingredient_history MODIFY COLUMN change_type ENUM('order_deduct','order_restore','quick_restock','po_received','manual_adjust') NOT NULL");
 });
+_migrate($conn, 'order_remakes_v1', function($db) {
+    $db->query("CREATE TABLE IF NOT EXISTS order_remakes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        reason TEXT NOT NULL,
+        remade_by VARCHAR(100) NOT NULL,
+        remade_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_order (order_id)
+    ) DEFAULT CHARSET=utf8mb4");
+});
 
 // ── New tables: categories, customers, cafe_tables ──
 $conn->query("CREATE TABLE IF NOT EXISTS categories (
@@ -195,13 +205,10 @@ if ((int)$conn->query("SELECT COUNT(*) FROM permissions")->fetch_row()[0] === 0)
     foreach ($perms as $p) { $ps->bind_param("sssi",$p[0],$p[1],$p[2],$p[3]); $ps->execute(); }
 
     // Default manager permissions
-    foreach (['dashboard','find_orders','view_orders','loyalty','products','ingredients',
-              'recipes','manage_recipes','suppliers','purchase_orders','report','announcements','attendance','promotions','reset_password'] as $slug)
-        $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'manager',id FROM permissions WHERE slug='$slug'");
+    $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'manager',id FROM permissions WHERE slug IN ('dashboard','find_orders','view_orders','loyalty','products','ingredients','recipes','manage_recipes','suppliers','purchase_orders','report','announcements','attendance','promotions','reset_password')");
 
     // Default staff permissions
-    foreach (['dashboard','find_orders','loyalty','tables'] as $slug)
-        $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'staff',id FROM permissions WHERE slug='$slug'");
+    $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'staff',id FROM permissions WHERE slug IN ('dashboard','find_orders','loyalty','tables')");
 }
 
 // ── RBAC: register newly-added permissions for existing installs (run once via migrations) ──

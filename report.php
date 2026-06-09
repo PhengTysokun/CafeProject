@@ -130,14 +130,10 @@ $orderIds = [];
 $totalSales = 0;
 $orderCount = 0;
 
-$sqlOrders = "
-    SELECT order_id, total
-    FROM orders
-    WHERE status = 'Completed'
-      AND order_date BETWEEN '$startStr' AND '$endStr'
-";
-
-$qOrders = mysqli_query($conn, $sqlOrders);
+$stmt_orders = $conn->prepare("SELECT order_id, total FROM orders WHERE status = 'Completed' AND order_date BETWEEN ? AND ?");
+$stmt_orders->bind_param("ss", $startStr, $endStr);
+$stmt_orders->execute();
+$qOrders = $stmt_orders->get_result();
 
 while ($o = mysqli_fetch_assoc($qOrders)) {
     $id = (int)$o['order_id'];
@@ -409,6 +405,38 @@ while ($r = mysqli_fetch_assoc($qRefunds)) {
 $netRevenue = $totalSales - $totalRefunded;
 
 /* =========================
+   GET REMAKE DATA
+========================= */
+$remakeCount  = 0;
+$remakeOrders = [];
+$_tbl_check   = $conn->query("SHOW TABLES LIKE 'order_remakes'");
+if ($_tbl_check && $_tbl_check->num_rows > 0) {
+    $sqlRemakes = "
+        SELECT rm.id, rm.reason, rm.remade_by, rm.remade_at,
+               o.daily_order_no, o.customer_name,
+               GROUP_CONCAT(DISTINCT oi.product_name ORDER BY oi.product_name SEPARATOR ', ') AS products
+        FROM order_remakes rm
+        JOIN orders o ON o.order_id = rm.order_id
+        LEFT JOIN order_items oi ON oi.order_id = rm.order_id
+        WHERE rm.remade_at BETWEEN '$startStr' AND '$endStr'
+        GROUP BY rm.id
+        ORDER BY rm.remade_at DESC
+    ";
+    $qRemakes = mysqli_query($conn, $sqlRemakes);
+    while ($r = mysqli_fetch_assoc($qRemakes)) {
+        $remakeCount++;
+        $remakeOrders[] = [
+            'daily_order_no' => (int)$r['daily_order_no'],
+            'customer_name'  => $r['customer_name'],
+            'products'       => $r['products'],
+            'reason'         => $r['reason'],
+            'remade_by'      => $r['remade_by'],
+            'remade_at'      => $r['remade_at'],
+        ];
+    }
+}
+
+/* =========================
    PREVIOUS PERIOD COMPARISON
 ========================= */
 $prevSales = 0.0; $prevOrderCount = 0;
@@ -542,23 +570,23 @@ if ($mode === 'daily') {
 
 /* ── Light Theme Variables ── */
 [data-theme="light"] {
-    --bg:           #f0ece8;
-    --bg-card:      #faf8f6;
-    --bg-card-hover:#f3ede8;
-    --bg-input:     #f5f1ed;
-    --border:       #ddd5cc;
-    --border-hover: #c9bfb6;
-    --text:         #1e1a16;
-    --text-muted:   #6b5f55;
+    --bg:           #F0F2F5;
+    --bg-card:      #FFFFFF;
+    --bg-card-hover:#F5F7FA;
+    --bg-input:     #F9FAFB;
+    --border:       #E5E7EB;
+    --border-hover: #D1D5DB;
+    --text:         #111827;
+    --text-muted:   #6B7280;
     --text-light:   #ffffff;
     --accent:       #d1904b;
     --accent-2:     #d1904b;
     --gold:         #a0702a;
     --refund-color: #8e44ad;
     --refund-light: #9b59b6;
-    --shadow-sm:    0 2px 8px  rgba(0,0,0,0.08);
-    --shadow-md:    0 4px 20px rgba(0,0,0,0.10);
-    --shadow-lg:    0 8px 40px rgba(0,0,0,0.13);
+    --shadow-sm:    0 2px 8px  rgba(0,0,0,0.06);
+    --shadow-md:    0 4px 20px rgba(0,0,0,0.08);
+    --shadow-lg:    0 8px 40px rgba(0,0,0,0.10);
 }
 
 /* ══════════════════════════════════════════════════
@@ -1397,6 +1425,18 @@ select option {
             </div>
         </div>
 
+        <!-- ── REMAKE KPI ── -->
+        <div class="kpi" style="border-top: 3px solid #f1c40f;">
+            <div class="kpi-icon" style="color:#f1c40f;">
+                <i class="fa-solid fa-repeat"></i>
+            </div>
+            <span>Remakes</span>
+            <h3 class="num" style="color:#f1c40f;"><?= $remakeCount ?></h3>
+            <div class="small">
+                <span class="badge warn"><i class="fa-solid fa-repeat"></i> drinks remade</span>
+            </div>
+        </div>
+
         <!-- ── NET REVENUE KPI ── -->
         <div class="kpi" style="border-top: 3px solid #63f1a0;">
             <div class="kpi-icon">
@@ -1718,6 +1758,46 @@ select option {
                     <td class="refunded-by"><?= htmlspecialchars($r['refunded_by']) ?></td>
                     <td style="font-size:13px; color:var(--text-muted);">
                         <?= date('M d, g:i A', strtotime($r['refunded_at'])) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($remakeCount > 0): ?>
+<div class="report-section">
+    <div class="section-hdr">
+        <i class="fa-solid fa-repeat" style="color:#f1c40f;"></i>
+        <span class="section-hdr-title" style="color:#f1c40f;">Remade Orders</span>
+        <span class="section-hdr-badge"><?= $remakeCount ?> remake<?= $remakeCount !== 1 ? 's' : '' ?></span>
+    </div>
+    <p class="section-desc">Drinks that were remade due to quality issues — useful for spotting recurring problems with specific drinks or baristas.</p>
+
+    <div class="refund-table-wrapper">
+        <table class="refund-table">
+            <thead>
+                <tr>
+                    <th>Order #</th>
+                    <th>Customer</th>
+                    <th>Drinks</th>
+                    <th>Reason</th>
+                    <th>Logged By</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($remakeOrders as $r): ?>
+                <tr>
+                    <td>#<?= $r['daily_order_no'] ?></td>
+                    <td><?= htmlspecialchars($r['customer_name']) ?></td>
+                    <td style="color:var(--text);"><?= htmlspecialchars($r['products'] ?? '—') ?></td>
+                    <td class="refund-reason">"<?= htmlspecialchars($r['reason']) ?>"</td>
+                    <td class="refunded-by"><?= htmlspecialchars($r['remade_by']) ?></td>
+                    <td style="font-size:13px; color:var(--text-muted);">
+                        <?= date('M d, g:i A', strtotime($r['remade_at'])) ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>

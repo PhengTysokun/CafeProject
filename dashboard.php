@@ -68,11 +68,13 @@ $refund_data   = mysqli_fetch_assoc($refund_result);
 $total_refunds = $refund_data['total_refunds'];
 $refund_count  = $refund_data['refund_count'];
 
-$status_result = mysqli_query($conn, "SELECT status, COUNT(*) as count FROM orders WHERE business_date='$business_date' GROUP BY status");
+$stmt_status = $conn->prepare("SELECT status, COUNT(*) as count FROM orders WHERE business_date=? GROUP BY status");
+$stmt_status->bind_param("s", $business_date);
+$stmt_status->execute();
+$status_result = $stmt_status->get_result();
 $status_counts = [];
 while ($row = mysqli_fetch_assoc($status_result)) { $status_counts[$row['status']] = $row['count']; }
 $pending_count   = $status_counts['PendingPayment'] ?? 0;
-$paid_count      = $status_counts['Preparing']      ?? 0;
 $preparing_count = $status_counts['Preparing']      ?? 0;
 $completed_count = $status_counts['Completed']      ?? 0;
 $cancelled_count = $status_counts['Cancelled']      ?? 0;
@@ -87,11 +89,14 @@ $recent_orders = mysqli_query($conn, $recent_sql);
 
 $top_selling_result = mysqli_query($conn, "SELECT p.name, p.image, SUM(oi.quantity) as total_sold, p.price FROM products p JOIN order_items oi ON p.product_id=oi.product_id JOIN orders o ON oi.order_id=o.order_id WHERE o.status='Completed' GROUP BY p.product_id ORDER BY total_sold DESC LIMIT 5");
 
-$activity_result = mysqli_query($conn, "SELECT * FROM (SELECT 'order' as type, order_id as ref_id, customer_name as name, total as amount, status, order_date as date FROM orders UNION ALL SELECT 'stock' as type, ingredient_id as ref_id, ingredient_name as name, purchase_qty as amount, 'restocked' as status, NULL as date FROM ingredients ORDER BY date DESC LIMIT 10) as activity ORDER BY date DESC LIMIT 5");
+$activity_result = mysqli_query($conn, "SELECT * FROM (SELECT 'order' as type, order_id as ref_id, customer_name as name, total as amount, status, order_date as date FROM orders UNION ALL SELECT 'stock' as type, ingredient_id as ref_id, ingredient_name as name, purchase_qty as amount, 'restocked' as status, NULL as date FROM ingredients) as activity ORDER BY date DESC LIMIT 5");
 
-$filter_status = isset($_GET['status']) ? $conn->real_escape_string($_GET['status']) : '';
+$filter_status = isset($_GET['status']) ? trim($_GET['status']) : '';
 if ($filter_status) {
-    $recent_orders = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() AND status='$filter_status' ORDER BY order_date DESC LIMIT 20");
+    $stmt_filter = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() AND status=? ORDER BY order_date DESC LIMIT 20");
+    $stmt_filter->bind_param("s", $filter_status);
+    $stmt_filter->execute();
+    $recent_orders = $stmt_filter->get_result();
 }
 
 // Flash toasts — only show once (right after login), then clear
@@ -151,16 +156,38 @@ $_flash_stock_alert = !empty($_SESSION['flash_stock_alert']); unset($_SESSION['f
 }
 
 [data-theme="light"] {
-    --bg:        #f0ece5;
-    --surface:   #f7f3ed;
-    --surface-2: #ede8e0;
-    --glass:     rgba(250,246,240,.85);
-    --glass-hi:  rgba(250,246,240,.97);
-    --border:    #ddd6cc;
-    --border-hi: #c9bfb2;
-    --text:      #1c1208;
-    --text-muted:#7a6e5f;
-    --text-xs:   #c9bfb2;
+    --bg:        #ECEEF2;
+    --surface:   #FFFFFF;
+    --surface-2: #F5F7FA;
+    --glass:     rgba(255,255,255,.90);
+    --glass-hi:  rgba(255,255,255,.98);
+    --border:    #E2E5EA;
+    --border-hi: #CDD0D8;
+    --text:      #111827;
+    --text-muted:#5A6373;
+    --text-xs:   #9CA3AF;
+    --shadow:    0 1px 3px rgba(0,0,0,.07), 0 4px 14px rgba(0,0,0,.06);
+    --shadow-lg: 0 4px 20px rgba(0,0,0,.09), 0 1px 4px rgba(0,0,0,.05);
+}
+[data-theme="light"] body {
+    -webkit-font-smoothing: subpixel-antialiased;
+    -moz-osx-font-smoothing: auto;
+}
+/* crisp sidebar border in light mode */
+[data-theme="light"] .sidebar {
+    border-right-color: #D8DCE3;
+    box-shadow: 2px 0 12px rgba(0,0,0,.05);
+}
+/* cards need a resting shadow in light mode so they lift off the page */
+[data-theme="light"] .kpi-card,
+[data-theme="light"] .panel {
+    box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.05);
+    background: #FFFFFF;
+    border-color: #E2E5EA;
+}
+[data-theme="light"] .kpi-card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.06);
+    transform: translateY(-2px);
 }
 
 /* ── RESET ── */
@@ -875,8 +902,8 @@ body.no-sidebar{--sidebar-w:0px;}
             <a class="nav-item active" href="dashboard.php">
                 <i class="fa-solid fa-chart-pie"></i>
                 <span class="nav-label">Dashboard</span>
-                <?php if ($pending_count + $paid_count + $preparing_count > 0): ?>
-                <span class="order-badge"><?= $pending_count + $paid_count + $preparing_count ?></span>
+                <?php if ($pending_count + $preparing_count > 0): ?>
+                <span class="order-badge"><?= $pending_count + $preparing_count ?></span>
                 <?php endif; ?>
             </a>
         </div>
@@ -934,7 +961,6 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php if (can('products') || can('ingredients') || can('recipes')): ?>
         <div class="nav-group-label" onclick="toggleGroup(this)" data-group="inventory">
             <span>Inventory</span>
-            <?php if ($low_stock > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto;margin-right:5px"><?= $low_stock ?></span><?php endif; ?>
             <i class="fa-solid fa-chevron-right nav-chevron"></i>
         </div>
         <div class="nav-group-items collapsed" id="grp-inventory">
@@ -948,6 +974,7 @@ body.no-sidebar{--sidebar-w:0px;}
             <a class="nav-item" href="ingredients.php">
                 <i class="fa-solid fa-boxes-stacked"></i>
                 <span class="nav-label">Ingredients</span>
+                <?php if ($low_stock > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto"><?= $low_stock ?></span><?php endif; ?>
             </a>
             <?php endif; ?>
             <?php if (can('recipes')): ?>

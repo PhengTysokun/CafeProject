@@ -152,14 +152,14 @@ if ($is_edit) {
 
 /* ── Light Theme Variables ── */
 [data-theme="light"] {
-    --bg:           #f0ece8;
-    --bg-card:      #faf8f6;
-    --bg-card-hover:#f3ede8;
-    --bg-input:     #f5f1ed;
-    --border:       #ddd5cc;
-    --border-hover: #c9bfb6;
-    --text:         #1e1a16;
-    --text-muted:   #6b5f55;
+    --bg:           #F0F2F5;
+    --bg-card:      #FFFFFF;
+    --bg-card-hover:#F5F7FA;
+    --bg-input:     #F9FAFB;
+    --border:       #E5E7EB;
+    --border-hover: #D1D5DB;
+    --text:         #111827;
+    --text-muted:   #6B7280;
     --text-light:   #ffffff;
     --accent: #d1904b;
     --accent-light: #e8b87a;

@@ -62,12 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            $role = $user['role'] ?? '';
-            if ($role === 'barista') {
-                header("Location: view_order.php");
-            } else {
-                header("Location: dashboard.php");
-            }
+            header("Location: loading.php");
             exit;
         }
     }

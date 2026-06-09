@@ -159,6 +159,38 @@ $qRef = mysqli_query($conn, "SELECT COALESCE(SUM(refund_amount),0) as total, COU
 if ($rf = mysqli_fetch_assoc($qRef)) { $totalRefunded = (float)$rf['total']; $refundCount = (int)$rf['cnt']; }
 $netRevenue = $totalSales - $totalRefunded;
 
+// ── Remakes ──
+$remakeCount = 0;
+$remakeRows  = '';
+$_tbl_chk = mysqli_query($conn, "SHOW TABLES LIKE 'order_remakes'");
+if ($_tbl_chk && mysqli_num_rows($_tbl_chk) > 0) {
+    $qRem = mysqli_query($conn, "
+        SELECT rm.reason, rm.remade_by, rm.remade_at,
+               o.daily_order_no, o.customer_name,
+               GROUP_CONCAT(DISTINCT oi.product_name ORDER BY oi.product_name SEPARATOR ', ') AS products
+        FROM order_remakes rm
+        JOIN orders o ON o.order_id = rm.order_id
+        LEFT JOIN order_items oi ON oi.order_id = rm.order_id
+        WHERE rm.remade_at BETWEEN '$startStr' AND '$endStr'
+        GROUP BY rm.id
+        ORDER BY rm.remade_at DESC
+    ");
+    $ri = 1;
+    while ($r = mysqli_fetch_assoc($qRem)) {
+        $remakeCount++;
+        $rowBg = ($ri % 2 === 0) ? '#f9f6f2' : '#ffffff';
+        $remakeRows .= '<tr style="background:'.$rowBg.';">'
+            . '<td>#'.he((string)$r['daily_order_no']).'</td>'
+            . '<td>'.he($r['customer_name']).'</td>'
+            . '<td>'.he($r['products'] ?? '—').'</td>'
+            . '<td style="font-style:italic;color:#555;">'.he($r['reason']).'</td>'
+            . '<td>'.he($r['remade_by']).'</td>'
+            . '<td style="color:#6b7280;font-size:9px;">'.date('g:i A', strtotime($r['remade_at'])).'</td>'
+            . '</tr>';
+        $ri++;
+    }
+}
+
 // ── Peak hour (daily only) ──
 $peakHour = null;
 if ($mode === 'daily') {
@@ -366,6 +398,12 @@ table.cat-table tfoot td { padding: 6px 8px; border-top: 2px solid #374151; font
         <div class="stat-sub">'.$refundCount.' order'.($refundCount===1?'':'s').'</div>
     </div>
     <div class="stat-gap"></div>
+    <div class="stat-cell" style="border-top:3px solid #d97706;">
+        <div class="stat-num" style="color:'.($remakeCount>0?'#d97706':'#6b7280').';font-size:22px;">'.$remakeCount.'</div>
+        <div class="stat-lbl">Remakes</div>
+        <div class="stat-sub">drink'.($remakeCount===1?'':'s').' remade</div>
+    </div>
+    <div class="stat-gap"></div>
     <div class="stat-cell" style="border-top:3px solid #16a34a;">
         <div class="stat-num" style="color:#16a34a;">$'.number_format($netRevenue,2).'</div>
         <div class="stat-lbl">Take Home</div>
@@ -426,6 +464,23 @@ table.cat-table tfoot td { padding: 6px 8px; border-top: 2px solid #374151; font
         </tr>
     </tfoot>
 </table>
+
+<?php if ($remakeCount > 0): ?>
+<div class="section-title" style="color:#d97706;">Remade Orders</div>
+<table class="main">
+    <thead>
+        <tr>
+            <th style="width:40px;">Order #</th>
+            <th style="width:80px;">Customer</th>
+            <th>Drinks</th>
+            <th>Reason</th>
+            <th style="width:70px;">Logged By</th>
+            <th style="width:55px;">Time</th>
+        </tr>
+    </thead>
+    <tbody><?= $remakeRows ?></tbody>
+</table>
+<?php endif; ?>
 
 <div class="sig-row">
     <div class="sig-cell">

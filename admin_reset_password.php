@@ -3,11 +3,21 @@ require 'auth.php';
 require 'config.php';
 if (!can('reset_password')) { header('Location: dashboard.php?denied=1'); exit; }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
+}
+
 $toast      = '';
 $toast_type = '';
 
 // ── Handle POST actions ──────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
+        $toast = "Invalid request. Please try again.";
+        $toast_type = 'error';
+        goto render;
+    }
+
     $action  = $_POST['action']  ?? '';
     $target  = (int)($_POST['target_user_id'] ?? 0);
 
@@ -26,11 +36,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        $chars    = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#';
-        $tmp_pass = substr(str_shuffle($chars), 0, 4)
-                  . rand(10,99)
-                  . substr(str_shuffle('!@#$%'), 0, 1)
-                  . substr(str_shuffle('ABCDEFGH'), 0, 1);
+        $upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        $lower   = 'abcdefghjkmnpqrstuvwxyz';
+        $digits  = '23456789';
+        $special = '!@#$%';
+        $pool    = [$upper, $lower, $lower, $digits, $digits, $special, $upper];
+        $chars   = array_map(fn($s) => $s[random_int(0, strlen($s) - 1)], $pool);
+        for ($i = count($chars) - 1; $i > 0; $i--) {
+            $j = random_int(0, $i);
+            [$chars[$i], $chars[$j]] = [$chars[$j], $chars[$i]];
+        }
+        $tmp_pass = implode('', $chars);
 
         $hashed = password_hash($tmp_pass, PASSWORD_DEFAULT);
         $stmt = $conn->prepare(
@@ -54,6 +70,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 render:
+// ── Load role metadata from DB (same source as manage_roles.php) ──
+$role_meta = [];
+$rm_res = $conn->query("SELECT slug, name, icon, color FROM roles");
+while ($rm = $rm_res->fetch_assoc()) $role_meta[$rm['slug']] = $rm;
+
 // ── Load users: admin sees everyone; manager cannot see/reset other admins ──
 $_is_admin_role = ($_SESSION['role'] ?? '') === 'admin';
 $_user_where    = $_is_admin_role ? "1=1" : "role != 'admin'";
@@ -70,9 +91,6 @@ $total        = count($all_users);
 $sq_set       = count(array_filter($all_users, fn($u) => !empty($u['security_question'])));
 $must_change  = count(array_filter($all_users, fn($u) => $u['must_change_password']));
 
-// Temp password shown after reset (stored in session so it survives redirect)
-$tmp_shown = $_SESSION['tmp_pass_shown'] ?? null;
-unset($_SESSION['tmp_pass_shown']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -169,8 +187,6 @@ tbody tr:hover td { background:rgba(255,255,255,0.02); }
     display:inline-flex; align-items:center; gap:5px;
     padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap;
 }
-.badge-admin   { background:rgba(209,144,75,.12); color:var(--accent);   border:1px solid rgba(209,144,75,.25); }
-.badge-staff   { background:rgba(255,255,255,.06); color:var(--text-muted); border:1px solid var(--border); }
 .badge-ok      { background:rgba(85,224,135,.1);  color:var(--success);  border:1px solid rgba(85,224,135,.25); }
 .badge-missing { background:rgba(243,156,18,.1);  color:var(--warning);  border:1px solid rgba(243,156,18,.25); }
 .badge-alert   { background:rgba(231,76,60,.1);   color:#e87070;          border:1px solid rgba(231,76,60,.25); }
@@ -246,7 +262,33 @@ tbody tr:hover td { background:rgba(255,255,255,0.02); }
     .stat-strip { grid-template-columns:1fr; }
     .page-wrap  { padding:18px 14px 50px; }
 }
+
+/* Light theme */
+[data-theme="light"] {
+    --bg:         #ECEEF2;
+    --card:       #FFFFFF;
+    --border:     rgba(0,0,0,0.08);
+    --text:       #111827;
+    --text-muted: #5A6373;
+    --danger:     #dc2626;
+    --success:    #16a34a;
+    --warning:    #d97706;
+    --info:       #2563eb;
+}
+[data-theme="light"] .topbar   { background:rgba(236,238,242,.95); }
+[data-theme="light"] .back-btn { background:transparent; }
+[data-theme="light"] .stat-card { box-shadow:0 1px 4px rgba(0,0,0,.06); }
+[data-theme="light"] tbody tr:hover td { background:rgba(0,0,0,.02); }
+[data-theme="light"] tbody td  { border-color:rgba(0,0,0,.05); }
+[data-theme="light"] thead th  { border-color:rgba(0,0,0,.08); }
+[data-theme="light"] .modal    { background:#fff; }
+[data-theme="light"] .btn-cancel { background:rgba(0,0,0,.06); }
+[data-theme="light"] .toast.success { background:#dcfce7; color:#16a34a; border-color:rgba(22,163,74,.3); }
+[data-theme="light"] .toast.error   { background:#fee2e2; color:#dc2626; border-color:rgba(220,38,38,.3); }
+[data-theme="light"] .toast.info    { background:#dbeafe; color:#1d4ed8; border-color:rgba(29,78,216,.3); }
+[data-theme="light"] .toast-copy    { background:rgba(0,0,0,.1); color:inherit; }
 </style>
+<script>(function(){var t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();</script>
 </head>
 <body>
 
@@ -325,9 +367,15 @@ tbody tr:hover td { background:rgba(255,255,255,0.02); }
                         </div>
                     </td>
                     <td>
-                        <span class="badge badge-<?= $u['role'] ?>">
-                            <i class="fa-solid fa-<?= $u['role'] === 'admin' ? 'crown' : 'user' ?>"></i>
-                            <?= ucfirst($u['role']) ?>
+                        <?php
+                            $rm  = $role_meta[$u['role']] ?? null;
+                            $rc  = $rm['color'] ?? '#888888';
+                            $ri  = $rm['icon']  ?? 'fa-user';
+                            $rl  = $rm['name']  ?? ucwords(str_replace('_', ' ', $u['role']));
+                        ?>
+                        <span class="badge" style="background:<?= $rc ?>22;color:<?= $rc ?>;border:1px solid <?= $rc ?>44">
+                            <i class="fa-solid <?= htmlspecialchars($ri) ?>"></i>
+                            <?= htmlspecialchars($rl) ?>
                         </span>
                     </td>
                     <td>
@@ -352,6 +400,7 @@ tbody tr:hover td { background:rgba(255,255,255,0.02); }
                             </button>
                             <?php if ($u['must_change_password']): ?>
                             <form method="POST" style="display:inline">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                 <input type="hidden" name="action" value="clear_flag">
                                 <input type="hidden" name="target_user_id" value="<?= $u['user_id'] ?>">
                                 <button type="submit" class="btn-sm"><i class="fa-solid fa-check"></i> Clear flag</button>
@@ -393,6 +442,7 @@ tbody tr:hover td { background:rgba(255,255,255,0.02); }
         <h2 class="modal-title">Reset Password?</h2>
         <p class="modal-msg">This will generate a new temporary password for <strong id="resetUsername"></strong> and require them to change it on next login. Their security question will also be cleared.</p>
         <form method="POST" id="resetForm">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
             <input type="hidden" name="action" value="force_reset">
             <input type="hidden" name="target_user_id" id="resetUserId">
             <div class="modal-btns">
@@ -416,7 +466,6 @@ tbody tr:hover td { background:rgba(255,255,255,0.02); }
 </div>
 <script>
 <?php if ($toast_type === 'info'): ?>
-var tmpPass = <?= json_encode(explode(': ', $toast)[1] ?? '') ?>;
 function copyPass(btn){
     // extract just the password part between ": " and " —"
     var full = <?= json_encode($toast) ?>;
