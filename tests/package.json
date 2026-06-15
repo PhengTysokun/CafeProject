@@ -1,0 +1,17 @@
+{
+  "name": "cafe-pos-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "mysql2": "^3.9.0"
+  }
+}
