@@ -380,7 +380,7 @@ if ($manual_discount_rpl > 0) {
 
 $html .= '
     <div class="row">
-        <span class="label">Tax (10%) ($)</span>
+        <span class="label">Tax (<?= TAX_RATE ?>%) ($)</span>
         <span class="value">' . number_format($tax, 2) . '</span>
     </div>
     <div class="row grand-total">

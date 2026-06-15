@@ -69,7 +69,7 @@ if ($cp_md && (float)($cp_md['amount'] ?? 0) > 0) {
     if ($cp_md['type'] === 'percent') $cp_manual_label .= ' (' . (int)$cp_md['amount'] . '% off)';
     $cp_after -= $cp_manual;
 }
-$cp_tax   = $cp_after * 0.10;
+$cp_tax   = $cp_after * (TAX_RATE / 100);
 $cp_total = round($cp_after + $cp_tax, 2);
 
 /* ── LOYALTY ── */
@@ -133,10 +133,6 @@ while ($_cat_row = $_cat_res->fetch_assoc()) {
     $catIcons[$_cat_row['slug']]   = $_cat_row['icon'];
 }
 
-// Fetch available cafe tables for dropdown
-$_tables_res = $conn->query("SELECT table_number, capacity FROM cafe_tables WHERE status = 'available' ORDER BY table_number");
-$_cafe_tables = [];
-while ($_t = $_tables_res->fetch_assoc()) $_cafe_tables[] = $_t;
 $products = []; $flat_products = [];
 
 while ($row = mysqli_fetch_assoc($result)) {
@@ -837,7 +833,7 @@ while ($row = mysqli_fetch_assoc($result)) {
         </div>
 
         <div class="cp-sum-row">
-          <span>Tax (10%)</span>
+          <span>Tax (<?= TAX_RATE ?>%)</span>
           <span id="cpTax">$<?= number_format($cp_tax, 2) ?></span>
         </div>
 
@@ -929,19 +925,14 @@ while ($row = mysqli_fetch_assoc($result)) {
           <input type="text" id="cpCustomerName" placeholder="Leave blank for Guest">
         </div>
 
-        <!-- Table number (drink in only) -->
+        <!-- Stand number (drink in only) -->
         <div class="cp-form-group" id="cpTableNumberGroup">
-          <label><i class="fa-solid fa-hashtag"></i> Table Number <span style="color:var(--text-muted);font-weight:400;font-size:11px;">(optional)</span></label>
-          <?php if (!empty($_cafe_tables)): ?>
-          <select id="cpTableNumber" name="table_number">
-            <option value="">-- Takeaway / No Table --</option>
-            <?php foreach ($_cafe_tables as $_t): ?>
-            <option value="<?= e($_t['table_number']) ?>"><?= e($_t['table_number']) ?> &mdash; <?= (int)$_t['capacity'] ?> seats</option>
-            <?php endforeach; ?>
-          </select>
-          <?php else: ?>
-          <input type="text" id="cpTableNumber" name="table_number" maxlength="10" placeholder="e.g. T1, T5, VIP...">
-          <?php endif; ?>
+          <label style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-hashtag"></i> Stand Number <span style="color:var(--text-muted);font-weight:400;font-size:11px;">(optional)</span>
+            <button type="button" onclick="cpToggleStandGrid()" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:#aaa;display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-table-cells-large"></i> Pick</button>
+          </label>
+          <input type="text" id="cpTableNumber" name="table_number" maxlength="10" placeholder="e.g. 1, 7, 12..." onblur="cpCheckStand(this.value)">
+          <div id="cpStandWarn" style="display:none;margin-top:6px;padding:7px 10px;background:rgba(255,193,7,.1);border:1px solid rgba(255,193,7,.35);border-radius:8px;font-size:12px;color:#f0ad4e;align-items:center;gap:6px;"><i class="fa-solid fa-triangle-exclamation"></i> <span id="cpStandWarnText"></span></div>
+          <div id="cpStandGrid" style="display:none;margin-top:6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px;"></div>
         </div>
 
       </div><!-- /cp-summary -->
@@ -1102,7 +1093,9 @@ document.addEventListener('DOMContentLoaded', function() {
 var CSRF        = '<?= e($_SESSION['csrf_token']) ?>';
 var BUY_X_COUNT = <?= (int)BUY_X_COUNT ?>;
 var ADD_TO_ORDER_MODE = <?= (int)$add_to_order_mode ?>;
-var CAFE_TABLES = <?= json_encode(array_map(fn($t) => ['v' => $t['table_number'], 'l' => $t['table_number'] . ' — ' . $t['capacity'] . ' seats'], $_cafe_tables)) ?>;
+var CAFE_TABLES = [];
+var CP_STAND_MAX = 20;
+var CP_TAX_RATE  = <?= TAX_RATE ?>;
 
 // ── Escape HTML for JS-built elements ──
 function escH(str) {
@@ -1273,7 +1266,7 @@ function renderCartPanel(data) {
     '<div class="cp-disc-actions"><button type="button" class="cp-btn-apply" onclick="cpApplyDiscount()"><i class="fa-solid fa-check"></i> Apply</button><button type="button" class="cp-btn-cancel" onclick="cpCloseDiscount()">Cancel</button></div>' +
   '</div></div>';
 
-  itemsHtml += '<div class="cp-sum-row"><span>Tax (10%)</span><span id="cpTax">$' + data.tax + '</span></div>';
+  itemsHtml += '<div class="cp-sum-row"><span>Tax (' + CP_TAX_RATE + '%)</span><span id="cpTax">$' + data.tax + '</span></div>';
 
   // Loyalty
   var loyaltyStatus = document.getElementById('cpLoyaltyStatus');
@@ -1335,18 +1328,14 @@ function renderCartPanel(data) {
   itemsHtml += '<div class="cp-form-group"><label><i class="fa-regular fa-user"></i> Customer Name</label>' +
     '<input type="text" id="cpCustomerName" placeholder="Leave blank for Guest"></div>';
 
-  // Table number (drink in only)
-  var tableField;
-  if (CAFE_TABLES.length > 0) {
-    var opts = '<option value="">-- Takeaway / No Table --</option>';
-    CAFE_TABLES.forEach(function(t) { opts += '<option value="' + escH(t.v) + '">' + escH(t.l) + '</option>'; });
-    tableField = '<select id="cpTableNumber" name="table_number">' + opts + '</select>';
-  } else {
-    tableField = '<input type="text" id="cpTableNumber" name="table_number" maxlength="10" placeholder="e.g. T1, T5, VIP...">';
-  }
+  // Stand number (drink in only)
   itemsHtml += '<div class="cp-form-group" id="cpTableNumberGroup">' +
-    '<label><i class="fa-solid fa-hashtag"></i> Table Number <span style="color:var(--text-muted);font-weight:400;font-size:11px;">(optional)</span></label>' +
-    tableField + '</div>';
+    '<label style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-hashtag"></i> Stand Number <span style="color:var(--text-muted);font-weight:400;font-size:11px;">(optional)</span>' +
+    '<button type="button" onclick="cpToggleStandGrid()" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:#aaa;display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-table-cells-large"></i> Pick</button></label>' +
+    '<input type="text" id="cpTableNumber" name="table_number" maxlength="10" placeholder="e.g. 1, 7, 12..." onblur="cpCheckStand(this.value)">' +
+    '<div id="cpStandWarn" style="display:none;margin-top:6px;padding:7px 10px;background:rgba(255,193,7,.1);border:1px solid rgba(255,193,7,.35);border-radius:8px;font-size:12px;color:#f0ad4e;align-items:center;gap:6px;"><i class="fa-solid fa-triangle-exclamation"></i> <span id="cpStandWarnText"></span></div>' +
+    '<div id="cpStandGrid" style="display:none;margin-top:6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px;"></div>' +
+    '</div>';
 
   itemsHtml += '</div>'; // /cp-summary
 
@@ -1957,33 +1946,67 @@ async function redeemReward(rewardName, pointsRequired) {
   } catch(e) { showToast('Error redeeming reward', 'error'); }
 }
 
-// ── Real-time table availability polling ──
-function _refreshTables() {
-  fetch('api_tables.php')
+// ── Stand number picker ──
+function cpToggleStandGrid() {
+  var grid = document.getElementById('cpStandGrid');
+  if (!grid) return;
+  if (grid.style.display !== 'none') { grid.style.display = 'none'; return; }
+  grid.innerHTML = '<div style="text-align:center;padding:10px;color:#888;font-size:12px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</div>';
+  grid.style.display = 'block';
+  fetch('get_stands.php')
     .then(function(r) { return r.json(); })
-    .then(function(tables) {
-      // Update global list
-      CAFE_TABLES = tables.map(function(t) {
-        return { v: t.table_number, l: t.table_number + ' — ' + t.capacity + ' seats' };
-      });
-      // Rebuild any visible table dropdown preserving current selection
-      var sel = document.getElementById('cpTableNumber');
-      if (sel && sel.tagName === 'SELECT') {
-        var cur = sel.value;
-        var opts = '<option value="">-- Takeaway / No Table --</option>';
-        CAFE_TABLES.forEach(function(t) {
-          opts += '<option value="' + escH(t.v) + '"' + (t.v === cur ? ' selected' : '') + '>' + escH(t.l) + '</option>';
-        });
-        sel.innerHTML = opts;
-        // If the previously selected table is now occupied, clear it and warn
-        if (cur && sel.value !== cur) {
-          showToast('Table ' + cur + ' is now occupied — please select another.', 'error');
+    .then(function(data) {
+      var active = data.stands || {};
+      var cells = '';
+      for (var i = 1; i <= CP_STAND_MAX; i++) {
+        var key = String(i);
+        var info = active[key];
+        if (info) {
+          var tip = 'Order #' + info.order_no + (info.customer ? ' (' + info.customer + ')' : '') + ' — ' + info.status;
+          cells += '<div title="' + tip.replace(/"/g,'&quot;') + '" style="display:flex;align-items:center;justify-content:center;height:36px;border-radius:7px;font-size:13px;font-weight:600;cursor:not-allowed;background:rgba(231,76,60,.18);color:#ff6b6b;border:1px solid rgba(231,76,60,.35);position:relative;">' + i + '<span style="position:absolute;top:-3px;right:-3px;width:8px;height:8px;border-radius:50%;background:#ef4444;border:1px solid #1a1a1a;"></span></div>';
+        } else {
+          cells += '<div onclick="cpPickStand(' + i + ')" style="display:flex;align-items:center;justify-content:center;height:36px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;background:rgba(62,207,112,.15);color:#3ecf70;border:1px solid rgba(62,207,112,.3);transition:transform .1s;" onmouseover="this.style.transform=\'scale(1.1)\'" onmouseout="this.style.transform=\'\'">' + i + '</div>';
         }
       }
+      grid.innerHTML =
+        '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">' + cells + '</div>' +
+        '<div style="margin-top:8px;font-size:10px;color:#666;display:flex;gap:12px;">' +
+        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(62,207,112,.15);border:1px solid rgba(62,207,112,.3);vertical-align:middle;margin-right:3px;"></span>Free</span>' +
+        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,.18);border:1px solid rgba(231,76,60,.35);vertical-align:middle;margin-right:3px;"></span>In use</span>' +
+        '</div>';
     })
-    .catch(function() {}); // silent fail if session expired etc.
+    .catch(function() {
+      grid.innerHTML = '<div style="text-align:center;padding:10px;color:#ef4444;font-size:12px;">Could not load stands</div>';
+    });
 }
-setInterval(_refreshTables, 10000); // poll every 10 seconds
+
+function cpPickStand(num) {
+  var inp = document.getElementById('cpTableNumber');
+  if (inp) { inp.value = num; cpCheckStand(String(num)); }
+  var grid = document.getElementById('cpStandGrid');
+  if (grid) grid.style.display = 'none';
+}
+
+function cpCheckStand(val) {
+  var warn = document.getElementById('cpStandWarn');
+  if (!warn) return;
+  val = (val || '').trim();
+  if (!val) { warn.style.display = 'none'; return; }
+  fetch('check_stand.php?stand=' + encodeURIComponent(val))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.in_use) {
+        document.getElementById('cpStandWarnText').textContent =
+          'Stand ' + val + ' is in use by Order #' + data.order_no +
+          (data.customer ? ' (' + data.customer + ')' : '') + ' – ' + data.status;
+        warn.style.display = 'flex';
+      } else {
+        warn.style.display = 'none';
+      }
+    })
+    .catch(function() { warn.style.display = 'none'; });
+}
+
 </script>
 </body>
 </html>

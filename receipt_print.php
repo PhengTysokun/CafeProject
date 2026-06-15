@@ -245,7 +245,7 @@ body{
     </div>
 
     <div class="tax-row">
-        <span>Tax (10%)</span>
+        <span>Tax (<?= TAX_RATE ?>%)</span>
         <span>$<?= number_format($tax, 2) ?></span>
     </div>
 

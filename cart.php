@@ -1266,7 +1266,7 @@ body {
         </div>
 
         <div class="summary-row">
-            <span>Tax (10%)</span>
+            <span>Tax (<?= TAX_RATE ?>%)</span>
             <span id="summary-tax">$<?= $tax_formatted ?></span>
         </div>
         

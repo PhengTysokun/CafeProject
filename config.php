@@ -328,7 +328,7 @@ if (!function_exists('sanitizeForReceipt')) {
 
 if (!function_exists('generateLoyaltyId')) {
     function generateLoyaltyId() {
-        return 'CARD-' . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
+        return 'CARD-' . str_pad(random_int(1, 99999), 5, '0', STR_PAD_LEFT);
     }
 }
 

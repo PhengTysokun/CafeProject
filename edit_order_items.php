@@ -362,7 +362,7 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                     <span id="sumDiscount">-$<?= number_format($order['promotion_discount'], 2) ?></span>
                 </div>
                 <div class="summary-row">
-                    <span>Tax (10%)</span>
+                    <span>Tax (<?= TAX_RATE ?>%)</span>
                     <span id="sumTax">$—</span>
                 </div>
                 <div class="summary-row total-row">

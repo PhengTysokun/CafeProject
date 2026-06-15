@@ -1,5 +1,6 @@
 <?php
 require 'config.php';
+require 'auth.php';
 require __DIR__ . '/bakong-khqr-php-main/vendor/autoload.php';
 
 use KHQR\BakongKHQR;
@@ -80,7 +81,7 @@ $khr_bakong = (int)(round($bakong_amount * KHR_RATE / 100) * 100);
 
 // --- CALCULATE TAX FOR DISPLAY PURPOSES ---
 $total = (float)$order['total'];
-$tax_rate = 0.10;
+$tax_rate = TAX_RATE / 100;
 $subtotal = round($total / (1 + $tax_rate), 2);
 $tax_amount = round($total - $subtotal, 2);
 
@@ -733,7 +734,7 @@ $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urle
             <span>$<?php echo number_format($subtotal, 2); ?></span>
         </div>
         <div class="breakdown-row">
-            <span>Tax (10%)</span>
+            <span>Tax (<?= TAX_RATE ?>%)</span>
             <span>$<?php echo number_format($tax_amount, 2); ?></span>
         </div>
         <div class="breakdown-row total">
