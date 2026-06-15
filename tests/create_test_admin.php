@@ -1,6 +1,5 @@
 <?php
-// One-time script to create test_admin user for Playwright tests
-// Run: php tests/create_test_admin.php
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require dirname(__DIR__) . '/config.php';
 
 $username = 'test_admin';
