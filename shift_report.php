@@ -15,11 +15,11 @@ $login_dt   = date('Y-m-d H:i:s', $login_time);
 $login_fmt  = date('g:i A', $login_time);
 $today_fmt  = date('F j, Y');
 
-// ── Orders taken this shift by this employee ──
+// ── Orders taken this shift by this user ──
 $stmt = $conn->prepare("
     SELECT order_id, daily_order_no, total, status, order_date, customer_name, order_type, table_number
     FROM orders
-    WHERE employee_id = ?
+    WHERE user_id = ?
       AND business_date = CURDATE()
       AND order_date >= ?
     ORDER BY order_date ASC

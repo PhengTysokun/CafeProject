@@ -315,8 +315,12 @@ try {
         $tok_count = (int)$stmt_tok->get_result()->fetch_row()[0];
     } while ($tok_count > 0);
 
-    $employee_id   = $_SESSION['user_id']   ?? 0;
-    $employee_name = $_SESSION['username']  ?? 'Unknown';
+    $employee_name = $_SESSION['username'] ?? 'Unknown';
+    $_uid = (int)($_SESSION['user_id'] ?? 0);
+    $_emp_r = $conn->prepare("SELECT employee_id FROM employees WHERE user_id = ? LIMIT 1");
+    $_emp_r->bind_param("i", $_uid); $_emp_r->execute();
+    $_emp_row = $_emp_r->get_result()->fetch_assoc();
+    $employee_id = $_emp_row ? (int)$_emp_row['employee_id'] : null;
 
     // ── IMPORTANT: Cast variables to the correct types ──
     $customer_name   = (string)$customer_name;
@@ -328,7 +332,7 @@ try {
     $total_discount  = (float)$total_discount;
     $is_open         = (int)$is_open;
     $token_number    = (int)$token_number;
-    $employee_id     = (int)$employee_id;
+    // employee_id already resolved above (int or null)
     $employee_name   = (string)$employee_name;
 
     // Only stamp completed_at for fully-paid orders (not paylater which is still open)
@@ -341,15 +345,15 @@ try {
         INSERT INTO orders
         (customer_name, total, daily_order_no, status, business_date, payment_method,
          promotion_discount, is_open, token_number, employee_id, employee_name,
-         manual_discount, manual_discount_reason, order_type, completed_at, table_number, started_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         manual_discount, manual_discount_reason, order_type, completed_at, table_number, started_at, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt_order->bind_param(
-        "sdisssdiiisdsssss",
+        "sdisssdiiisdsssssi",
         $customer_name, $total, $daily_no, $order_status, $business_date,
         $primary_method, $total_discount, $is_open, $token_number,
         $employee_id, $employee_name,
-        $manual_discount_co, $manual_reason_co, $order_type, $completed_at, $table_number, $started_at
+        $manual_discount_co, $manual_reason_co, $order_type, $completed_at, $table_number, $started_at, $_uid
     );
     $stmt_order->execute();
     $order_id = $conn->insert_id;
