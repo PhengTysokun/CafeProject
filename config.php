@@ -466,6 +466,16 @@ _migrate($conn, 'add_missing_fks_v1', function($db) {
     $db->query("ALTER TABLE stock_refills ADD CONSTRAINT fk_sr_ingredient FOREIGN KEY (ingredient_id) REFERENCES ingredients(ingredient_id) ON DELETE RESTRICT");
 });
 
+// ── Add category_id FK to products (categories table already exists) ──
+_migrate($conn, 'products_category_fk_v1', function($db) {
+    $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id INT NULL");
+    if ($db->errno) return;
+    // Populate from slug match (all existing slugs match exactly)
+    $db->query("UPDATE products p JOIN categories c ON c.slug = p.category SET p.category_id = c.category_id WHERE p.category_id IS NULL");
+    if ($db->errno) return;
+    $db->query("ALTER TABLE products ADD CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(category_id) ON DELETE SET NULL");
+});
+
 // ── SANITIZE FUNCTION ──
 if (!function_exists('sanitizeForReceipt')) {
     function sanitizeForReceipt(string $text): string {

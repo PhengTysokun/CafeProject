@@ -13,12 +13,13 @@ if (!$p) { echo json_encode(['ok' => false, 'error' => 'Not found']); exit; }
 
 $name  = 'Copy of ' . $p['name'];
 $stmt2 = $conn->prepare(
-    "INSERT INTO products (name, description, price, category, image, is_available, badge_text) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO products (name, description, price, category, category_id, image, is_available, badge_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 );
-$desc  = $p['description'] ?? '';
-$avail = (int)($p['is_available'] ?? 1);
-$badge = $p['badge_text'] ?? null;
-$stmt2->bind_param('ssdssis', $name, $desc, $p['price'], $p['category'], $p['image'], $avail, $badge);
+$desc    = $p['description'] ?? '';
+$avail   = (int)($p['is_available'] ?? 1);
+$badge   = $p['badge_text'] ?? null;
+$cat_id  = isset($p['category_id']) ? (int)$p['category_id'] : null;
+$stmt2->bind_param('ssdsisis', $name, $desc, $p['price'], $p['category'], $cat_id, $p['image'], $avail, $badge);
 $stmt2->execute();
 $newId = $conn->insert_id;
 

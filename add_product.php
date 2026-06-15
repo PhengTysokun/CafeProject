@@ -9,6 +9,10 @@ if (isset($_POST['add_product'])) {
     $category    = $_POST['category']    ?? '';
     $badge_text  = substr(trim($_POST['badge_text'] ?? ''), 0, 40) ?: null;
 
+    $cat_r = $conn->prepare("SELECT category_id FROM categories WHERE slug = ? LIMIT 1");
+    $cat_r->bind_param("s", $category); $cat_r->execute();
+    $category_id = ($cat_r->get_result()->fetch_assoc())['category_id'] ?? null;
+
     $upload_dir = "uploads/";
     if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
@@ -23,8 +27,8 @@ if (isset($_POST['add_product'])) {
         move_uploaded_file($_FILES['image']['tmp_name'], $image_path);
     }
 
-    $stmt = $conn->prepare("INSERT INTO products (name, description, price, category, image, badge_text) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ssdsss", $name, $description, $price, $category, $image_path, $badge_text);
+    $stmt = $conn->prepare("INSERT INTO products (name, description, price, category, category_id, image, badge_text) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("ssdsiss", $name, $description, $price, $category, $category_id, $image_path, $badge_text);
     if ($stmt->execute()) {
         header("Location: products.php");
         exit;

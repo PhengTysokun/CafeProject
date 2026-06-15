@@ -22,6 +22,10 @@ if (isset($_POST['update_product'])) {
     $is_avail    = isset($_POST['is_available']) ? 1 : 0;
     $badge_text  = substr(trim($_POST['badge_text'] ?? ''), 0, 40) ?: null;
 
+    $cat_r = $conn->prepare("SELECT category_id FROM categories WHERE slug = ? LIMIT 1");
+    $cat_r->bind_param("s", $category); $cat_r->execute();
+    $category_id = ($cat_r->get_result()->fetch_assoc())['category_id'] ?? null;
+
     if ($name === '' || $price < 0 || $category === '') {
         $error = "Please fill in all required fields.";
     } elseif (!empty($_FILES['image']['name'])) {
@@ -35,8 +39,8 @@ if (isset($_POST['update_product'])) {
             $image_path = $upload_dir . $image_name;
             if (move_uploaded_file($_FILES['image']['tmp_name'], $image_path)) {
                 if (!empty($product['image']) && file_exists($product['image'])) unlink($product['image']);
-                $stmt = $conn->prepare("UPDATE products SET name=?,description=?,price=?,category=?,image=?,is_available=?,badge_text=? WHERE product_id=?");
-                $stmt->bind_param("ssdssisi", $name, $description, $price, $category, $image_path, $is_avail, $badge_text, $id);
+                $stmt = $conn->prepare("UPDATE products SET name=?,description=?,price=?,category=?,category_id=?,image=?,is_available=?,badge_text=? WHERE product_id=?");
+                $stmt->bind_param("ssdsisisi", $name, $description, $price, $category, $category_id, $image_path, $is_avail, $badge_text, $id);
                 if ($stmt->execute()) { $success = true; $product['image'] = $image_path; }
                 else $error = "Database error while updating product.";
             } else {
@@ -44,8 +48,8 @@ if (isset($_POST['update_product'])) {
             }
         }
     } else {
-        $stmt = $conn->prepare("UPDATE products SET name=?,description=?,price=?,category=?,is_available=?,badge_text=? WHERE product_id=?");
-        $stmt->bind_param("ssdsisi", $name, $description, $price, $category, $is_avail, $badge_text, $id);
+        $stmt = $conn->prepare("UPDATE products SET name=?,description=?,price=?,category=?,category_id=?,is_available=?,badge_text=? WHERE product_id=?");
+        $stmt->bind_param("ssdsiisi", $name, $description, $price, $category, $category_id, $is_avail, $badge_text, $id);
         if ($stmt->execute()) $success = true;
         else $error = "Database error while updating product.";
     }
