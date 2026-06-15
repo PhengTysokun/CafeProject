@@ -359,6 +359,62 @@ _migrate($conn, 'role_audit_log_v1', function($db) {
     ) DEFAULT CHARSET=utf8mb4");
 });
 
+// ── Add missing FK constraints across all tables ──
+_migrate($conn, 'add_missing_fks_v1', function($db) {
+    // Nullify orphaned rows before attaching FKs
+    $db->query("UPDATE orders SET employee_id = NULL WHERE employee_id IS NOT NULL AND employee_id NOT IN (SELECT employee_id FROM employees)");
+    if ($db->errno) return;
+    $db->query("UPDATE ingredient_history SET order_id = NULL WHERE order_id IS NOT NULL AND order_id NOT IN (SELECT order_id FROM orders)");
+    if ($db->errno) return;
+
+    // orders → users / customers / employees (all nullable → SET NULL on delete)
+    $db->query("ALTER TABLE orders ADD CONSTRAINT fk_orders_user     FOREIGN KEY (user_id)     REFERENCES users(user_id)           ON DELETE SET NULL");
+    if ($db->errno) return;
+    $db->query("ALTER TABLE orders ADD CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(customer_id)   ON DELETE SET NULL");
+    if ($db->errno) return;
+    $db->query("ALTER TABLE orders ADD CONSTRAINT fk_orders_employee FOREIGN KEY (employee_id) REFERENCES employees(employee_id)   ON DELETE SET NULL");
+    if ($db->errno) return;
+
+    // employees → users (nullable → SET NULL)
+    $db->query("ALTER TABLE employees ADD CONSTRAINT fk_employees_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL");
+    if ($db->errno) return;
+
+    // attendance → users (NOT NULL → RESTRICT so records are preserved)
+    $db->query("ALTER TABLE attendance ADD CONSTRAINT fk_attendance_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE RESTRICT");
+    if ($db->errno) return;
+
+    // announcement_reads → users + announcements (CASCADE: delete reads when parent goes)
+    $db->query("ALTER TABLE announcement_reads ADD CONSTRAINT fk_ar_user         FOREIGN KEY (user_id)         REFERENCES users(user_id)   ON DELETE CASCADE");
+    if ($db->errno) return;
+    $db->query("ALTER TABLE announcement_reads ADD CONSTRAINT fk_ar_announcement FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE");
+    if ($db->errno) return;
+
+    // cash_reconciliations → users (RESTRICT: keep financial history)
+    $db->query("ALTER TABLE cash_reconciliations ADD CONSTRAINT fk_cr_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE RESTRICT");
+    if ($db->errno) return;
+
+    // ingredients → suppliers (nullable → SET NULL when supplier deleted)
+    $db->query("ALTER TABLE ingredients ADD CONSTRAINT fk_ingredients_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(supplier_id) ON DELETE SET NULL");
+    if ($db->errno) return;
+
+    // ingredient_daily_stock → ingredients (CASCADE: stock rows belong to ingredient)
+    $db->query("ALTER TABLE ingredient_daily_stock ADD CONSTRAINT fk_ids_ingredient FOREIGN KEY (ingredient_id) REFERENCES ingredients(ingredient_id) ON DELETE CASCADE");
+    if ($db->errno) return;
+
+    // ingredient_history → ingredients (RESTRICT) + orders (nullable → SET NULL)
+    $db->query("ALTER TABLE ingredient_history ADD CONSTRAINT fk_ih_ingredient FOREIGN KEY (ingredient_id) REFERENCES ingredients(ingredient_id) ON DELETE RESTRICT");
+    if ($db->errno) return;
+    $db->query("ALTER TABLE ingredient_history ADD CONSTRAINT fk_ih_order FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE SET NULL");
+    if ($db->errno) return;
+
+    // order_remakes → orders (CASCADE: remakes belong to the order)
+    $db->query("ALTER TABLE order_remakes ADD CONSTRAINT fk_or_order FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE");
+    if ($db->errno) return;
+
+    // stock_refills → ingredients (RESTRICT: keep refill history)
+    $db->query("ALTER TABLE stock_refills ADD CONSTRAINT fk_sr_ingredient FOREIGN KEY (ingredient_id) REFERENCES ingredients(ingredient_id) ON DELETE RESTRICT");
+});
+
 // ── SANITIZE FUNCTION ──
 if (!function_exists('sanitizeForReceipt')) {
     function sanitizeForReceipt(string $text): string {
