@@ -1,5 +1,5 @@
 async function login(page, username = 'test_cashier', password = 'Test@1234') {
-  await page.goto('/login.php');
+  await page.goto('login.php');
   await page.fill('#u', username);
   await page.fill('#p', password);
   await page.click('button[type="submit"]');
@@ -8,7 +8,7 @@ async function login(page, username = 'test_cashier', password = 'Test@1234') {
 }
 
 async function logout(page) {
-  await page.goto('/logout.php');
+  await page.goto('logout.php');
   await page.waitForURL('**/login.php', { timeout: 5000 });
 }
 

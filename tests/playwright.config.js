@@ -5,7 +5,7 @@ module.exports = defineConfig({
   timeout: 30000,
   retries: 0,
   use: {
-    baseURL: 'http://localhost/Cafe',
+    baseURL: 'http://localhost/Cafe/',
     headless: true,
     screenshot: 'only-on-failure',
     video: 'off',
