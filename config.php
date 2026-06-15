@@ -7,8 +7,8 @@ date_default_timezone_set('Asia/Phnom_Penh');
 //   GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER ON db_coffee.* TO 'cafe_pos'@'localhost';
 //   FLUSH PRIVILEGES;
 $servername = "localhost";
-$username   = "cafe_pos";
-$password   = "Caf3P0S!2025#Kh";
+$username   = "root";
+$password   = "";
 $dbname     = "db_coffee";
 
 $conn = new mysqli($servername, $username, $password, $dbname);
