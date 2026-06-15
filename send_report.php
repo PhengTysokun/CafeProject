@@ -43,7 +43,7 @@ if ($type === 'daily') {
     $items_sold = mysqli_fetch_assoc($items_sold_result)['items_sold'];
     
     // ── REFUND DATA ──
-    $refund_sql = "SELECT IFNULL(SUM(refund_amount), 0) AS total_refunds, COUNT(*) AS refund_count FROM orders WHERE DATE(refunded_at) = CURDATE() AND is_refunded = 1";
+    $refund_sql = "SELECT IFNULL(SUM(refund_amount), 0) AS total_refunds, COUNT(*) AS refund_count FROM order_refunds WHERE DATE(refunded_at) = CURDATE()";
     $refund_result = mysqli_query($conn, $refund_sql);
     $refund_data = mysqli_fetch_assoc($refund_result);
     $total_refunds = $refund_data['total_refunds'];
@@ -51,16 +51,17 @@ if ($type === 'daily') {
     
     // ── Refunded orders list ──
     $refund_list_sql = "
-        SELECT 
-            daily_order_no,
-            customer_name,
-            refund_amount,
-            refund_reason,
-            refunded_by,
-            DATE_FORMAT(refunded_at, '%H:%i') AS refund_time
-        FROM orders
-        WHERE DATE(refunded_at) = CURDATE() AND is_refunded = 1
-        ORDER BY refunded_at DESC
+        SELECT
+            o.daily_order_no,
+            o.customer_name,
+            orr.refund_amount,
+            orr.refund_reason,
+            orr.refunded_by,
+            DATE_FORMAT(orr.refunded_at, '%H:%i') AS refund_time
+        FROM order_refunds orr
+        JOIN orders o ON o.order_id = orr.order_id
+        WHERE DATE(orr.refunded_at) = CURDATE()
+        ORDER BY orr.refunded_at DESC
     ";
     $refund_list_result = mysqli_query($conn, $refund_list_sql);
     $refund_list = [];

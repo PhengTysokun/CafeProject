@@ -92,7 +92,7 @@ $unpaid_orders_result = mysqli_query($conn, "SELECT order_id, daily_order_no, cu
 
 $paid_open_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number FROM orders WHERE status='Preparing' AND is_open=0 ORDER BY order_date DESC LIMIT 5");
 
-$refund_result = mysqli_query($conn, "SELECT IFNULL(SUM(refund_amount),0) AS total_refunds, COUNT(*) AS refund_count FROM orders WHERE DATE(refunded_at)=CURDATE() AND is_refunded=1");
+$refund_result = mysqli_query($conn, "SELECT IFNULL(SUM(refund_amount),0) AS total_refunds, COUNT(*) AS refund_count FROM order_refunds WHERE DATE(refunded_at)=CURDATE()");
 $refund_data   = mysqli_fetch_assoc($refund_result);
 $total_refunds = $refund_data['total_refunds'];
 $refund_count  = $refund_data['refund_count'];

@@ -59,13 +59,12 @@ if (empty($reason)) {
 $conn->begin_transaction();
 
 try {
-    $stmt_upd = $conn->prepare("
-        UPDATE orders
-        SET status = 'Cancelled', is_open = 0, cancel_reason = ?, cancelled_at = NOW(), cancelled_by = ?
-        WHERE order_id = ?
-    ");
-    $stmt_upd->bind_param("ssi", $reason, $_SESSION['username'], $order_id);
+    $stmt_upd = $conn->prepare("UPDATE orders SET status = 'Cancelled', is_open = 0 WHERE order_id = ?");
+    $stmt_upd->bind_param("i", $order_id);
     $stmt_upd->execute();
+    $stmt_can = $conn->prepare("INSERT INTO order_cancellations (order_id, cancel_reason, cancelled_at, cancelled_by) VALUES (?, ?, NOW(), ?)");
+    $stmt_can->bind_param("iss", $order_id, $reason, $_SESSION['username']);
+    $stmt_can->execute();
 
     if ($restore_stock) {
         _restore_stock($conn, $order_id);

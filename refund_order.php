@@ -21,7 +21,7 @@ if ($order_id <= 0) {
 }
 
 $stmt = $conn->prepare("
-    SELECT order_id, daily_order_no, customer_name, total, status, is_refunded,
+    SELECT order_id, daily_order_no, customer_name, total, status,
            loyalty_card_id, points_earned
     FROM orders WHERE order_id = ?
 ");
@@ -34,7 +34,7 @@ if (!$order) {
     exit;
 }
 
-if ($order['is_refunded'] == 1) {
+if ($order['status'] === 'Refunded') {
     echo json_encode(["ok" => 0, "error" => "This order has already been refunded"]);
     exit;
 }
@@ -68,15 +68,12 @@ if (empty($refund_reason)) {
 $conn->begin_transaction();
 
 try {
-    $stmt_upd = $conn->prepare("
-        UPDATE orders
-        SET status = 'Refunded', is_open = 0,
-            refund_amount = ?, refund_reason = ?,
-            refunded_at = NOW(), refunded_by = ?, is_refunded = 1
-        WHERE order_id = ?
-    ");
-    $stmt_upd->bind_param("dssi", $refund_amount, $refund_reason, $_SESSION['username'], $order_id);
+    $stmt_upd = $conn->prepare("UPDATE orders SET status = 'Refunded', is_open = 0 WHERE order_id = ?");
+    $stmt_upd->bind_param("i", $order_id);
     $stmt_upd->execute();
+    $stmt_ref = $conn->prepare("INSERT INTO order_refunds (order_id, refund_amount, refund_reason, refunded_at, refunded_by) VALUES (?, ?, ?, NOW(), ?)");
+    $stmt_ref->bind_param("idss", $order_id, $refund_amount, $refund_reason, $_SESSION['username']);
+    $stmt_ref->execute();
 
     if ($restore_stock) {
         _restore_stock($conn, $order_id);

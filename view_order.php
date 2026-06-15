@@ -2522,15 +2522,15 @@ if ($action === "fetch") {
             o.token_number,
             o.employee_id,
             o.employee_name,
-            u.role AS employee_role,
+            ro.slug AS employee_role,
             o.prepared_by,
             o.prepared_by_role,
             o.table_number,
             COUNT(rm.id) AS remake_count,
-            o.cancel_reason,
-            o.cancelled_by,
-            o.refund_reason,
-            o.refunded_by,
+            oc.cancel_reason,
+            oc.cancelled_by,
+            orr.refund_reason,
+            orr.refunded_by,
             (SELECT GROUP_CONCAT(reason ORDER BY remade_at ASC SEPARATOR '|||') FROM order_remakes rml WHERE rml.order_id = o.order_id) AS remake_reasons,
             oi.item_id,
             oi.product_name,
@@ -2540,8 +2540,11 @@ if ($action === "fetch") {
             oi.quantity
         FROM orders o
         LEFT JOIN users u ON u.user_id = o.employee_id
+        LEFT JOIN roles ro ON ro.id = u.role_id
         LEFT JOIN order_remakes rm ON rm.order_id = o.order_id
         LEFT JOIN order_items oi ON o.order_id = oi.order_id
+        LEFT JOIN order_cancellations oc ON oc.order_id = o.order_id
+        LEFT JOIN order_refunds orr ON orr.order_id = o.order_id
         WHERE o.business_date = ?
         GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.quantity
         ORDER BY 

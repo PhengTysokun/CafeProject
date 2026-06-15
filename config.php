@@ -359,6 +359,52 @@ _migrate($conn, 'role_audit_log_v1', function($db) {
     ) DEFAULT CHARSET=utf8mb4");
 });
 
+// ── Split cancel/refund columns out of orders into dedicated tables ──
+_migrate($conn, 'orders_split_cancel_refund_v1', function($db) {
+    $db->query("CREATE TABLE IF NOT EXISTS order_cancellations (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL UNIQUE,
+        cancel_reason VARCHAR(255) NOT NULL,
+        cancelled_at DATETIME NOT NULL,
+        cancelled_by VARCHAR(100) NOT NULL DEFAULT '',
+        CONSTRAINT fk_oc_order FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE
+    ) DEFAULT CHARSET=utf8mb4");
+    if ($db->errno) return;
+
+    $db->query("CREATE TABLE IF NOT EXISTS order_refunds (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL UNIQUE,
+        refund_amount DECIMAL(10,2) NOT NULL,
+        refund_reason VARCHAR(255) NOT NULL DEFAULT '',
+        refunded_at DATETIME NOT NULL,
+        refunded_by VARCHAR(100) NOT NULL DEFAULT '',
+        CONSTRAINT fk_ref_order FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE
+    ) DEFAULT CHARSET=utf8mb4");
+    if ($db->errno) return;
+
+    // Migrate existing cancellation data
+    $db->query("INSERT IGNORE INTO order_cancellations (order_id, cancel_reason, cancelled_at, cancelled_by)
+        SELECT order_id, cancel_reason, COALESCE(cancelled_at, NOW()), COALESCE(cancelled_by, '')
+        FROM orders WHERE cancel_reason IS NOT NULL AND cancel_reason != ''");
+    if ($db->errno) return;
+
+    // Migrate existing refund data
+    $db->query("INSERT IGNORE INTO order_refunds (order_id, refund_amount, refund_reason, refunded_at, refunded_by)
+        SELECT order_id, refund_amount, COALESCE(refund_reason, ''), COALESCE(refunded_at, NOW()), COALESCE(refunded_by, '')
+        FROM orders WHERE is_refunded = 1");
+    if ($db->errno) return;
+
+    $db->query("ALTER TABLE orders
+        DROP COLUMN cancel_reason,
+        DROP COLUMN cancelled_at,
+        DROP COLUMN cancelled_by,
+        DROP COLUMN refund_amount,
+        DROP COLUMN refund_reason,
+        DROP COLUMN refunded_at,
+        DROP COLUMN refunded_by,
+        DROP COLUMN is_refunded");
+});
+
 // ── Add missing FK constraints across all tables ──
 _migrate($conn, 'add_missing_fks_v1', function($db) {
     // Nullify orphaned rows before attaching FKs

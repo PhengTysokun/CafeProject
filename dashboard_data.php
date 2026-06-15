@@ -46,12 +46,11 @@ $low_stock = mysqli_fetch_assoc($low_result)['low_count'];
 
 // ── REFUND DATA (NEW) ──
 $refund_sql = "
-SELECT 
+SELECT
     IFNULL(SUM(refund_amount), 0) AS total_refunds,
     COUNT(*) AS refund_count
-FROM orders
+FROM order_refunds
 WHERE DATE(refunded_at) = CURDATE()
-  AND is_refunded = 1
 ";
 $refund_result = mysqli_query($conn, $refund_sql);
 $refund_data = mysqli_fetch_assoc($refund_result);

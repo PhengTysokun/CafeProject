@@ -370,19 +370,19 @@ $refundCount = 0;
 $refundOrders = [];
 
 $sqlRefunds = "
-    SELECT 
-        order_id,
-        daily_order_no,
-        customer_name,
-        refund_amount,
-        refund_reason,
-        refunded_at,
-        refunded_by,
-        total
-    FROM orders
-    WHERE is_refunded = 1
-      AND refunded_at BETWEEN '$startStr' AND '$endStr'
-    ORDER BY refunded_at DESC
+    SELECT
+        o.order_id,
+        o.daily_order_no,
+        o.customer_name,
+        orr.refund_amount,
+        orr.refund_reason,
+        orr.refunded_at,
+        orr.refunded_by,
+        o.total
+    FROM order_refunds orr
+    JOIN orders o ON o.order_id = orr.order_id
+    WHERE orr.refunded_at BETWEEN '$startStr' AND '$endStr'
+    ORDER BY orr.refunded_at DESC
 ";
 
 $qRefunds = mysqli_query($conn, $sqlRefunds);
@@ -467,13 +467,12 @@ $refundChartData = [];
 if ($mode === 'daily') {
     // For daily mode, show refunds by hour
     $sqlDaily = "
-        SELECT 
+        SELECT
             HOUR(refunded_at) as hour,
             COUNT(*) as count,
             SUM(refund_amount) as total
-        FROM orders
-        WHERE is_refunded = 1
-          AND refunded_at BETWEEN '$startStr' AND '$endStr'
+        FROM order_refunds
+        WHERE refunded_at BETWEEN '$startStr' AND '$endStr'
         GROUP BY HOUR(refunded_at)
         ORDER BY hour ASC
     ";
@@ -488,13 +487,12 @@ if ($mode === 'daily') {
 } elseif ($mode === 'monthly') {
     // For monthly mode, show refunds by day
     $sqlMonthly = "
-        SELECT 
+        SELECT
             DAY(refunded_at) as day,
             COUNT(*) as count,
             SUM(refund_amount) as total
-        FROM orders
-        WHERE is_refunded = 1
-          AND refunded_at BETWEEN '$startStr' AND '$endStr'
+        FROM order_refunds
+        WHERE refunded_at BETWEEN '$startStr' AND '$endStr'
         GROUP BY DAY(refunded_at)
         ORDER BY day ASC
     ";
@@ -509,13 +507,12 @@ if ($mode === 'daily') {
 } else {
     // For range mode, show refunds by day
     $sqlRange = "
-        SELECT 
+        SELECT
             DATE(refunded_at) as date,
             COUNT(*) as count,
             SUM(refund_amount) as total
-        FROM orders
-        WHERE is_refunded = 1
-          AND refunded_at BETWEEN '$startStr' AND '$endStr'
+        FROM order_refunds
+        WHERE refunded_at BETWEEN '$startStr' AND '$endStr'
         GROUP BY DATE(refunded_at)
         ORDER BY date ASC
     ";

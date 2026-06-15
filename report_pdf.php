@@ -155,7 +155,7 @@ $modeLabel   = match($mode) { 'monthly'=>'Monthly Report', 'range'=>'Date Range 
 // ── Refunds ──
 $totalRefunded = 0;
 $refundCount   = 0;
-$qRef = mysqli_query($conn, "SELECT COALESCE(SUM(refund_amount),0) as total, COUNT(*) as cnt FROM orders WHERE is_refunded=1 AND refunded_at BETWEEN '$startStr' AND '$endStr'");
+$qRef = mysqli_query($conn, "SELECT COALESCE(SUM(refund_amount),0) as total, COUNT(*) as cnt FROM order_refunds WHERE refunded_at BETWEEN '$startStr' AND '$endStr'");
 if ($rf = mysqli_fetch_assoc($qRef)) { $totalRefunded = (float)$rf['total']; $refundCount = (int)$rf['cnt']; }
 $netRevenue = $totalSales - $totalRefunded;
 
