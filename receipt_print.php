@@ -17,7 +17,7 @@ if ($order_id <= 0) {
 // ORDER
 $stmt = $conn->prepare("
     SELECT order_id, customer_name, total, order_date, daily_order_no, status, employee_name,
-           IFNULL(order_type,'drink_in') AS order_type, completed_at, table_number
+           IFNULL(order_type,'drink_in') AS order_type, completed_at, table_number, started_at
     FROM orders
     WHERE order_id = ?
 ");
@@ -54,10 +54,11 @@ $discount = 0; // You can change this to actual discount if you have it
 while ($item = $items->fetch_assoc()) {
     $subtotal += $item['price'] * $item['quantity'];
 }
-$tax = $subtotal * 0.10;
+$tax = $subtotal * (TAX_RATE / 100);
 $total = $subtotal + $tax - $discount;
 
 // Reset items pointer for display
+$stmt->execute();
 $items = $stmt->get_result();
 
 // Generate QR code URL (using qrserver.com)
@@ -203,9 +204,9 @@ body{
         <div>Cashier: <?= htmlspecialchars($order['employee_name'] ?: 'N/A') ?></div>
         <div>Customer: <?= htmlspecialchars($order['customer_name']) ?></div>
         <?php if (!empty($order['table_number'])): ?>
-        <div>Table: <strong><?= htmlspecialchars($order['table_number']) ?></strong></div>
+        <div>Stand: <strong><?= htmlspecialchars($order['table_number']) ?></strong></div>
         <?php endif; ?>
-        <div>Time In: <?= date("d/m/Y g:i A", strtotime($order['order_date'])) ?></div>
+        <div>Time In: <?= date("d/m/Y g:i A", strtotime(!empty($order['started_at']) ? $order['started_at'] : $order['order_date'])) ?></div>
         <?php if (!empty($order['completed_at'])): ?>
         <div>Time Out: <?= date("d/m/Y g:i A", strtotime($order['completed_at'])) ?></div>
         <?php endif; ?>
