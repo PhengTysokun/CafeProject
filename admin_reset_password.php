@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'force_reset' && $target > 0) {
         // Manager cannot reset admin passwords — only admin can do that
         if (($_SESSION['role'] ?? '') !== 'admin') {
-            $check = $conn->prepare("SELECT role FROM users WHERE user_id = ?");
+            $check = $conn->prepare("SELECT r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.user_id = ?");
             $check->bind_param("i", $target);
             $check->execute();
             $tgt_role = $check->get_result()->fetch_assoc()['role'] ?? '';
@@ -77,12 +77,12 @@ while ($rm = $rm_res->fetch_assoc()) $role_meta[$rm['slug']] = $rm;
 
 // ── Load users: admin sees everyone; manager cannot see/reset other admins ──
 $_is_admin_role = ($_SESSION['role'] ?? '') === 'admin';
-$_user_where    = $_is_admin_role ? "1=1" : "role != 'admin'";
+$_user_where    = $_is_admin_role ? "1=1" : "r.slug != 'admin'";
 $users_result = $conn->query(
-    "SELECT user_id, username, role, security_question, must_change_password
-     FROM users
+    "SELECT u.user_id, u.username, r.slug AS role, u.security_question, u.must_change_password
+     FROM users u JOIN roles r ON r.id = u.role_id
      WHERE {$_user_where}
-     ORDER BY role DESC, username ASC"
+     ORDER BY r.slug DESC, u.username ASC"
 );
 $all_users = [];
 while ($r = $users_result->fetch_assoc()) $all_users[] = $r;

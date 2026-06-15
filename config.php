@@ -300,6 +300,51 @@ _migrate($conn, 'rbac_barista_station_mgmt_fix_v1', function($db) {
                   AND rp.role IN ('admin', 'manager', 'supervisor')");
 });
 
+// ── Migrate role_permissions: replace role VARCHAR with role_id INT FK ──
+_migrate($conn, 'rbac_role_permissions_int_fk_v1', function($db) {
+    // Add role_id column (idempotent — IF NOT EXISTS)
+    $db->query("ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS role_id INT NULL");
+    if ($db->errno) return;
+
+    // Populate role_id from slug
+    $db->query("UPDATE role_permissions rp JOIN roles r ON r.slug = rp.role SET rp.role_id = r.id WHERE rp.role_id IS NULL");
+    if ($db->errno) return;
+
+    // Remove rows that cannot be migrated — orphaned permission_id or unrecognised role slug
+    $db->query("DELETE FROM role_permissions WHERE permission_id NOT IN (SELECT id FROM permissions)");
+    if ($db->errno) return;
+    $db->query("DELETE FROM role_permissions WHERE role_id IS NULL");
+    if ($db->errno) return;
+
+    // Restructure: drop old composite PK, add auto-increment id as PK,
+    // add created_at, make role_id NOT NULL, drop old role VARCHAR, add FK constraints
+    $db->query("ALTER TABLE role_permissions
+        DROP PRIMARY KEY,
+        ADD COLUMN id INT NOT NULL AUTO_INCREMENT FIRST,
+        ADD PRIMARY KEY (id),
+        ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        MODIFY COLUMN role_id INT NOT NULL,
+        DROP COLUMN role,
+        ADD UNIQUE KEY uq_role_perm (role_id, permission_id),
+        ADD CONSTRAINT fk_rp_role FOREIGN KEY (role_id)       REFERENCES roles(id)       ON DELETE CASCADE,
+        ADD CONSTRAINT fk_rp_perm FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE");
+});
+
+// ── Migrate users: replace role VARCHAR with role_id INT FK ──
+_migrate($conn, 'rbac_users_role_id_v1', function($db) {
+    $db->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INT NULL");
+    if ($db->errno) return;
+    $db->query("UPDATE users u JOIN roles r ON r.slug = u.role SET u.role_id = r.id WHERE u.role_id IS NULL");
+    if ($db->errno) return;
+    // Fallback: any user whose role slug has no match → map to 'staff'
+    $db->query("UPDATE users u JOIN roles r ON r.slug='staff' SET u.role_id = r.id WHERE u.role_id IS NULL");
+    if ($db->errno) return;
+    $db->query("ALTER TABLE users
+        MODIFY COLUMN role_id INT NOT NULL,
+        DROP COLUMN role,
+        ADD CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id)");
+});
+
 // ── Audit log table ──
 _migrate($conn, 'role_audit_log_v1', function($db) {
     $db->query("CREATE TABLE IF NOT EXISTS role_audit_log (
@@ -378,7 +423,7 @@ if (!function_exists('can')) {
             $is_admin = ($role === 'admin');
             if (!$is_admin) {
                 $perms = [];
-                $r = $conn->prepare("SELECT p.slug FROM permissions p JOIN role_permissions rp ON rp.permission_id=p.id WHERE rp.role=?");
+                $r = $conn->prepare("SELECT p.slug FROM permissions p JOIN role_permissions rp ON rp.permission_id=p.id JOIN roles ro ON ro.id=rp.role_id WHERE ro.slug=?");
                 $r->bind_param("s", $role);
                 $r->execute();
                 $res = $r->get_result();

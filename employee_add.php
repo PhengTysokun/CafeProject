@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $emp_id = $conn->insert_id;
 
         $hp = password_hash($password, PASSWORD_DEFAULT);
-        $s2 = $conn->prepare("INSERT INTO users (username,password,role) VALUES (?,?,?)");
+        $s2 = $conn->prepare("INSERT INTO users (username,password,role_id) VALUES (?,?,(SELECT id FROM roles WHERE slug=?))");
         $s2->bind_param("sss",$username,$hp,$role);
         $s2->execute();
         $usr_id = $conn->insert_id;

@@ -110,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
         $vr->bind_param("s", $new_role); $vr->execute();
         if ($vr->get_result()->fetch_assoc()) {
             $uid = !empty($er['user_id']) ? intval($er['user_id']) : intval($er['employee_id']);
-            $rs  = $conn->prepare("UPDATE users SET role=? WHERE user_id=?");
+            $rs  = $conn->prepare("UPDATE users SET role_id=(SELECT id FROM roles WHERE slug=?) WHERE user_id=?");
             $rs->bind_param("si", $new_role, $uid); $rs->execute();
         }
     }
@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick
             $er = $se->get_result()->fetch_assoc();
             if ($er) {
                 $uid = intval($er['uid']);
-                $ru  = $conn->prepare("UPDATE users SET role=? WHERE user_id=?");
+                $ru  = $conn->prepare("UPDATE users SET role_id=(SELECT id FROM roles WHERE slug=?) WHERE user_id=?");
                 $ru->bind_param("si", $new_role, $uid); $ru->execute();
                 if ($conn->affected_rows >= 0) {
                     ob_end_clean();
@@ -160,7 +160,7 @@ if ($has_orders) {
     $emp_sql = "
         SELECT
             e.*,
-            COALESCE(NULLIF(u.role,''), 'staff') AS emp_role,
+            COALESCE(r.slug, 'staff') AS emp_role,
             COALESCE(s.total_orders,      0)    AS total_orders,
             COALESCE(s.total_revenue,     0)    AS total_revenue,
             COALESCE(s.orders_this_month, 0)    AS orders_this_month,
@@ -169,6 +169,7 @@ if ($has_orders) {
             s.last_order_date
         FROM employees e
         LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id)
+        LEFT JOIN roles r ON r.id = u.role_id
         LEFT JOIN (
             SELECT
                 employee_id,
@@ -186,12 +187,13 @@ if ($has_orders) {
     ";
 } else {
     $emp_sql = "
-        SELECT e.*, COALESCE(NULLIF(u.role,''),'staff') AS emp_role,
+        SELECT e.*, COALESCE(r.slug,'staff') AS emp_role,
                0 AS total_orders, 0 AS total_revenue,
                0 AS orders_this_month, 0 AS orders_today,
                0 AS avg_order_value, NULL AS last_order_date
         FROM employees e
         LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id)
+        LEFT JOIN roles r ON r.id = u.role_id
         ORDER BY e.name ASC
     ";
 }

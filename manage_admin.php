@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
             $message = 'Username already taken.'; $message_type = 'error';
         } else {
             $hashed = password_hash($password, PASSWORD_DEFAULT);
-            $ins = $conn->prepare("INSERT INTO users (username, password, role) VALUES (?, ?, 'admin')");
+            $ins = $conn->prepare("INSERT INTO users (username, password, role_id) VALUES (?, ?, (SELECT id FROM roles WHERE slug='admin'))");
             $ins->bind_param('ss', $username, $hashed);
             if ($ins->execute()) { $message = "Admin \"$username\" created successfully."; $message_type = 'success'; }
             else { $message = 'Database error. Please try again.'; $message_type = 'error'; }
@@ -50,11 +50,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
 // ── FETCH ADMINS ──
 $admins = [];
 try {
-    $res = $conn->prepare("SELECT user_id, username, role, created_at FROM users WHERE role = 'admin' ORDER BY user_id ASC");
+    $res = $conn->prepare("SELECT u.user_id, u.username, r.slug AS role, u.created_at FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = 'admin' ORDER BY u.user_id ASC");
     $res->execute();
     $admins = $res->get_result()->fetch_all(MYSQLI_ASSOC);
 } catch (mysqli_sql_exception $e) {
-    $res = $conn->prepare("SELECT user_id, username, role FROM users WHERE role = 'admin' ORDER BY user_id ASC");
+    $res = $conn->prepare("SELECT u.user_id, u.username, r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = 'admin' ORDER BY u.user_id ASC");
     $res->execute();
     $admins = $res->get_result()->fetch_all(MYSQLI_ASSOC);
 }

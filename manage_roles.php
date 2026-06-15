@@ -29,7 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         if ($s->affected_rows > 0) audit_log($conn, 'create', $slug, "name=$name");
         $tpl = trim($_POST['role_template'] ?? '');
         if ($tpl !== '' && in_array($tpl, ['manager', 'staff'])) {
-            $st = $conn->prepare("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT ?, permission_id FROM role_permissions WHERE role=?");
+            $st = $conn->prepare("INSERT IGNORE INTO role_permissions (role_id, permission_id)
+                SELECT (SELECT id FROM roles WHERE slug=?), permission_id FROM role_permissions WHERE role_id=(SELECT id FROM roles WHERE slug=?)");
             $st->bind_param("ss", $slug, $tpl);
             $st->execute();
         }
@@ -50,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         }
         // Reassign employees before deleting
         if ($reassign !== '') {
-            $sr = $conn->prepare("UPDATE users SET role=? WHERE role=?");
+            $sr = $conn->prepare("UPDATE users SET role_id=(SELECT id FROM roles WHERE slug=?) WHERE role_id=(SELECT id FROM roles WHERE slug=?)");
             $sr->bind_param("ss", $reassign, $slug);
             $sr->execute();
         }
@@ -60,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             $detail = $reassign !== '' ? "reassigned_to=$reassign" : 'no_employees';
             audit_log($conn, 'delete', $slug, $detail);
         }
-        $sp = $conn->prepare("DELETE FROM role_permissions WHERE role=?");
+        $sp = $conn->prepare("DELETE FROM role_permissions WHERE role_id=(SELECT id FROM roles WHERE slug=?)");
         $sp->bind_param("s", $slug); $sp->execute();
     }
     header("Location: manage_roles.php"); exit;
@@ -87,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'role_em
     header('Content-Type: application/json');
     $slug = trim($_GET['slug'] ?? '');
     if ($slug === '') { ob_clean(); echo json_encode(['names' => []]); exit; }
-    $q = $conn->prepare("SELECT e.name FROM employees e JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) WHERE u.role=? ORDER BY e.name ASC LIMIT 20");
+    $q = $conn->prepare("SELECT e.name FROM employees e JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) JOIN roles r ON r.id = u.role_id WHERE r.slug=? ORDER BY e.name ASC LIMIT 20");
     $q->bind_param("s", $slug); $q->execute();
     $res = $q->get_result();
     $names = [];
@@ -106,11 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         ob_clean(); echo json_encode(['success' => false, 'message' => 'Invalid role']); exit;
     }
     $ids = array_map('intval', $_POST['permissions'] ?? []);
-    $sdp = $conn->prepare("DELETE FROM role_permissions WHERE role=?");
+    $sdp = $conn->prepare("DELETE FROM role_permissions WHERE role_id=(SELECT id FROM roles WHERE slug=?)");
     $sdp->bind_param("s", $role); $sdp->execute();
     if (!empty($ids)) {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        $s  = $conn->prepare("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT ?, id FROM permissions WHERE id IN ($ph)");
+        $s  = $conn->prepare("INSERT IGNORE INTO role_permissions (role_id, permission_id) SELECT (SELECT id FROM roles WHERE slug=?), id FROM permissions WHERE id IN ($ph)");
         $s->bind_param('s' . str_repeat('i', count($ids)), $role, ...$ids);
         $s->execute();
     }
@@ -127,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_
         $vt = $conn->prepare("SELECT slug FROM roles WHERE slug=?");
         $vt->bind_param("s", $to); $vt->execute();
         if ($vt->get_result()->fetch_assoc()) {
-            $su = $conn->prepare("UPDATE users SET role=? WHERE role=?");
+            $su = $conn->prepare("UPDATE users SET role_id=(SELECT id FROM roles WHERE slug=?) WHERE role_id=(SELECT id FROM roles WHERE slug=?)");
             $su->bind_param("ss", $to, $from); $su->execute();
             if ($su->affected_rows > 0) audit_log($conn, 'bulk_reassign', $from, "to=$to,count={$su->affected_rows}");
         }
@@ -161,7 +162,7 @@ while ($rr = $res_roles->fetch_assoc()) {
 }
 
 $role_perm_ids = [];
-$res2 = $conn->query("SELECT role, permission_id FROM role_permissions");
+$res2 = $conn->query("SELECT ro.slug AS role, rp.permission_id FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id");
 while ($r = $res2->fetch_assoc()) {
     $role_perm_ids[$r['role']][$r['permission_id']] = true;
     if ($r['role'] !== 'admin') {
@@ -170,7 +171,7 @@ while ($r = $res2->fetch_assoc()) {
 }
 
 $emp_counts = [];
-$ec_res = $conn->query("SELECT COALESCE(u.role,'staff') AS emp_role, COUNT(*) AS cnt FROM employees e LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) GROUP BY emp_role");
+$ec_res = $conn->query("SELECT COALESCE(ro.slug,'staff') AS emp_role, COUNT(*) AS cnt FROM employees e LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) LEFT JOIN roles ro ON ro.id = u.role_id GROUP BY emp_role");
 if ($ec_res) { while ($ec = $ec_res->fetch_assoc()) $emp_counts[$ec['emp_role']] = (int)$ec['cnt']; }
 
 $roles_js = [];

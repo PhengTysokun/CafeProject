@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
-    $stmt = $conn->prepare("SELECT * FROM users WHERE username = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT u.*, r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = ? LIMIT 1");
     $stmt->bind_param("s", $username); $stmt->execute();
     $result = $stmt->get_result();
 
@@ -33,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id']           = $user['user_id'];
             $_SESSION['username']          = $user['username'];
             $_SESSION['role']              = $user['role'];
+            $_SESSION['role_id']           = (int)$user['role_id'];
             $_SESSION['last_activity']     = time();
             $_SESSION['login_time']        = time();
             $_SESSION['flash_welcome']     = true;
