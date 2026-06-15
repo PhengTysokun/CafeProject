@@ -56,8 +56,37 @@ $low_recipe_result = mysqli_query($conn, "
 ");
 $low_recipe_count = mysqli_fetch_assoc($low_recipe_result)['low_recipe_count'];
 
+// Cash reconciliation alert — short/over records today
+$_recon_alerts = 0;
+if (can('cash_reconciliation')) {
+    $_rar = $conn->query("SELECT COUNT(*) FROM cash_reconciliations WHERE shift_date = CURDATE() AND ABS(difference) >= 0.01");
+    if ($_rar) $_recon_alerts = (int)$_rar->fetch_row()[0];
+}
+
+// Unread announcements count for current user
+$_unread_ann = 0;
+if (can('announcements')) {
+    $_ar = $conn->prepare("
+        SELECT COUNT(*) FROM announcements a
+        WHERE a.is_active = 1
+          AND (a.expires_at IS NULL OR a.expires_at >= CURDATE())
+          AND NOT EXISTS (
+              SELECT 1 FROM announcement_reads r
+              WHERE r.announcement_id = a.id AND r.user_id = ?
+          )
+    ");
+    $_ar->bind_param('i', $_SESSION['user_id']);
+    $_ar->execute();
+    $_ar->bind_result($_unread_ann);
+    $_ar->fetch();
+    $_ar->close();
+}
+
 $unpaid_result = mysqli_query($conn, "SELECT COUNT(*) AS unpaid_count FROM orders WHERE status='PendingPayment'");
 $unpaid_count  = mysqli_fetch_assoc($unpaid_result)['unpaid_count'];
+
+$paylater_result = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM orders WHERE payment_method='paylater' AND status IN ('Preparing','PendingPayment','Completed')");
+$paylater_count  = (int)mysqli_fetch_assoc($paylater_result)['cnt'];
 
 $unpaid_orders_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number FROM orders WHERE status='PendingPayment' ORDER BY order_date DESC LIMIT 5");
 
@@ -870,7 +899,11 @@ body.no-sidebar{--sidebar-w:0px;}
 <!-- ═══ SIDEBAR ═══ -->
 <div class="sidebar" id="sidebar">
 
+    <?php if (can('my_profile')): ?>
     <a href="profile.php" class="sidebar-profile" title="My Profile">
+    <?php else: ?>
+    <div class="sidebar-profile" style="cursor:default">
+    <?php endif; ?>
         <div class="profile-avatar"><i class="fa-solid fa-user"></i></div>
         <div class="profile-info">
             <div class="profile-name"><?= htmlspecialchars($admin_name) ?></div>
@@ -879,7 +912,11 @@ body.no-sidebar{--sidebar-w:0px;}
             </div>
         </div>
         <div class="sidebar-clock" id="sidebarClock">--:--</div>
+    <?php if (can('my_profile')): ?>
     </a>
+    <?php else: ?>
+    </div>
+    <?php endif; ?>
 
     <div class="sidebar-header">
         <i class="fa-solid fa-mug-hot"></i>
@@ -919,7 +956,9 @@ body.no-sidebar{--sidebar-w:0px;}
             <a class="nav-item" href="find_order.php">
                 <i class="fa-solid fa-magnifying-glass"></i>
                 <span class="nav-label">Find Unpaid Orders</span>
-                <?php if ($unpaid_count > 0): ?>
+                <?php if ($_SESSION['role'] === 'staff' && $paylater_count > 0): ?>
+                <span class="order-badge" style="background:var(--purple);"><?= $paylater_count ?></span>
+                <?php elseif ($unpaid_count > 0): ?>
                 <span class="order-badge" style="background:var(--purple);"><?= $unpaid_count ?></span>
                 <?php endif; ?>
             </a>
@@ -939,6 +978,27 @@ body.no-sidebar{--sidebar-w:0px;}
                 if ($_occ > 0): ?>
                 <span class="order-badge" style="background:var(--red,#e74c3c);"><?= (int)$_occ ?></span>
                 <?php endif; ?>
+            </a>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- OPERATIONS -->
+        <?php if (can('barista_station') || can('customer_display')): ?>
+        <div class="nav-group-label" onclick="toggleGroup(this)" data-group="operations">
+            <span>Operations</span><i class="fa-solid fa-chevron-right nav-chevron"></i>
+        </div>
+        <div class="nav-group-items collapsed" id="grp-operations">
+            <?php if (can('barista_station')): ?>
+            <a class="nav-item" href="barista_display.php">
+                <i class="fa-solid fa-mug-hot"></i>
+                <span class="nav-label">Barista Station</span>
+            </a>
+            <?php endif; ?>
+            <?php if (can('customer_display')): ?>
+            <a class="nav-item" href="customer_display.php">
+                <i class="fa-solid fa-display"></i>
+                <span class="nav-label">Customer Display</span>
             </a>
             <?php endif; ?>
         </div>
@@ -1008,15 +1068,24 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <!-- ANALYTICS -->
-        <?php if (can('report')): ?>
+        <?php if (can('report') || in_array($_SESSION['role'] ?? '', ['admin','manager'])): ?>
         <div class="nav-group-label" onclick="toggleGroup(this)" data-group="analytics">
             <span>Analytics</span><i class="fa-solid fa-chevron-right nav-chevron"></i>
         </div>
         <div class="nav-group-items collapsed" id="grp-analytics">
+            <?php if (can('report')): ?>
             <a class="nav-item" href="report.php">
                 <i class="fa-solid fa-chart-simple"></i>
                 <span class="nav-label">Daily Report</span>
             </a>
+            <?php endif; ?>
+            <?php if (can('cash_reconciliation')): ?>
+            <a class="nav-item" href="reconciliation_report.php">
+                <i class="fa-solid fa-cash-register"></i>
+                <span class="nav-label">Cash Reconciliation</span>
+                <?php if ($_recon_alerts > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto"><?= $_recon_alerts ?></span><?php endif; ?>
+            </a>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -1047,6 +1116,7 @@ body.no-sidebar{--sidebar-w:0px;}
             <a class="nav-item" href="announcements.php">
                 <i class="fa-solid fa-bullhorn"></i>
                 <span class="nav-label">Announcements</span>
+                <?php if ($_unread_ann > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto"><?= $_unread_ann ?></span><?php endif; ?>
             </a>
             <?php endif; ?>
             <?php if (can('attendance')): ?>
@@ -1061,10 +1131,12 @@ body.no-sidebar{--sidebar-w:0px;}
                 <span class="nav-label">Promotions</span>
             </a>
             <?php endif; ?>
+            <?php if (can('my_profile')): ?>
             <a class="nav-item" href="profile.php">
                 <i class="fa-solid fa-circle-user"></i>
                 <span class="nav-label">My Profile</span>
             </a>
+            <?php endif; ?>
         </div>
 
     </div>
@@ -1082,7 +1154,7 @@ body.no-sidebar{--sidebar-w:0px;}
             </div>
         </div>
         <?php endif; ?>
-        <a class="nav-item nav-logout" href="logout.php">
+        <a class="nav-item nav-logout" href="shift_report.php">
             <i class="fa-solid fa-right-from-bracket"></i>
             <span class="nav-label">Logout</span>
         </a>
@@ -1144,7 +1216,7 @@ body.no-sidebar{--sidebar-w:0px;}
                        background:<?= $clkBg ?>;border:1px solid <?= $clkBr ?>;color:<?= $clkColor ?>;transition:all .2s;">
                 <i class="fa-solid fa-<?= $clkIcon ?>"></i> <?= $clkLabel ?>
             </button>
-            <a href="logout.php" class="logout-btn" title="Log out">
+            <a href="shift_report.php" class="logout-btn" title="View shift report &amp; log out">
                 <i class="fa-solid fa-right-from-bracket"></i>
                 <span>Logout</span>
             </a>
@@ -1371,7 +1443,9 @@ body.no-sidebar{--sidebar-w:0px;}
                 <?php endif; ?>
                 <?php if (can('find_orders')): ?>
                 <a href="find_order.php" class="qa-tile">
-                    <?php if ($unpaid_count > 0): ?>
+                    <?php if ($_SESSION['role'] === 'staff' && $paylater_count > 0): ?>
+                    <span class="qa-tile-badge" style="background:var(--purple);"><?= $paylater_count ?></span>
+                    <?php elseif ($unpaid_count > 0): ?>
                     <span class="qa-tile-badge"><?= $unpaid_count ?></span>
                     <?php endif; ?>
                     <i class="fa-solid fa-magnifying-glass"></i>
@@ -1466,9 +1540,12 @@ body.no-sidebar{--sidebar-w:0px;}
                 </a>
                 <?php endif; ?>
                 <?php if (can('announcements')): ?>
-                <a href="announcements.php" class="qa-tile">
+                <a href="announcements.php" class="qa-tile" style="position:relative">
                     <i class="fa-solid fa-bullhorn"></i>
                     <span>Announcements</span>
+                    <?php if ($_unread_ann > 0): ?>
+                    <span style="position:absolute;top:8px;right:8px;background:var(--red);color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1"><?= $_unread_ann ?></span>
+                    <?php endif; ?>
                 </a>
                 <?php endif; ?>
             </div>
@@ -1487,6 +1564,7 @@ body.no-sidebar{--sidebar-w:0px;}
         </div>
         <?php endif; ?>
 
+        <?php if (can('my_profile')): ?>
         <div class="qa-group">
             <div class="qa-group-label"><i class="fa-solid fa-circle-user"></i> Account</div>
             <div class="qa-tiles">
@@ -1496,6 +1574,7 @@ body.no-sidebar{--sidebar-w:0px;}
                 </a>
             </div>
         </div>
+        <?php endif; ?>
     </div>
 
     <?php endif; /* end admin/manager vs employee view */ ?>

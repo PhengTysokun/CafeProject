@@ -14,6 +14,9 @@ $filter_to   = trim($_GET['to']   ?? '');
 $valid_types = ['order_deduct','order_restore','quick_restock','po_received','manual_adjust'];
 if (!in_array($filter_type, $valid_types)) $filter_type = '';
 
+$per_page = 10;
+$page     = max(1, (int)($_GET['page'] ?? 1));
+
 /* ══════════════════════════════════════════
    AJAX POLL — returns new rows as JSON
 ══════════════════════════════════════════ */
@@ -80,38 +83,55 @@ if ($filter_to !== '') {
     $types   .= 's';
 }
 
-$sql = "
+/* ── aggregate stats across ALL matching rows (not paginated) ── */
+$agg_sql = "
+    SELECT
+        SUM(CASE WHEN h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0) THEN 1 ELSE 0 END) AS cnt_deduct,
+        SUM(CASE WHEN h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0) THEN ABS(h.amount) ELSE 0 END) AS total_deducted,
+        SUM(CASE WHEN NOT(h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0)) THEN 1 ELSE 0 END) AS cnt_add,
+        SUM(CASE WHEN NOT(h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0)) THEN ABS(h.amount) ELSE 0 END) AS total_added,
+        COUNT(*) AS total_count
+    FROM ingredient_history h
+    JOIN ingredients i ON i.ingredient_id = h.ingredient_id
+" . ($where ? 'WHERE ' . implode(' AND ', $where) : '');
+$ss = $conn->prepare($agg_sql);
+if ($params) $ss->bind_param($types, ...$params);
+$ss->execute();
+$agg = $ss->get_result()->fetch_assoc();
+
+$cnt_deduct     = (int)($agg['cnt_deduct']     ?? 0);
+$total_deducted = (float)($agg['total_deducted'] ?? 0);
+$cnt_add        = (int)($agg['cnt_add']        ?? 0);
+$total_added    = (float)($agg['total_added']   ?? 0);
+$total_count    = (int)($agg['total_count']    ?? 0);
+$total_pages    = max(1, (int)ceil($total_count / $per_page));
+$page           = min($page, $total_pages);
+$offset         = ($page - 1) * $per_page;
+
+/* ── paginated rows ── */
+$paged_sql = "
     SELECT h.id, h.ingredient_id, h.change_type, h.amount, h.order_id, h.reference, h.created_by, h.created_at,
            i.ingredient_name, i.unit
     FROM ingredient_history h
     JOIN ingredients i ON i.ingredient_id = h.ingredient_id
 " . ($where ? 'WHERE ' . implode(' AND ', $where) : '') . "
     ORDER BY h.created_at DESC
-    LIMIT 500
+    LIMIT ? OFFSET ?
 ";
-
-$stmt = $conn->prepare($sql);
-if ($params) {
-    $stmt->bind_param($types, ...$params);
-}
+$stmt = $conn->prepare($paged_sql);
+$paged_params = array_merge($params, [$per_page, $offset]);
+$stmt->bind_param($types . 'ii', ...$paged_params);
 $stmt->execute();
 $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-/* ── summary counts ── */
-$cnt_deduct  = 0; $total_deducted  = 0;
-$cnt_add     = 0; $total_added     = 0;
-foreach ($rows as $r) {
-    $amt = (float)$r['amount'];
-    $is_deduct = $r['change_type'] === 'order_deduct'
-              || ($r['change_type'] === 'manual_adjust' && $amt < 0);
-    if ($is_deduct) {
-        $cnt_deduct++;
-        $total_deducted += abs($amt);
-    } else {
-        $cnt_add++;
-        $total_added += abs($amt);
-    }
-}
+/* ── base URL for pagination links (preserves filters, strips page) ── */
+$base_query = http_build_query(array_filter([
+    'ingredient_id' => $filter_ing ?: '',
+    'type'          => $filter_type,
+    'from'          => $filter_from,
+    'to'            => $filter_to,
+]));
+$pg_base = 'ingredient_history.php?' . ($base_query ? $base_query . '&' : '') . 'page=';
 
 function fmtQ($n) { return rtrim(rtrim(number_format((float)$n, 4, '.', ''), '0'), '.'); }
 function h($s)    { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -299,6 +319,23 @@ tr.hidden { display:none !important; }
 .search-wrap input { border:none; background:transparent; outline:none; color:var(--text); font-size:12px; font-family:'Poppins',sans-serif; width:100%; }
 .search-wrap input::placeholder { color:var(--text-muted); }
 
+/* PAGINATION */
+.pagination-wrap { display:flex; flex-direction:column; align-items:center; gap:10px; padding:18px 24px; border-top:1px solid var(--border); }
+.pagination { display:flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:center; }
+.pg-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:34px; height:34px; padding:0 10px;
+    border-radius:8px; border:1px solid var(--border);
+    background:var(--bg-input); color:var(--text-muted);
+    text-decoration:none; font-size:13px; font-weight:500;
+    transition:var(--transition); cursor:pointer; white-space:nowrap;
+}
+.pg-btn:hover:not(.disabled) { border-color:var(--accent); color:var(--accent); background:rgba(209,144,75,.06); }
+.pg-btn.pg-active { background:var(--accent); border-color:var(--accent); color:#000; font-weight:700; cursor:default; }
+.pg-btn.disabled  { opacity:.3; cursor:default; pointer-events:none; }
+.pg-ellipsis { color:var(--text-muted); padding:0 2px; font-size:14px; line-height:34px; }
+.pg-info { font-size:12px; color:var(--text-muted); }
+
 @media (max-width:900px)  { .stats-row { grid-template-columns:repeat(2,1fr); } }
 @media (max-width:640px)  { .stats-row,.filter-bar,.table-card,.filter-chips { margin-left:14px; margin-right:14px; } .topbar { padding:10px 14px; } }
 @media print {
@@ -352,8 +389,8 @@ tr.hidden { display:none !important; }
         <div class="stat-icon total"><i class="fa-solid fa-list-ul"></i></div>
         <div>
             <div class="stat-label">Total Events</div>
-            <div class="stat-num" id="statTotalCnt"><?= count($rows) ?></div>
-            <div class="stat-hint">Last 500 shown</div>
+            <div class="stat-num" id="statTotalCnt"><?= $total_count ?></div>
+            <div class="stat-hint" id="statTotalHint"><?= number_format($total_count) ?> total records</div>
         </div>
     </div>
     <div class="stat-card s-net">
@@ -430,7 +467,13 @@ tr.hidden { display:none !important; }
 <div class="table-card">
     <div class="table-header">
         <div class="table-title"><i class="fa-solid fa-clock-rotate-left" style="color:var(--accent)"></i> Movement Log</div>
-        <span class="row-count" id="rowCount"><?= count($rows) ?> record<?= count($rows) !== 1 ? 's' : '' ?></span>
+        <span class="row-count" id="rowCount">
+            <?php if ($total_count > 0): ?>
+            <?= number_format($offset + 1) ?>–<?= number_format(min($offset + $per_page, $total_count)) ?> of <?= number_format($total_count) ?> records
+            <?php else: ?>
+            0 records
+            <?php endif; ?>
+        </span>
     </div>
     <div class="table-wrap">
         <?php if (empty($rows)): ?>
@@ -502,9 +545,49 @@ tr.hidden { display:none !important; }
         </table>
         <?php endif; ?>
     </div>
+    <?php if ($total_pages > 1): ?>
+    <div class="pagination-wrap">
+        <div class="pagination">
+            <?php if ($page > 1): ?>
+            <a href="<?= $pg_base . 1 ?>" class="pg-btn" title="First"><i class="fa-solid fa-angles-left"></i></a>
+            <a href="<?= $pg_base . ($page - 1) ?>" class="pg-btn" title="Previous"><i class="fa-solid fa-angle-left"></i></a>
+            <?php else: ?>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angles-left"></i></span>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angle-left"></i></span>
+            <?php endif; ?>
+
+            <?php
+            // Build visible page window: always show 1, last, and pages around current
+            $window = array_unique(array_merge([1, $total_pages], range(max(2, $page - 2), min($total_pages - 1, $page + 2))));
+            sort($window);
+            $prev_p = null;
+            foreach ($window as $p_num):
+                if ($prev_p !== null && $p_num - $prev_p > 1) echo '<span class="pg-ellipsis">…</span>';
+            ?>
+            <a href="<?= $pg_base . $p_num ?>" class="pg-btn <?= $p_num === $page ? 'pg-active' : '' ?>"><?= $p_num ?></a>
+            <?php $prev_p = $p_num; endforeach; ?>
+
+            <?php if ($page < $total_pages): ?>
+            <a href="<?= $pg_base . ($page + 1) ?>" class="pg-btn" title="Next"><i class="fa-solid fa-angle-right"></i></a>
+            <a href="<?= $pg_base . $total_pages ?>" class="pg-btn" title="Last"><i class="fa-solid fa-angles-right"></i></a>
+            <?php else: ?>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angle-right"></i></span>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angles-right"></i></span>
+            <?php endif; ?>
+        </div>
+        <div class="pg-info">
+            Page <?= $page ?> of <?= $total_pages ?> &nbsp;·&nbsp; <?= number_format($total_count) ?> total records
+        </div>
+    </div>
+    <?php endif; ?>
 </div>
 
 <script>
+const CURRENT_PAGE  = <?= $page ?>;
+const TOTAL_RECORDS = <?= $total_count ?>;
+const OFFSET_START  = <?= $offset ?>;
+const PER_PAGE      = <?= $per_page ?>;
+
 /* ── LIVE SEARCH ── */
 function liveSearch(q) {
     q = q.toLowerCase().trim();
@@ -514,7 +597,13 @@ function liveSearch(q) {
         tr.classList.toggle('hidden', !match);
         if (match) shown++;
     });
-    document.getElementById('rowCount').textContent = shown + ' record' + (shown !== 1 ? 's' : '');
+    if (q) {
+        document.getElementById('rowCount').textContent = shown + ' match' + (shown !== 1 ? 'es' : '') + ' on this page';
+    } else {
+        const from = Math.min(OFFSET_START + 1, TOTAL_RECORDS);
+        const to   = Math.min(OFFSET_START + shown, TOTAL_RECORDS);
+        document.getElementById('rowCount').textContent = from + '–' + to + ' of ' + TOTAL_RECORDS.toLocaleString() + ' records';
+    }
 }
 
 /* ── THEME ── */
@@ -612,12 +701,13 @@ async function pollHistory() {
             newHtml += buildRow(r);
         });
 
-        if (tbody) {
+        // Only insert rows into the DOM when viewing page 1 (newest records)
+        if (CURRENT_PAGE === 1 && tbody) {
             tbody.insertAdjacentHTML('afterbegin', newHtml);
             if (empty) empty.style.display = 'none';
         }
 
-        // Update stats
+        // Update stats (always, regardless of page)
         const net = totalAdded - totalDeducted;
         document.getElementById('statDeductCnt').textContent  = cntDeduct;
         document.getElementById('statDeductAmt').textContent  = fmt(totalDeducted) + ' units total';
@@ -626,9 +716,6 @@ async function pollHistory() {
         document.getElementById('statTotalCnt').textContent   = cntDeduct + cntAdd;
         document.getElementById('statNetAmt').textContent     = (net >= 0 ? '+' : '') + fmt(net);
         document.getElementById('statNetAmt').style.color     = net >= 0 ? 'var(--ok)' : 'var(--danger)';
-
-        const shown = document.querySelectorAll('#histBody tr:not(.hidden)').length;
-        document.getElementById('rowCount').textContent = shown + ' record' + (shown !== 1 ? 's' : '');
 
     } catch (_) { /* silent — network hiccup */ }
 }

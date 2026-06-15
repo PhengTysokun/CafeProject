@@ -43,6 +43,7 @@ if (isset($_GET['remove'])) {
     if (isset($_SESSION['cart'][$i])) {
         unset($_SESSION['cart'][$i]);
         $_SESSION['cart'] = array_values($_SESSION['cart']);
+        if (empty($_SESSION['cart'])) unset($_SESSION['cart_started_at']);
     }
     header("Location: cart.php");
     exit;
@@ -56,7 +57,7 @@ foreach ($cart as $item) {
     $q = isset($item['qty']) ? (int)$item['qty'] : 1;
     $subtotal += $item['price'] * $q;
 }
-$tax = $subtotal * 0.10; // 10% tax
+$tax = $subtotal * (TAX_RATE / 100);
 $total = $subtotal + $tax;
 $total_formatted = number_format($total, 2);
 $subtotal_formatted = number_format($subtotal, 2);

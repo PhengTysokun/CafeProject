@@ -18,23 +18,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
+// ── Poll endpoint: returns current order IDs for change-detection ──
+if (isset($_GET['action']) && $_GET['action'] === 'poll') {
+    header('Content-Type: application/json');
+    $poll_tab = $_GET['tab'] ?? 'all';
+    $poll_sql = "SELECT order_id FROM orders WHERE (
+        (status NOT IN ('Completed','Cancelled','Refunded') AND status != 'Paid')
+        OR (status = 'Paid' AND is_open = 1)
+        OR (payment_method = 'paylater' AND status = 'Completed')
+    )";
+    if ($poll_tab === 'paylater') {
+        $poll_sql .= " AND payment_method = 'paylater' AND status IN ('Preparing','PendingPayment','Completed')";
+    } elseif ($poll_tab === 'preparing') {
+        $poll_sql .= " AND status = 'Preparing'";
+    } elseif ($poll_tab === 'pending') {
+        $poll_sql .= " AND status = 'PendingPayment'";
+    } elseif ($poll_tab === 'paid_open') {
+        $poll_sql .= " AND status = 'Paid' AND is_open = 1";
+    }
+    $poll_sql = str_replace('SELECT order_id', 'SELECT order_id, status', $poll_sql);
+    $pr = mysqli_query($conn, $poll_sql);
+    $sig = '';
+    while ($row = mysqli_fetch_assoc($pr)) $sig .= $row['order_id'] . ':' . $row['status'] . '|';
+    echo json_encode(['sig' => md5($sig)]);
+    exit;
+}
+
 $search_type  = $_GET['search_type']  ?? 'all';
 $search_value = $_GET['search_value'] ?? '';
 $filter_tab   = $_GET['tab']          ?? 'all';
 
+// Cashiers only manage pay-later orders; force the tab and restrict the query
+$is_cashier = (($_SESSION['role'] ?? '') === 'staff');
+if ($is_cashier) {
+    $filter_tab = 'paylater';
+}
+
 // ── Main query: unpaid OR paid-but-open orders ──
 $sql = "
-SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number
+SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number, table_number
 FROM orders
 WHERE (
     (status NOT IN ('Completed','Cancelled','Refunded') AND status != 'Paid')
     OR (status = 'Paid' AND is_open = 1)
+    OR (payment_method = 'paylater' AND status = 'Completed')
 )
 ";
 
 if (!empty($search_value)) {
     $safe = $conn->real_escape_string($search_value);
-    if ($search_type === 'order_id') {
+    if ($search_type === 'exact_id') {
+        $sql .= " AND order_id = " . (int)$search_value;
+    } elseif ($search_type === 'order_id') {
         $sql .= " AND daily_order_no = '$safe'";
     } else {
         $sql .= " AND customer_name LIKE '%$safe%'";
@@ -49,7 +84,7 @@ if ($filter_tab === 'preparing') {
 } elseif ($filter_tab === 'paid_open') {
     $sql .= " AND status = 'Paid' AND is_open = 1";
 } elseif ($filter_tab === 'paylater') {
-    $sql .= " AND status = 'Preparing' AND payment_method = 'paylater'";
+    $sql .= " AND payment_method = 'paylater' AND status IN ('Preparing', 'PendingPayment', 'Completed')";
 }
 
 $sql .= " ORDER BY order_date DESC";
@@ -66,6 +101,7 @@ FROM orders
 WHERE (
     (status NOT IN ('Completed','Cancelled','Refunded') AND status != 'Paid')
     OR (status = 'Paid' AND is_open = 1)
+    OR (payment_method = 'paylater' AND status = 'Completed')
 )
 GROUP BY status, is_open, payment_method
 ";
@@ -77,7 +113,13 @@ while ($r = mysqli_fetch_assoc($count_result)) {
         $tab_counts['preparing'] += $r['cnt'];
         if ($r['payment_method'] === 'paylater') $tab_counts['paylater'] += $r['cnt'];
     }
-    if ($r['status'] === 'PendingPayment') $tab_counts['pending'] += $r['cnt'];
+    if ($r['status'] === 'PendingPayment') {
+        $tab_counts['pending'] += $r['cnt'];
+        if ($r['payment_method'] === 'paylater') $tab_counts['paylater'] += $r['cnt'];
+    }
+    if ($r['status'] === 'Completed' && $r['payment_method'] === 'paylater') {
+        $tab_counts['paylater'] += $r['cnt'];
+    }
     if ($r['status'] === 'Paid' && $r['is_open'] == 1) $tab_counts['paid_open'] += $r['cnt'];
 }
 
@@ -352,6 +394,39 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
         /* Hidden for JS filtering */
         .order-card.hidden { display: none; }
 
+        /* Overdue pay later */
+        .order-card.overdue { border-left: 3px solid var(--danger); animation: pulse-red 2s ease-in-out infinite; }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: var(--shadow-sm); }
+            50% { box-shadow: 0 0 16px rgba(255,107,107,0.35); }
+        }
+        .overdue-warning {
+            font-size: 12px; font-weight: 600; color: var(--danger);
+            display: flex; align-items: center; gap: 6px; margin-top: 6px;
+        }
+
+        .table-edit-wrap { display: inline-flex; align-items: center; gap: 4px; }
+        .table-edit-btn {
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+            font-size: 11px; padding: 0 2px; opacity: 0.6; transition: opacity 0.2s;
+        }
+        .table-edit-btn:hover { opacity: 1; color: var(--accent); }
+        .table-input-wrap { display: inline-flex; align-items: center; gap: 4px; }
+        .table-input {
+            background: var(--bg); border: 1px solid var(--border-hover); border-radius: 6px;
+            color: var(--text); font-size: 12px; padding: 2px 8px; width: 80px;
+            font-family: inherit; outline: none;
+        }
+        .table-input:focus { border-color: var(--accent); }
+        .table-save-btn {
+            background: var(--accent); border: none; border-radius: 6px; color: #000;
+            font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;
+        }
+        .table-cancel-btn {
+            background: none; border: none; color: var(--text-muted); font-size: 12px;
+            cursor: pointer; padding: 0 2px;
+        }
+
         @media (max-width: 640px) {
             body { padding: 20px 12px; }
             .search-form { flex-direction: column; }
@@ -401,6 +476,7 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
 
     <!-- Tab Filters -->
     <div class="tabs">
+        <?php if (!$is_cashier): ?>
         <a href="?tab=all<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn <?= $filter_tab === 'all' ? 'active' : '' ?>">
             <i class="fa-solid fa-layer-group"></i> All Active
@@ -421,6 +497,7 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
             <i class="fa-solid fa-circle-plus"></i> Paid + Open
             <span class="tab-count"><?= $tab_counts['paid_open'] ?></span>
         </a>
+        <?php endif; ?>
         <a href="?tab=paylater<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn tab-paylater <?= $filter_tab === 'paylater' ? 'active' : '' ?>">
             <i class="fa-solid fa-wallet"></i> Pay Later
@@ -462,7 +539,8 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
     <div id="orderList">
     <?php foreach ($orders as $order):
         $isPaidOpen = ($order['status'] === 'Paid' && $order['is_open'] == 1);
-        $canAdd     = ($order['is_open'] == 1 && in_array($order['status'], ['Preparing', 'Paid']));
+        $isPayLater = ($order['payment_method'] === 'paylater');
+        $canAdd     = ($order['is_open'] == 1 && (in_array($order['status'], ['Preparing', 'Paid']) || ($isPayLater && $order['status'] === 'Completed')));
         $cardClass  = $isPaidOpen ? 'is-paid-open' : ($canAdd ? 'can-add' : '');
         $statusClass = strtolower($order['status']);
         $tz   = new DateTimeZone('Asia/Phnom_Penh');
@@ -478,8 +556,10 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
         elseif ($diff < 3600)          $timeAgo = floor($diff/60) . 'm ago';
         elseif ($diff < 86400)         $timeAgo = floor($diff/3600) . 'h ' . floor(($diff%3600)/60) . 'm ago';
         else                           $timeAgo = floor($diff/86400) . 'd ago';
+
+        $isOverdue = ($order['payment_method'] === 'paylater' && $diff > 1800); // 30 min unpaid
     ?>
-    <div class="order-card <?= $cardClass ?>" 
+    <div class="order-card <?= $cardClass ?> <?= $isOverdue ? 'overdue' : '' ?>" 
          data-name="<?= strtolower(htmlspecialchars($order['customer_name'])) ?>"
          data-token="<?= $order['token_number'] ?>"
          data-amount="<?= $order['total'] ?>"
@@ -550,6 +630,7 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
                 <a href="receipt_paylater.php?order_id=<?= $order['order_id'] ?>" target="_blank" class="btn btn-receipt">
                     <i class="fa-solid fa-file-pdf"></i>
                 </a>
+                <?php if (!$is_cashier): ?>
                 <a href="view_order.php?order_id=<?= $order['order_id'] ?>" class="btn btn-view">
                     <i class="fa-solid fa-eye"></i>
                 </a>
@@ -561,6 +642,7 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
                 <button class="btn btn-cancel-order" onclick="cancelOrderFromFind(<?= $order['order_id'] ?>, this)" title="Cancel this order">
                     <i class="fa-solid fa-ban"></i>
                 </button>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -568,12 +650,27 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
             <div class="card-meta">
                 <span><i class="fa-solid fa-clock"></i> <?= $timeAgo ?> &nbsp;·&nbsp; <?= date("d M, g:i A", strtotime($order['order_date'])) ?></span>
                 <span><i class="fa-solid fa-credit-card"></i> <?= htmlspecialchars(ucfirst($order['payment_method'])) ?></span>
+                <span class="table-edit-wrap" data-order="<?= $order['order_id'] ?>">
+                    <i class="fa-solid fa-ticket" style="color:var(--accent);"></i>
+                    <span class="table-label" style="color:var(--accent);"><?= !empty($order['table_number']) ? 'Stand ' . htmlspecialchars($order['table_number']) : 'No stand' ?></span>
+                    <button class="table-edit-btn" title="Change stand"><i class="fa-solid fa-pen-to-square"></i></button>
+                    <span class="table-input-wrap" style="display:none;">
+                        <input class="table-input" type="text" value="<?= htmlspecialchars($order['table_number'] ?? '') ?>" placeholder="e.g. 7" maxlength="10">
+                        <button class="table-save-btn">Save</button>
+                        <button class="table-cancel-btn">✕</button>
+                    </span>
+                </span>
                 <?php if ($order['is_open'] == 1): ?>
                 <span style="color:var(--accent);"><i class="fa-solid fa-door-open"></i> Order is open</span>
                 <?php else: ?>
                 <span style="color:var(--text-muted);"><i class="fa-solid fa-door-closed"></i> Order closed</span>
                 <?php endif; ?>
             </div>
+            <?php if ($isOverdue): ?>
+            <div class="overdue-warning">
+                <i class="fa-solid fa-triangle-exclamation"></i> Unpaid for <?= floor($diff/60) ?>+ min — follow up with customer
+            </div>
+            <?php endif; ?>
         </div>
     </div>
     <?php endforeach; ?>
@@ -593,9 +690,6 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
     </div>
     <?php endif; ?>
 
-    <a href="dashboard.php" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);text-decoration:none;margin-top:20px;transition:var(--transition);" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">
-        <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
-    </a>
 
 </div><!-- end page-wrapper -->
 
@@ -763,5 +857,79 @@ function closeOrder(orderId, btn) {
 }
 </script>
 <script src="animations.js"></script>
+<script>
+// Shared flag — polling skips reload while any table edit is open
+let tableEditOpen = false;
+
+(function() {
+    <?php
+    $sig_parts = '';
+    foreach ($orders as $o) $sig_parts .= $o['order_id'] . ':' . $o['status'] . '|';
+    ?>
+    const currentSig = <?= json_encode(md5($sig_parts)) ?>;
+    const tab = <?= json_encode($filter_tab) ?>;
+
+    setInterval(async function() {
+        if (tableEditOpen) return; // don't reload while user is typing
+        try {
+            const res = await fetch('find_order.php?action=poll&tab=' + encodeURIComponent(tab));
+            const data = await res.json();
+            if (data.sig !== currentSig) {
+                location.reload();
+            }
+        } catch(e) {}
+    }, 5000);
+})();
+
+// ── Inline table number edit ──
+document.querySelectorAll('.table-edit-wrap').forEach(function(wrap) {
+    const orderId    = wrap.dataset.order;
+    const labelEl    = wrap.querySelector('.table-label');
+    const editBtn    = wrap.querySelector('.table-edit-btn');
+    const inputWrap  = wrap.querySelector('.table-input-wrap');
+    const input      = wrap.querySelector('.table-input');
+    const saveBtn    = wrap.querySelector('.table-save-btn');
+    const cancelBtn  = wrap.querySelector('.table-cancel-btn');
+
+    editBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        tableEditOpen = true;
+        editBtn.style.display = 'none';
+        labelEl.style.display = 'none';
+        inputWrap.style.display = 'inline-flex';
+        input.focus();
+        input.select();
+    });
+
+    cancelBtn.addEventListener('click', function() {
+        tableEditOpen = false;
+        inputWrap.style.display = 'none';
+        editBtn.style.display = '';
+        labelEl.style.display = '';
+    });
+
+    saveBtn.addEventListener('click', async function() {
+        const val = input.value.trim();
+        const body = new URLSearchParams({ order_id: orderId, table_number: val });
+        try {
+            const res = await fetch('update_table.php', { method: 'POST', body });
+            const data = await res.json();
+            if (data.ok) {
+                tableEditOpen = false;
+                labelEl.textContent = val ? 'Table ' + val : 'No table';
+                input.value = val;
+                inputWrap.style.display = 'none';
+                editBtn.style.display = '';
+                labelEl.style.display = '';
+            }
+        } catch(e) {}
+    });
+
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') saveBtn.click();
+        if (e.key === 'Escape') cancelBtn.click();
+    });
+});
+</script>
 </body>
 </html>

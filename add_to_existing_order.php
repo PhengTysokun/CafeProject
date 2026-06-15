@@ -1,6 +1,6 @@
 <?php
-session_start();
-require 'config.php';
+require 'auth.php';
+if (!in_array($_SESSION['role'], ['admin', 'manager', 'staff'])) { header("Location: dashboard.php?denied=1"); exit; }
 
 $order_id = (int)($_GET['order_id'] ?? 0);
 
@@ -9,13 +9,15 @@ if ($order_id <= 0) {
     exit;
 }
 
-// ✅ FIX: Allow 'Paid' orders if is_open = 1
 $stmt = $conn->prepare("
-    SELECT order_id, daily_order_no, customer_name, status, is_open
+    SELECT order_id, daily_order_no, customer_name, status, is_open, payment_method
     FROM orders
     WHERE order_id = ?
-      AND status IN ('Preparing', 'Paid')
       AND is_open = 1
+      AND (
+          status IN ('Preparing', 'Paid')
+          OR (payment_method = 'paylater' AND status = 'Completed')
+      )
 ");
 $stmt->bind_param("i", $order_id);
 $stmt->execute();
@@ -92,6 +94,9 @@ if (!$order) {
     </html>";
     exit;
 }
+
+// Flag paylater re-opens so confirm_order.php resets status inside its transaction
+$_SESSION['paylater_reopen'] = ($order['payment_method'] === 'paylater' && $order['status'] === 'Completed');
 
 // Store the internal order_id in session
 $_SESSION['add_to_order_id'] = $order['order_id'];

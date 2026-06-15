@@ -672,6 +672,11 @@ if ($action === ""):
     .pill-opt.selected { background: #3498db; border-color: #3498db; color: #fff; font-weight: 600; }
     #remakeAdjustments { max-height: 280px; overflow-y: auto; margin-bottom: 4px; }
     .badge-remade { display:inline-flex; align-items:center; gap:4px; background:rgba(52,152,219,.15); color:#3498db; border:1px solid rgba(52,152,219,.3); border-radius:6px; font-size:10px; font-weight:600; padding:2px 7px; margin-left:6px; }
+    .age-badge { display:inline-flex; align-items:center; gap:3px; border-radius:20px; font-size:10px; font-weight:600; padding:2px 7px; }
+    .age-badge:empty { display:none; }
+    .age-badge.age-warn  { background:rgba(255,193,7,.18); color:#f0ad4e; border:1px solid rgba(255,193,7,.35); }
+    .age-badge.age-alert { background:rgba(239,68,68,.15); color:#ef4444; border:1px solid rgba(239,68,68,.3); animation:age-pulse 1.4s ease-in-out infinite; }
+    @keyframes age-pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
     .card-actions .delete-btn { background: rgba(255,92,92,.12);  color: var(--danger); border-color: rgba(255,92,92,.2); padding: 8px 14px; min-width: auto; flex: 0; }
 
     /* ── Order ID (legacy, keep for search) ── */
@@ -1258,9 +1263,11 @@ if ($action === ""):
                background:<?= $clkBg ?>;border:1px solid <?= $clkBr ?>;color:<?= $clkColor ?>;transition:all .2s;">
         <i class="fa-solid fa-<?= $clkIcon ?>"></i> <?= $clkLabel ?>
     </button>
+    <?php if (can('my_profile')): ?>
     <a href="profile.php" class="back" style="position:static;" title="My Profile">
         <i class="fa-solid fa-circle-user"></i> Profile
     </a>
+    <?php endif; ?>
     <a href="logout.php" class="back" style="position:static;background:rgba(255,95,95,.08);border-color:rgba(255,95,95,.25);color:#ff6b6b;" title="Logout">
         <i class="fa-solid fa-right-from-bracket"></i> Logout
     </a>
@@ -1403,7 +1410,7 @@ function showClockToast(msg, isErr) {
 <!-- Status Tabs -->
 <?php $r = $_SESSION['role'] ?? ''; ?>
 <div class="status-tabs" id="statusTabs">
-    <?php if ($r !== 'staff'): ?>
+    <?php if ($r !== 'staff' && $r !== 'barista'): ?>
     <button class="status-tab active" data-status="all" onclick="filterStatus('all')">
         📋 All <span class="badge" id="count-all">0</span>
     </button>
@@ -1414,9 +1421,11 @@ function showClockToast(msg, isErr) {
     </button>
     <?php endif; ?>
     <?php if ($r !== 'staff'): ?>
-    <button class="status-tab" data-status="Preparing" onclick="filterStatus('Preparing')">
+    <button class="status-tab <?= $r === 'barista' ? 'active' : '' ?>" data-status="Preparing" onclick="filterStatus('Preparing')">
         👨‍🍳 Preparing <span class="badge" id="count-Preparing">0</span>
     </button>
+    <?php endif; ?>
+    <?php if ($r !== 'barista'): ?>
     <button class="status-tab" data-status="Completed" onclick="filterStatus('Completed')">
         ✅ Completed <span class="badge" id="count-Completed">0</span>
     </button>
@@ -1436,6 +1445,7 @@ function showClockToast(msg, isErr) {
 <!-- Search Bar -->
 <div class="search-bar" style="display:flex; justify-content:center; gap:12px; margin-bottom:20px; align-items:center; flex-wrap:wrap;">
     <input type="text" id="searchInput" placeholder="Search by customer name, order #, or status..."
+           oninput="searchOrders()" onkeydown="if(event.key==='Escape')clearSearch()"
            style="width:300px; padding:10px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.09); background:rgba(255,255,255,0.05); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); color:var(--text); font-family:'Poppins',sans-serif; font-size:14px; outline:none; transition:var(--transition); box-shadow:0 2px 8px rgba(0,0,0,0.3); inset 0 1px 0 rgba(255,255,255,0.06);">
     <button class="btn" onclick="searchOrders()" 
             style="padding:10px 20px; border-radius:10px; border:none; background:var(--accent); color:#000; font-weight:600; cursor:pointer; transition:var(--transition); font-family:'Poppins',sans-serif; font-size:14px; display:flex; align-items:center; gap:8px;">
@@ -1559,6 +1569,7 @@ let allOrders = [];
 const userRole = "<?= $_SESSION['role'] ?? 'staff' ?>";
 const isAdmin = userRole === 'admin';
 const canManageOrders = userRole === 'admin' || userRole === 'manager';
+const canRemake = userRole === 'admin' || userRole === 'manager' || userRole === 'staff';
 
 // ── Play Sound ──
 function play(id) {
@@ -1647,13 +1658,14 @@ function timeAgo(dateString) {
 // ── Build Card Inner HTML ──
 function buildCardInner(o) {
     const tableTag = o.table_number
-        ? `<span class="card-table-badge"><i class="fa-solid fa-hashtag" style="font-size:9px"></i>${escapeHtml(o.table_number)}</span>`
+        ? `<span class="card-table-badge"><i class="fa-solid fa-ticket" style="font-size:9px"></i> Stand ${escapeHtml(o.table_number)}</span>`
         : '';
     return `
         <div class="card-header">
             <div class="card-order-num">#${escapeHtml(String(o.daily_order_no))}</div>
             <div class="card-header-right">
                 ${getStatusBadge(o.status)}
+                ${ageBadgeHtml(o.order_date, o.status)}
                 ${o.remake_count > 0 ? `<span class="badge-remade"><i class="fa-solid fa-repeat" style="font-size:9px"></i> Remade${o.remake_count > 1 ? ` ×${o.remake_count}` : ''}</span>` : ''}
                 <div class="card-total">$${parseFloat(o.total || 0).toFixed(2)}</div>
             </div>
@@ -1752,20 +1764,22 @@ function getActionButtons(o) {
         `;
     }
     
-    if (o.status === 'Completed' && canManageOrders) {
-        // Refund only if not already remade
-        if (!o.is_remade) {
+    if (o.status === 'Completed') {
+        // Refund only for admin/manager, and only if not already remade
+        if (canManageOrders && !o.is_remade) {
             buttons += `
                 <button class="refund-btn" onclick="showRefundModal(${Number(o.order_id)}, ${Number(o.daily_order_no)}, ${parseFloat(o.total).toFixed(2)})" title="Refund order">
                     <i class="fa-solid fa-rotate-left"></i> Refund
                 </button>
             `;
         }
-        buttons += `
-            <button class="remake-btn" onclick="showRemakeModal(${Number(o.order_id)}, ${Number(o.daily_order_no)})" title="Log remake">
-                <i class="fa-solid fa-repeat"></i> Remake
-            </button>
-        `;
+        if (canRemake) {
+            buttons += `
+                <button class="remake-btn" onclick="showRemakeModal(${Number(o.order_id)}, ${Number(o.daily_order_no)})" title="Log remake">
+                    <i class="fa-solid fa-repeat"></i> Remake
+                </button>
+            `;
+        }
     }
     
     // Delete button - only for PendingPayment or Cancelled (admin only)
@@ -1809,12 +1823,14 @@ function applyFilters() {
         const cardStatus = card.dataset.status;
         let visible = true;
 
-        if (currentFilter !== 'all' && cardStatus !== currentFilter) visible = false;
-        if ((cardStatus === 'Completed' || cardStatus === 'Refunded') && !showCompleted) visible = false;
-
-        if (visible && query) {
+        if (query) {
+            // While searching, cross all tabs — match on text content
             const text = card.textContent.toLowerCase();
             visible = text.includes(query);
+        } else {
+            // Normal tab + showCompleted filtering
+            if (currentFilter !== 'all' && cardStatus !== currentFilter) visible = false;
+            if ((cardStatus === 'Completed' || cardStatus === 'Refunded') && !showCompleted) visible = false;
         }
 
         card.style.display = visible ? '' : 'none';
@@ -2356,6 +2372,10 @@ async function removeOrder(id) {
 // ── Search Orders ──
 function searchOrders() {
     searchQuery = document.getElementById('searchInput').value;
+    // Dim tab pills while a search is active so user knows tabs are bypassed
+    document.querySelectorAll('.status-tab').forEach(t => {
+        t.style.opacity = searchQuery ? '0.45' : '';
+    });
     applyFilters();
 }
 
@@ -2363,14 +2383,29 @@ function searchOrders() {
 function clearSearch() {
     searchQuery = '';
     document.getElementById('searchInput').value = '';
+    document.querySelectorAll('.status-tab').forEach(t => { t.style.opacity = ''; });
     applyFilters();
 }
 
 // ── Initial Load ──
 loadOrders().then(() => {
-    const tab = new URLSearchParams(window.location.search).get('tab');
+    const params    = new URLSearchParams(window.location.search);
+    const tab       = params.get('tab');
+    const highlight = params.get('highlight');
+
     if (tab) filterStatus(tab);
     else if (userRole === 'staff') filterStatus('PendingPayment');
+    else if (userRole === 'barista') filterStatus('Preparing');
+
+    if (highlight) {
+        const el = document.getElementById('row-' + highlight);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.style.outline = '2px solid var(--accent)';
+            el.style.boxShadow = '0 0 0 4px rgba(209,144,75,.2)';
+            setTimeout(() => { el.style.outline = ''; el.style.boxShadow = ''; }, 2500);
+        }
+    }
 });
 setInterval(loadOrders, 4000);
 
@@ -2418,11 +2453,46 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// ── Time ago auto-refresh ──
+// ── Order age badge helpers ──
+const AGE_ACTIVE = new Set(['Pending','Processing','Preparing','PendingPayment']);
+
+function ageMinutes(ts) {
+    return Math.floor((Date.now() - new Date(ts)) / 60000);
+}
+
+function ageBadgeHtml(ts, status) {
+    if (!AGE_ACTIVE.has(status)) return '';
+    const m = ageMinutes(ts);
+    const cls  = m >= 15 ? 'age-alert' : m >= 10 ? 'age-warn' : '';
+    const icon = m >= 15 ? 'fa-circle-exclamation' : 'fa-hourglass-half';
+    const html = m >= 10
+        ? `<i class="fa-solid ${icon}" style="font-size:9px"></i> ${m}m`
+        : (m >= 5 ? `<i class="fa-regular fa-clock" style="font-size:9px"></i> ${m}m` : '');
+    return `<span class="age-badge ${cls}" data-order-ts="${ts}" data-order-status="${status}">${html}</span>`;
+}
+
+function refreshAgeBadges() {
+    document.querySelectorAll('.age-badge[data-order-ts]').forEach(el => {
+        const ts     = el.dataset.orderTs;
+        const status = el.dataset.orderStatus;
+        if (!AGE_ACTIVE.has(status)) { el.innerHTML = ''; el.className = 'age-badge'; return; }
+        const m    = ageMinutes(ts);
+        const cls  = m >= 15 ? 'age-alert' : m >= 10 ? 'age-warn' : '';
+        const icon = m >= 15 ? 'fa-circle-exclamation' : 'fa-hourglass-half';
+        const html = m >= 10
+            ? `<i class="fa-solid ${icon}" style="font-size:9px"></i> ${m}m`
+            : (m >= 5 ? `<i class="fa-regular fa-clock" style="font-size:9px"></i> ${m}m` : '');
+        el.className = `age-badge ${cls}`;
+        el.innerHTML = html;
+    });
+}
+
+// ── Time ago + age badge auto-refresh ──
 setInterval(() => {
     document.querySelectorAll('[data-timestamp]').forEach(el => {
         el.textContent = timeAgo(el.dataset.timestamp);
     });
+    refreshAgeBadges();
 }, 30000);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
@@ -2646,12 +2716,6 @@ if ($action === "complete") {
         $stmt_update = $conn->prepare("UPDATE orders SET status = 'Completed', prepared_by = ?, prepared_by_role = ?, completed_at = NOW() WHERE order_id = ?");
         $stmt_update->bind_param("ssi", $prepared_by, $prepared_by_role, $order_id);
         $stmt_update->execute();
-
-        // ── Free the table now that the order is done ──
-        if (!empty($order['table_number']) && $order['order_type'] === 'drink_in') {
-            $tbl = $conn->real_escape_string($order['table_number']);
-            $conn->query("UPDATE cafe_tables SET status = 'available' WHERE table_number = '$tbl'");
-        }
 
         $conn->commit();
         echo json_encode(["ok" => 1]);

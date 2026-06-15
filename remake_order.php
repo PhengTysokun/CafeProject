@@ -9,8 +9,8 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-if (!in_array($_SESSION['role'], ['admin', 'manager'])) {
-    echo json_encode(["ok" => 0, "error" => "Only admin or manager can log a remake"]);
+if (!in_array($_SESSION['role'], ['admin', 'manager', 'staff'])) {
+    echo json_encode(["ok" => 0, "error" => "Only admin, manager or cashier can log a remake"]);
     exit;
 }
 
@@ -53,7 +53,7 @@ if (!$stmt2) {
 }
 $stmt2->bind_param("iss", $order_id, $reason, $_SESSION['username']);
 if (!$stmt2->execute()) {
-    echo json_encode(["ok" => 0, "error" => "Failed to log remake: " . $stmt2->error]);
+    echo json_encode(["ok" => 0, "error" => "Failed to log remake. Please try again."]);
     exit;
 }
 

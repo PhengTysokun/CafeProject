@@ -121,10 +121,14 @@ $home_url = ($role === 'barista') ? 'view_order.php' : 'dashboard.php';
     --success:      #55e087;
     --warning:      #f39c12;
 }
+@keyframes fadeInUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+@keyframes scaleIn  { from{opacity:0;transform:scale(.94)}       to{opacity:1;transform:scale(1)}     }
+@keyframes fadeIn   { from{opacity:0}                             to{opacity:1}                        }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Poppins', sans-serif;
-    background: var(--bg);
+    background: radial-gradient(ellipse 80% 40% at 50% 0%,rgba(209,144,75,.07) 0%,transparent 100%),var(--bg);
     color: var(--text);
     min-height: 100vh;
 }
@@ -137,6 +141,7 @@ body {
     backdrop-filter: blur(12px);
     display: flex; align-items: center; justify-content: space-between;
     padding: 0 28px; height: 62px;
+    animation: fadeIn .35s ease both;
 }
 .topbar-left { display:flex; align-items:center; gap:16px; }
 .back-btn {
@@ -180,6 +185,7 @@ body {
     background:rgba(243,156,18,0.08);
     border:1px solid rgba(243,156,18,0.25);
     margin-bottom:24px;
+    animation:fadeInUp .4s ease .05s both;
 }
 .must-change-banner i { color:var(--warning); font-size:20px; flex-shrink:0; }
 .must-change-banner strong { display:block; font-size:14px; color:var(--text); margin-bottom:2px; }
@@ -191,6 +197,7 @@ body {
     padding:14px 18px; border-radius:12px;
     background:rgba(209,144,75,0.06); border:1px solid rgba(209,144,75,0.2);
     margin-bottom:22px;
+    animation:fadeInUp .4s ease .1s both;
 }
 .sq-missing-banner i { color:var(--accent); margin-top:2px; flex-shrink:0; }
 .sq-missing-banner span { font-size:13px; color:var(--accent-light); line-height:1.5; }
@@ -202,7 +209,13 @@ body {
     border-radius:18px;
     overflow:hidden;
     margin-bottom:20px;
+    animation:fadeInUp .45s cubic-bezier(.16,1,.3,1) both;
+    transition:border-color .2s;
 }
+.card:hover { border-color:rgba(255,255,255,.11); }
+.card:nth-of-type(1){ animation-delay:.14s }
+.card:nth-of-type(2){ animation-delay:.22s }
+.card:nth-of-type(3){ animation-delay:.30s }
 .card-header {
     padding:20px 24px 0;
     display:flex; align-items:center; gap:14px;
@@ -302,6 +315,7 @@ body {
 .profile-summary {
     display:flex; align-items:center; gap:20px;
     padding:22px 24px;
+    animation:scaleIn .45s cubic-bezier(.16,1,.3,1) .12s both;
 }
 .profile-avatar {
     width:68px; height:68px; border-radius:18px; flex-shrink:0;

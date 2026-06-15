@@ -2,11 +2,34 @@
 require 'auth.php';
 if (!can('tables')) { header("Location: dashboard.php?denied=1"); exit; }
 
+$_role     = $_SESSION['role'] ?? 'staff';
+$_is_staff = ($_role === 'staff');   // cashier — read + change table only
+
 // JSON poll endpoint
 if (isset($_GET['json'])) {
     $res = $conn->query("SELECT table_id, table_number, capacity, status FROM cafe_tables ORDER BY table_number");
     $rows = [];
     while ($r = $res->fetch_assoc()) $rows[] = $r;
+
+    // Attach most recent non-paid order to each occupied table
+    $ord_res = $conn->query("
+        SELECT order_id, daily_order_no, status, total, table_number
+        FROM orders
+        WHERE table_number IS NOT NULL AND table_number != ''
+          AND status NOT IN ('Paid','Cancelled','Refunded')
+        ORDER BY order_id DESC
+    ");
+    $order_map = [];
+    while ($o = $ord_res->fetch_assoc()) {
+        $key = strtoupper(trim($o['table_number']));
+        if (!isset($order_map[$key])) $order_map[$key] = $o;
+    }
+    foreach ($rows as &$row) {
+        $key = strtoupper(trim($row['table_number']));
+        $row['active_order'] = ($row['status'] === 'occupied' && isset($order_map[$key])) ? $order_map[$key] : null;
+    }
+    unset($row);
+
     header('Content-Type: application/json');
     echo json_encode($rows);
     exit;
@@ -16,7 +39,7 @@ if (isset($_GET['json'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'add') {
+    if ($action === 'add' && !$_is_staff) {
         $num = strtoupper(trim($_POST['table_number'] ?? ''));
         $cap = max(1, (int)($_POST['capacity'] ?? 4));
         if ($num !== '') {
@@ -27,9 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'toggle') {
         $id = (int)($_POST['table_id'] ?? 0);
         $conn->query("UPDATE cafe_tables SET status = IF(status='available','occupied','available') WHERE table_id = $id");
-    } elseif ($action === 'free_all') {
+    } elseif ($action === 'free_all' && !$_is_staff) {
         $conn->query("UPDATE cafe_tables SET status = 'available'");
-    } elseif ($action === 'delete') {
+    } elseif ($action === 'delete' && !$_is_staff) {
         $id = (int)($_POST['table_id'] ?? 0);
         $conn->query("DELETE FROM cafe_tables WHERE table_id = $id");
     }
@@ -44,6 +67,20 @@ while ($t = $tables_res->fetch_assoc()) $tables[] = $t;
 
 $occupied = count(array_filter($tables, fn($t) => $t['status'] === 'occupied'));
 $available = count($tables) - $occupied;
+
+// Most recent non-paid order per table (customer may still be seated after order closes)
+$ord_res = $conn->query("
+    SELECT order_id, daily_order_no, status, total, table_number
+    FROM orders
+    WHERE table_number IS NOT NULL AND table_number != ''
+      AND status NOT IN ('Paid','Cancelled','Refunded')
+    ORDER BY order_id DESC
+");
+$order_map = [];
+while ($o = $ord_res->fetch_assoc()) {
+    $key = strtoupper(trim($o['table_number']));
+    if (!isset($order_map[$key])) $order_map[$key] = $o;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -266,6 +303,107 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
 
 /* ── Status-change flash (applied by JS) ── */
 .card-flash { animation: flash .5s ease !important; }
+
+/* ── Change Table button ── */
+.btn-change-table {
+    display: block; width: 100%; margin-top: 6px;
+    padding: 6px 0; border-radius: 8px; border: none;
+    background: rgba(255,255,255,.06); color: #aaa;
+    font-size: 11px; font-weight: 700; cursor: pointer;
+    font-family: 'Poppins', sans-serif;
+    text-align: center; transition: all .22s;
+    letter-spacing: .02em;
+}
+.btn-change-table:hover { background: rgba(209,144,75,.18); color: #d1904b; transform: translateY(-1px); }
+
+/* ── Change Table Modal ── */
+.ct-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.78); backdrop-filter: blur(10px);
+    z-index: 1000; justify-content: center; align-items: center;
+}
+.ct-overlay.active { display: flex; }
+.ct-modal {
+    background: #141414; border: 1px solid #2a2a2a;
+    border-radius: 20px; padding: 28px 28px 24px;
+    width: 340px; max-width: 95vw;
+    animation: slideDown .25s ease both;
+    box-shadow: 0 24px 64px rgba(0,0,0,.7);
+}
+.ct-modal h3 {
+    font-size: 16px; font-weight: 700; color: #f0f0f0;
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px;
+}
+.ct-modal h3 i { color: #d1904b; }
+.ct-from {
+    background: rgba(231,76,60,.07); border: 1px solid rgba(231,76,60,.22);
+    border-radius: 12px; padding: 14px 16px; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 12px;
+}
+.ct-from-icon { font-size: 22px; color: #ff6b6b; }
+.ct-from-info .ct-order-label { font-size: 11px; color: #888; margin-bottom: 2px; }
+.ct-from-info .ct-table-name  { font-size: 22px; font-weight: 800; color: #ff6b6b; line-height: 1; }
+.ct-from-info .ct-order-no    { font-size: 12px; color: #aaa; margin-top: 3px; }
+.ct-arrow { text-align: center; color: #d1904b; font-size: 18px; margin-bottom: 14px; }
+.ct-select-wrap label { font-size: 11px; color: #777; font-weight: 500; margin-bottom: 6px; display: block; }
+.ct-select {
+    width: 100%; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid #2a2a2a; background: #0d0d0d;
+    color: #f0f0f0; font-family: 'Poppins', sans-serif;
+    font-size: 13px; outline: none; cursor: pointer;
+    transition: border-color .2s; margin-bottom: 20px;
+}
+.ct-select:focus { border-color: #d1904b; box-shadow: 0 0 0 3px rgba(209,144,75,.1); }
+.ct-actions { display: flex; gap: 10px; }
+.ct-btn-confirm {
+    flex: 1; padding: 10px; border-radius: 10px; border: none;
+    background: linear-gradient(135deg,#d1904b,#e8a85d);
+    color: #000; font-size: 13px; font-weight: 700;
+    cursor: pointer; font-family: 'Poppins', sans-serif;
+    transition: all .2s; box-shadow: 0 3px 12px rgba(209,144,75,.25);
+}
+.ct-btn-confirm:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.ct-btn-confirm:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.ct-btn-close {
+    flex: 1; padding: 10px; border-radius: 10px;
+    border: 1px solid #2a2a2a; background: #111;
+    color: #888; font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: 'Poppins', sans-serif;
+    transition: all .2s;
+}
+.ct-btn-close:hover { border-color: #444; color: #f0f0f0; }
+
+/* ── Active order badge on table card ── */
+.order-badge {
+    margin: 8px 0 10px;
+    background: rgba(209,144,75,.1);
+    border: 1px solid rgba(209,144,75,.25);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 11px;
+    text-align: left;
+}
+.order-badge .ob-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.order-badge .ob-num { font-weight: 700; color: #d1904b; font-size: 13px; }
+.order-badge .ob-status {
+    font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 20px;
+    background: rgba(255,255,255,.07); color: #aaa;
+}
+.order-badge .ob-status.Preparing    { background: rgba(93,173,226,.15); color: #5dade2; }
+.order-badge .ob-status.PendingPayment { background: rgba(231,76,60,.15); color: #ff6b6b; }
+.order-badge .ob-status.Completed    { background: rgba(62,207,112,.15); color: #3ecf70; }
+.order-badge .ob-total { color: #d1904b; font-weight: 600; font-size: 12px; margin-top: 4px; }
+.btn-view-order {
+    display: block; width: 100%; margin-top: 8px;
+    padding: 6px 0; border-radius: 8px; border: none;
+    background: rgba(209,144,75,.18); color: #d1904b;
+    font-size: 11px; font-weight: 700; cursor: pointer;
+    font-family: 'Poppins', sans-serif; text-decoration: none;
+    text-align: center; transition: all .22s;
+    letter-spacing: .02em;
+}
+.btn-view-order:hover { background: rgba(209,144,75,.35); transform: translateY(-1px); }
 </style>
 </head>
 <body>
@@ -306,7 +444,7 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
     <!-- Tables grid -->
     <div class="section-head">
         <h2>All Tables</h2>
-        <?php if ($occupied > 0): ?>
+        <?php if ($occupied > 0 && !$_is_staff): ?>
         <form method="POST" style="display:inline;">
             <input type="hidden" name="action" value="free_all">
             <button type="submit" class="btn-free-all" onclick="return confirm('Mark all tables as available?')">
@@ -321,6 +459,10 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
     <?php else: ?>
     <div class="tables-grid">
         <?php foreach ($tables as $t): ?>
+        <?php
+            $tkey = strtoupper(trim($t['table_number']));
+            $ao   = ($t['status'] === 'occupied' && isset($order_map[$tkey])) ? $order_map[$tkey] : null;
+        ?>
         <div class="table-card <?= $t['status'] ?>" data-id="<?= (int)$t['table_id'] ?>">
             <div class="table-icon"><i class="fa-solid <?= $t['status'] === 'occupied' ? 'fa-users' : 'fa-chair' ?>"></i></div>
             <div class="table-number"><?= htmlspecialchars($t['table_number']) ?></div>
@@ -328,6 +470,23 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
             <div class="table-status <?= $t['status'] ?>">
                 <span class="status-dot"></span>
                 <?= ucfirst($t['status']) ?>
+            </div>
+            <div class="order-badge-wrap">
+            <?php if ($ao): ?>
+            <div class="order-badge">
+                <div class="ob-row">
+                    <span class="ob-num">#<?= $ao['daily_order_no'] ?></span>
+                    <span class="ob-status <?= $ao['status'] ?>"><?= $ao['status'] === 'PendingPayment' ? 'Pending Pay' : $ao['status'] ?></span>
+                </div>
+                <div class="ob-total">$<?= number_format((float)$ao['total'], 2) ?></div>
+            </div>
+            <a href="view_order.php?tab=<?= urlencode($ao['status']) ?>&highlight=<?= (int)$ao['order_id'] ?>" class="btn-view-order">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> View Order
+            </a>
+            <button class="btn-change-table" onclick="openChangeTable(<?= (int)$ao['order_id'] ?>, '<?= htmlspecialchars($ao['daily_order_no'], ENT_QUOTES) ?>', '<?= htmlspecialchars($t['table_number'], ENT_QUOTES) ?>')">
+                <i class="fa-solid fa-right-left"></i> Change Table
+            </button>
+            <?php endif; ?>
             </div>
             <div class="table-actions">
                 <form method="POST" style="flex:1;display:flex;">
@@ -337,6 +496,7 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
                         <?= $t['status'] === 'available' ? 'Occupy' : 'Free' ?>
                     </button>
                 </form>
+                <?php if (!$_is_staff): ?>
                 <form method="POST">
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="table_id" value="<?= (int)$t['table_id'] ?>">
@@ -344,12 +504,14 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
                         <i class="fa-solid fa-trash-can"></i>
                     </button>
                 </form>
+                <?php endif; ?>
             </div>
         </div>
         <?php endforeach; ?>
     </div>
     <?php endif; ?>
 
+    <?php if (!$_is_staff): ?>
     <!-- Add table form -->
     <div class="add-card">
         <h3><i class="fa-solid fa-plus"></i> Add New Table</h3>
@@ -366,12 +528,69 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
             <button type="submit" class="btn-add"><i class="fa-solid fa-plus"></i> Add Table</button>
         </form>
     </div>
+    <?php endif; ?>
 
 </div>
 
+<!-- Change Table Modal -->
+<div class="ct-overlay" id="ctOverlay" onclick="if(event.target===this)closeChangeTable()">
+  <div class="ct-modal">
+    <h3><i class="fa-solid fa-right-left"></i> Change Table</h3>
+    <div class="ct-from">
+      <div class="ct-from-icon"><i class="fa-solid fa-users"></i></div>
+      <div class="ct-from-info">
+        <div class="ct-order-label">Active Order</div>
+        <div class="ct-table-name" id="ctFromTable">—</div>
+        <div class="ct-order-no" id="ctOrderNo">Order #—</div>
+      </div>
+    </div>
+    <div class="ct-arrow"><i class="fa-solid fa-arrow-down"></i></div>
+    <div class="ct-select-wrap">
+      <label>Move customer to</label>
+      <select class="ct-select" id="ctNewTable">
+        <option value="">— Select new table —</option>
+      </select>
+    </div>
+    <div class="ct-actions">
+      <button class="ct-btn-confirm" id="ctConfirmBtn" onclick="submitChangeTable()">
+        <i class="fa-solid fa-check"></i> Confirm
+      </button>
+      <button class="ct-btn-close" onclick="closeChangeTable()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="ctToast" style="display:none;position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+  padding:12px 22px;border-radius:12px;font-size:13px;font-weight:600;z-index:10000;
+  box-shadow:0 8px 32px rgba(0,0,0,.6);white-space:nowrap;pointer-events:none;"></div>
+
 <script>
 (function() {
-  function poll() {
+  function renderOrderBadge(wrap, ao, tableNumber) {
+    if (!ao) { wrap.innerHTML = ''; return; }
+    var statusLabel = ao.status === 'PendingPayment' ? 'Pending Pay' : ao.status;
+    var total = parseFloat(ao.total).toFixed(2);
+    var tbl = (tableNumber || '').replace(/'/g, "\\'");
+    wrap.innerHTML =
+      '<div class="order-badge">' +
+        '<div class="ob-row">' +
+          '<span class="ob-num">#' + ao.daily_order_no + '</span>' +
+          '<span class="ob-status ' + ao.status + '">' + statusLabel + '</span>' +
+        '</div>' +
+        '<div class="ob-total">$' + total + '</div>' +
+      '</div>' +
+      '<a href="view_order.php?tab=' + encodeURIComponent(ao.status) + '&highlight=' + ao.order_id + '" class="btn-view-order">' +
+        '<i class="fa-solid fa-arrow-up-right-from-square"></i> View Order' +
+      '</a>' +
+      '<button class="btn-change-table" onclick="openChangeTable(' + ao.order_id + ', \'' + ao.daily_order_no + '\', \'' + tbl + '\')">' +
+        '<i class="fa-solid fa-right-left"></i> Change Table' +
+      '</button>';
+  }
+
+  var poll; // forward-declare so submitChangeTable can call it
+
+  poll = function poll() {
     fetch('tables.php?json=1')
       .then(function(r) { return r.json(); })
       .then(function(tables) {
@@ -381,8 +600,13 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
           if (!card) return;
           var wasOccupied = card.classList.contains('occupied');
           var isOccupied  = t.status === 'occupied';
+
+          // Always update the order badge (order status/total may change even without table status change)
+          var badgeWrap = card.querySelector('.order-badge-wrap');
+          if (badgeWrap) renderOrderBadge(badgeWrap, t.active_order || null, t.table_number);
+
           if (wasOccupied === isOccupied) { isOccupied ? occupied++ : available++; return; }
-          // Status changed — flash + update card
+          // Table status changed — flash + update card
           card.classList.add('card-flash');
           card.addEventListener('animationend', function h() { card.classList.remove('card-flash'); card.removeEventListener('animationend',h); });
           card.className = 'table-card ' + t.status;
@@ -399,10 +623,10 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
         // Update stats
         document.querySelector('.stat-icon.green + div .stat-value').textContent = available;
         document.querySelector('.stat-icon.orange + div .stat-value').textContent = occupied;
-        // Show/hide Free All button
+        // Show/hide Free All button (staff/cashier never sees this)
         var freeAllForm = document.querySelector('.btn-free-all') ? document.querySelector('.btn-free-all').closest('form') : null;
         var sectionHead = document.querySelector('.section-head');
-        if (occupied > 0 && !freeAllForm) {
+        if (occupied > 0 && !freeAllForm && !<?= $_is_staff ? 'true' : 'false' ?>) {
           var f = document.createElement('form');
           f.method = 'POST'; f.style.display = 'inline';
           f.innerHTML = '<input type="hidden" name="action" value="free_all">' +
@@ -416,6 +640,104 @@ body { font-family: 'Poppins', sans-serif; background: #0b0b0b; color: #f0f0f0; 
       .catch(function() {});
   }
   setInterval(poll, 5000);
+
+  // ── Change Table ──
+  var _ctOrderId   = 0;
+  var _ctFromTable = '';
+
+  window.openChangeTable = function(orderId, orderNo, fromTable) {
+    _ctOrderId   = orderId;
+    _ctFromTable = fromTable;
+    document.getElementById('ctFromTable').textContent = fromTable;
+    document.getElementById('ctOrderNo').textContent   = 'Order #' + orderNo;
+    var sel = document.getElementById('ctNewTable');
+    sel.innerHTML = '<option value="">Loading tables...</option>';
+    document.getElementById('ctOverlay').classList.add('active');
+
+    fetch('tables.php?json=1')
+      .then(function(r) { return r.json(); })
+      .then(function(tables) {
+        sel.innerHTML = '<option value="">— Select new table —</option>';
+        var avail = tables.filter(function(t) {
+          return t.status === 'available' && t.table_number.toUpperCase() !== fromTable.toUpperCase();
+        });
+        var occ = tables.filter(function(t) {
+          return t.status === 'occupied' && t.table_number.toUpperCase() !== fromTable.toUpperCase();
+        });
+        if (avail.length > 0) {
+          var grpA = document.createElement('optgroup');
+          grpA.label = '✓ Available';
+          avail.forEach(function(t) {
+            var o = document.createElement('option');
+            o.value = t.table_number;
+            o.textContent = t.table_number + '  —  ' + t.capacity + ' seats';
+            grpA.appendChild(o);
+          });
+          sel.appendChild(grpA);
+        }
+        if (occ.length > 0) {
+          var grpO = document.createElement('optgroup');
+          grpO.label = '● Occupied';
+          occ.forEach(function(t) {
+            var o = document.createElement('option');
+            o.value = t.table_number;
+            o.textContent = t.table_number + '  —  ' + t.capacity + ' seats  (occupied)';
+            grpO.appendChild(o);
+          });
+          sel.appendChild(grpO);
+        }
+        if (avail.length === 0 && occ.length === 0) {
+          sel.innerHTML = '<option value="">No other tables available</option>';
+        }
+      })
+      .catch(function() {
+        sel.innerHTML = '<option value="">Error loading tables</option>';
+      });
+  };
+
+  window.closeChangeTable = function() {
+    document.getElementById('ctOverlay').classList.remove('active');
+    _ctOrderId = 0; _ctFromTable = '';
+  };
+
+  window.submitChangeTable = function() {
+    var newTable = document.getElementById('ctNewTable').value.trim();
+    if (!newTable) { showCtToast('Please select a table', true); return; }
+    if (!_ctOrderId) return;
+    var btn = document.getElementById('ctConfirmBtn');
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Moving...';
+
+    var body = new URLSearchParams({ order_id: _ctOrderId, table_number: newTable });
+    fetch('update_table.php', { method: 'POST', body: body })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) {
+          showCtToast('Moved to Table ' + newTable, false);
+          closeChangeTable();
+          poll();
+        } else {
+          showCtToast(data.error || 'Failed to change table', true);
+        }
+      })
+      .catch(function() { showCtToast('Connection error', true); })
+      .finally(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> Confirm';
+      });
+  };
+
+  function showCtToast(msg, isErr) {
+    var el = document.getElementById('ctToast');
+    el.innerHTML = (isErr ? '<i class="fa-solid fa-circle-exclamation"></i> ' : '<i class="fa-solid fa-circle-check"></i> ') + msg;
+    el.style.cssText = 'display:block;position:fixed;bottom:28px;left:50%;transform:translateX(-50%);' +
+      'padding:12px 22px;border-radius:12px;font-size:13px;font-weight:600;z-index:10000;' +
+      'box-shadow:0 8px 32px rgba(0,0,0,.6);white-space:nowrap;pointer-events:none;' +
+      (isErr
+        ? 'background:#2a0e0e;border:1px solid rgba(231,76,60,.3);color:#ff6b6b;'
+        : 'background:#0e2a1a;border:1px solid rgba(62,207,112,.3);color:#3ecf70;');
+    clearTimeout(el._t);
+    el._t = setTimeout(function() { el.style.display = 'none'; }, 3000);
+  }
 
   // Stat counter animation on load
   document.querySelectorAll('.stat-value').forEach(function(el) {

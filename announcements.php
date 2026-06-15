@@ -14,6 +14,11 @@ $conn->query("CREATE TABLE IF NOT EXISTS announcements (
     is_active TINYINT(1) DEFAULT 1
 )");
 
+// Mark all active announcements as read for this user
+$conn->query("INSERT IGNORE INTO announcement_reads (user_id, announcement_id)
+    SELECT " . (int)$_SESSION['user_id'] . ", id FROM announcements
+    WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE())");
+
 $toast = '';
 $toast_type = '';
 
@@ -58,8 +63,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$announcements = $conn->query("SELECT * FROM announcements ORDER BY created_at DESC")->fetch_all(MYSQLI_ASSOC);
-$active_count  = count(array_filter($announcements, fn($a) => $a['is_active'] && (is_null($a['expires_at']) || $a['expires_at'] >= date('Y-m-d'))));
+$per_page    = 10;
+$page        = max(1, (int)($_GET['page'] ?? 1));
+$total_count = (int)$conn->query("SELECT COUNT(*) FROM announcements")->fetch_row()[0];
+$active_count = (int)$conn->query("SELECT COUNT(*) FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE())")->fetch_row()[0];
+$total_pages = $total_count > 0 ? (int)ceil($total_count / $per_page) : 1;
+$page        = min($page, $total_pages);
+$offset      = ($page - 1) * $per_page;
+$pg_base     = 'announcements.php?page=';
+$stmt = $conn->prepare("SELECT * FROM announcements ORDER BY created_at DESC LIMIT ? OFFSET ?");
+$stmt->bind_param("ii", $per_page, $offset);
+$stmt->execute();
+$announcements = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -268,6 +283,16 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     animation-delay:.30s;
 }
 
+/* Pagination */
+.pg-wrap { padding:14px 18px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.pg-nav { display:flex; gap:4px; flex-wrap:wrap; }
+.pg-btn { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; text-decoration:none; transition:all .2s; }
+.pg-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pg-active { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; background:var(--accent); border:1px solid var(--accent); color:#000; font-size:13px; font-weight:700; }
+.pg-disabled { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); color:var(--text-muted); font-size:13px; opacity:.35; cursor:default; }
+.pg-ellipsis { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; color:var(--text-muted); font-size:13px; }
+.pg-info { font-size:12px; color:var(--text-muted); }
+
 /* Staggered announcement rows */
 .ann-row { animation:fadeUp .35s cubic-bezier(.22,1,.36,1) both; }
 .ann-row:nth-child(1)  { animation-delay:.18s; }
@@ -315,7 +340,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 <div class="card-icon"><i class="fa-solid fa-bullhorn"></i></div>
                 <div>
                     <div class="card-title">All Announcements</div>
-                    <div class="card-subtitle"><?= count($announcements) ?> total</div>
+                    <div class="card-subtitle"><?= number_format($total_count) ?> total</div>
                 </div>
             </div>
         </div>
@@ -373,6 +398,39 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
             </div>
         </div>
         <?php endforeach; ?>
+        <?php endif; ?>
+        <?php if ($total_pages > 1): ?>
+        <div class="pg-wrap">
+            <span class="pg-info">Page <?= $page ?> of <?= $total_pages ?> · <?= number_format($total_count) ?> total</span>
+            <nav class="pg-nav">
+                <?php if ($page > 1): ?>
+                <a href="<?= $pg_base ?>1" class="pg-btn">«</a>
+                <a href="<?= $pg_base ?><?= $page - 1 ?>" class="pg-btn">‹</a>
+                <?php else: ?>
+                <span class="pg-disabled">«</span>
+                <span class="pg-disabled">‹</span>
+                <?php endif; ?>
+                <?php
+                $w_start = max(1, $page - 2);
+                $w_end   = min($total_pages, $page + 2);
+                if ($w_start > 1): ?><span class="pg-ellipsis">…</span><?php endif;
+                for ($pg_i = $w_start; $pg_i <= $w_end; $pg_i++): ?>
+                    <?php if ($pg_i === $page): ?>
+                    <span class="pg-active"><?= $pg_i ?></span>
+                    <?php else: ?>
+                    <a href="<?= $pg_base ?><?= $pg_i ?>" class="pg-btn"><?= $pg_i ?></a>
+                    <?php endif; ?>
+                <?php endfor;
+                if ($w_end < $total_pages): ?><span class="pg-ellipsis">…</span><?php endif; ?>
+                <?php if ($page < $total_pages): ?>
+                <a href="<?= $pg_base ?><?= $page + 1 ?>" class="pg-btn">›</a>
+                <a href="<?= $pg_base ?><?= $total_pages ?>" class="pg-btn">»</a>
+                <?php else: ?>
+                <span class="pg-disabled">›</span>
+                <span class="pg-disabled">»</span>
+                <?php endif; ?>
+            </nav>
+        </div>
         <?php endif; ?>
     </div>
 </div>

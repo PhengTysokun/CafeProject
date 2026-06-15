@@ -1,0 +1,35 @@
+# ── HTTPS redirect ──────────────────────────────────────────────────────────
+# Uncomment the 4 lines below AFTER you enable SSL in XAMPP (httpd-ssl.conf).
+# Without SSL enabled first, this will break the site.
+#
+# RewriteEngine On
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ── Security headers ────────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+    # Prevent browsers from sniffing MIME types
+    Header always set X-Content-Type-Options "nosniff"
+
+    # Block the page from being embedded in iframes (clickjacking protection)
+    Header always set X-Frame-Options "DENY"
+
+    # Enable browser XSS filter
+    Header always set X-XSS-Protection "1; mode=block"
+
+    # Do not send referrer to external sites
+    Header always set Referrer-Policy "same-origin"
+
+    # Remove server version banner
+    Header unset Server
+    Header always unset X-Powered-By
+</IfModule>
+
+# ── Block direct access to sensitive files ───────────────────────────────────
+<FilesMatch "\.(env|sql|log|bak|sh|json|md|gitignore)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# ── Disable directory listing ────────────────────────────────────────────────
+Options -Indexes

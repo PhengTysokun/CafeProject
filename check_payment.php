@@ -1,10 +1,16 @@
 <?php
+session_start();
 require 'config.php';
 require __DIR__ . '/bakong-khqr-php-main/vendor/autoload.php';
 
 use KHQR\BakongKHQR;
 
 header('Content-Type: application/json');
+
+if (!isset($_SESSION['user_id'])) {
+    echo json_encode(['paid' => false, 'error' => 'Unauthorized']);
+    exit;
+}
 
 $config = require __DIR__ . '/bakong_config.php';
 
@@ -17,7 +23,7 @@ if ($order_id <= 0) {
 }
 
 $stmt = $conn->prepare("
-    SELECT o.order_id, o.status, o.bakong_md5, o.payment_method, o.loyalty_card_id,
+    SELECT o.order_id, o.status, o.bakong_md5, o.payment_method, o.loyalty_card_id, o.points_earned,
            op.payment_id, op.payment_status
     FROM orders o
     LEFT JOIN order_payments op ON o.order_id = op.order_id AND op.payment_method = 'bakong'
@@ -75,9 +81,9 @@ if ($manual === 1) {
         // 3. If no pending payments, advance order status
         if ($pending['pending_count'] == 0) {
             if ($order['payment_method'] === 'paylater') {
-                // Paylater order settled via Bakong at the counter → mark as Paid and close
+                // Paylater order settled via Bakong at the counter → mark as Completed and close
                 $stmt_status = $conn->prepare("
-                    UPDATE orders SET status = 'Preparing', is_open = 0
+                    UPDATE orders SET status = 'Completed', is_open = 0
                     WHERE order_id = ? AND status = 'Preparing'
                 ");
             } else {
@@ -90,8 +96,8 @@ if ($manual === 1) {
             $stmt_status->bind_param("i", $order_id);
             $stmt_status->execute();
 
-            // Award loyalty points for paylater orders settled via Bakong
-            if ($order['payment_method'] === 'paylater') {
+            // Award loyalty points for paylater orders settled via Bakong (only once)
+            if ($order['payment_method'] === 'paylater' && (int)($order['points_earned'] ?? 0) === 0) {
                 $lc_id = (int)($order['loyalty_card_id'] ?? 0);
                 if ($lc_id > 0) {
                     $pts_s = $conn->prepare("SELECT SUM(quantity) AS t FROM order_items WHERE order_id = ?");
@@ -139,10 +145,7 @@ if ($manual === 1) {
 
     } catch (Throwable $e) {
         $conn->rollback();
-        echo json_encode([
-            'paid' => false,
-            'error' => $e->getMessage()
-        ]);
+        echo json_encode(['paid' => false, 'error' => 'Payment confirmation failed. Please try again.']);
         exit;
     }
 }
@@ -183,9 +186,9 @@ try {
             // 3. If no pending payments, advance order status
             if ($pending['pending_count'] == 0) {
                 if ($order['payment_method'] === 'paylater') {
-                    // Paylater order settled via Bakong at the counter → mark as Paid and close
+                    // Paylater order settled via Bakong at the counter → mark as Completed and close
                     $stmt_status = $conn->prepare("
-                        UPDATE orders SET status = 'Preparing', is_open = 0
+                        UPDATE orders SET status = 'Completed', is_open = 0
                         WHERE order_id = ? AND status = 'Preparing'
                     ");
                 } else {
@@ -198,8 +201,8 @@ try {
                 $stmt_status->bind_param("i", $order_id);
                 $stmt_status->execute();
 
-                // Award loyalty points for paylater orders settled via Bakong
-                if ($order['payment_method'] === 'paylater') {
+                // Award loyalty points for paylater orders settled via Bakong (only once)
+                if ($order['payment_method'] === 'paylater' && (int)($order['points_earned'] ?? 0) === 0) {
                     $lc_id = (int)($order['loyalty_card_id'] ?? 0);
                     if ($lc_id > 0) {
                         $pts_s = $conn->prepare("SELECT SUM(quantity) AS t FROM order_items WHERE order_id = ?");
@@ -247,19 +250,13 @@ try {
 
         } catch (Throwable $e) {
             $conn->rollback();
-            echo json_encode([
-                'paid' => false,
-                'error' => $e->getMessage()
-            ]);
+            echo json_encode(['paid' => false, 'error' => 'Payment confirmation failed. Please try again.']);
             exit;
         }
     }
 
     echo json_encode(['paid' => false]);
 } catch (Throwable $e) {
-    echo json_encode([
-        'paid' => false,
-        'error' => $e->getMessage()
-    ]);
+    echo json_encode(['paid' => false]);
 }
 ?>

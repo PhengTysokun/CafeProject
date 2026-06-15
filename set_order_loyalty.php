@@ -1,7 +1,6 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) session_start();
-require_once 'config.php';
-require 'admin_only.php';
+require 'auth.php';
+if (!in_array($_SESSION['role'], ['admin', 'manager', 'staff'])) { echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit; }
 header('Content-Type: application/json');
 
 $order_id   = (int)($_POST['order_id'] ?? 0);

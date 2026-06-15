@@ -1,5 +1,6 @@
 <?php
-require 'admin_only.php';
+require 'auth.php';
+if (!in_array($_SESSION['role'], ['admin', 'manager', 'staff'])) { header("Location: dashboard.php?denied=1"); exit; }
 
 $_SESSION['redirect_count'] = 0;
 
@@ -52,7 +53,7 @@ if (isset($_POST['ajax_update'])) {
         $after_pl_aj -= $manual_disc_pl_aj;
     }
     $subtotal_after = $after_pl_aj;
-    $tax   = $subtotal_after * 0.10;
+    $tax   = $subtotal_after * (TAX_RATE / 100);
     $total = round($subtotal_after + $tax, 2);
     $updated = $_SESSION['cart'][$i] ?? null;
     header('Content-Type: application/json; charset=utf-8');
@@ -102,6 +103,7 @@ if (isset($_GET['remove'])) {
     if (isset($_SESSION['cart'][$i])) {
         unset($_SESSION['cart'][$i]);
         $_SESSION['cart'] = array_values($_SESSION['cart']);
+        if (empty($_SESSION['cart'])) unset($_SESSION['cart_started_at']);
     }
     echo "<script>window.location.href='cart_paylater.php';</script>";
     exit;
@@ -146,7 +148,7 @@ if ($md_pl && (float)($md_pl['amount'] ?? 0) > 0) {
     $after_promos_pl -= $manual_discount_pl;
 }
 $subtotal_after = $after_promos_pl;
-$tax   = $subtotal_after * 0.10;
+$tax   = $subtotal_after * (TAX_RATE / 100);
 $total = round($subtotal_after + $tax, 2);
 ?>
 <!DOCTYPE html>

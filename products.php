@@ -48,6 +48,7 @@ arsort($catCounts);
 $top   = array_key_first($catCounts) ?? '';
 
 $availPct = $totalProducts > 0 ? round($availCount / $totalProducts * 100) : 0;
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1234,6 +1235,16 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
 
 .product-card .content h3.qv-trigger { cursor: pointer; }
 .product-card .content h3.qv-trigger:hover { text-decoration: underline; text-decoration-color: rgba(209,144,75,0.4); text-underline-offset: 3px; }
+
+/* Pagination */
+.pg-wrap { padding:14px 20px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.pg-nav { display:flex; gap:4px; flex-wrap:wrap; }
+.pg-btn { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; text-decoration:none; transition:var(--transition); }
+.pg-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pg-active { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; background:var(--accent); border:1px solid var(--accent); color:#000; font-size:13px; font-weight:700; }
+.pg-disabled { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); color:var(--text-muted); font-size:13px; opacity:.35; cursor:default; }
+.pg-ellipsis { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; color:var(--text-muted); font-size:13px; }
+.pg-info { font-size:12px; color:var(--text-muted); }
 </style>
 </head>
 
@@ -1505,7 +1516,15 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             </div>
         <?php endif; ?>
 
+        <div id="filterEmpty" class="empty-state" style="display:none">
+            <i class="fa-solid fa-magnifying-glass empty-icon"></i>
+            <h3>No Results</h3><p>Try a different search or filter.</p>
+        </div>
     </div><!-- /product-grid -->
+    <div id="pgWrap" class="pg-wrap" style="display:none">
+        <span id="pgInfo" class="pg-info"></span>
+        <nav id="pgNav" class="pg-nav"></nav>
+    </div>
 </div><!-- /container -->
 
 <!-- ========== BULK ACTION BAR ========== -->
@@ -1640,10 +1659,15 @@ document.getElementById('sortSelect').addEventListener('change', function () {
 });
 
 // ─────────────────────────────────────────────
-// APPLY ALL FILTERS + SORT
+// APPLY ALL FILTERS + SORT  (JS pagination)
 // ─────────────────────────────────────────────
+const PER_PAGE   = 12;
+let currentPage  = 1;
+let lastFiltered = [];
+
 function applyFilters() {
-    let visible = allCards.filter(card => {
+    currentPage  = 1;
+    lastFiltered = allCards.filter(card => {
         const catMatch   = activeFilter === 'all' || card.dataset.category === activeFilter;
         const nameMatch  = card.dataset.name.includes(activeSearch);
         const price      = parseFloat(card.dataset.price);
@@ -1652,8 +1676,7 @@ function applyFilters() {
         const badgeMatch = activeBadge === 'all' || (activeBadge === 'has' ? hasBadge : !hasBadge);
         return catMatch && nameMatch && priceMatch && badgeMatch;
     });
-
-    visible.sort((a, b) => {
+    lastFiltered.sort((a, b) => {
         switch (activeSort) {
             case 'name-asc':      return a.dataset.name.localeCompare(b.dataset.name);
             case 'name-desc':     return b.dataset.name.localeCompare(a.dataset.name);
@@ -1664,32 +1687,66 @@ function applyFilters() {
             default:              return parseInt(b.dataset.id) - parseInt(a.dataset.id);
         }
     });
+    renderPage();
+}
+
+function renderPage() {
+    const total      = lastFiltered.length;
+    const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+    currentPage      = Math.min(currentPage, totalPages);
+    const start      = (currentPage - 1) * PER_PAGE;
+    const pageCards  = lastFiltered.slice(start, start + PER_PAGE);
 
     allCards.forEach(c => { c.style.display = 'none'; c.style.animation = 'none'; });
 
     const grid = document.getElementById('productGrid');
-    visible.forEach((card, i) => {
+    pageCards.forEach((card, i) => {
         card.style.display = '';
-        grid.appendChild(card); // reorder in DOM
+        grid.appendChild(card);
         void card.offsetWidth;
         card.style.animation = `cardIn 0.3s ease ${Math.min(i * 0.04, 0.4)}s both`;
     });
 
-    document.getElementById('resultsCount').textContent = visible.length;
+    document.getElementById('resultsCount').textContent = total;
+    document.getElementById('filterEmpty').style.display = total === 0 ? 'block' : 'none';
 
-    let empty = document.querySelector('.empty-state');
-    if (visible.length === 0) {
-        if (!empty) {
-            empty = document.createElement('div');
-            empty.className = 'empty-state';
-            empty.innerHTML = `<i class="fa-solid fa-magnifying-glass empty-icon"></i>
-                <h3>No Results</h3><p>Try a different search or filter.</p>`;
-            grid.appendChild(empty);
-        }
-        empty.style.display = 'block';
-    } else if (empty) {
-        empty.style.display = 'none';
+    renderPagination(total, totalPages);
+}
+
+function renderPagination(total, totalPages) {
+    const wrap = document.getElementById('pgWrap');
+    if (totalPages <= 1) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'flex';
+
+    document.getElementById('pgInfo').textContent =
+        `Page ${currentPage} of ${totalPages} · ${total} products`;
+
+    const nav = document.getElementById('pgNav');
+    let html = currentPage > 1
+        ? `<a href="#" class="pg-btn" onclick="goPage(1);return false;">«</a>
+           <a href="#" class="pg-btn" onclick="goPage(${currentPage - 1});return false;">‹</a>`
+        : `<span class="pg-disabled">«</span><span class="pg-disabled">‹</span>`;
+
+    const ws = Math.max(1, currentPage - 2);
+    const we = Math.min(totalPages, currentPage + 2);
+    if (ws > 1) html += `<span class="pg-ellipsis">…</span>`;
+    for (let i = ws; i <= we; i++) {
+        html += i === currentPage
+            ? `<span class="pg-active">${i}</span>`
+            : `<a href="#" class="pg-btn" onclick="goPage(${i});return false;">${i}</a>`;
     }
+    if (we < totalPages) html += `<span class="pg-ellipsis">…</span>`;
+    html += currentPage < totalPages
+        ? `<a href="#" class="pg-btn" onclick="goPage(${currentPage + 1});return false;">›</a>
+           <a href="#" class="pg-btn" onclick="goPage(${totalPages});return false;">»</a>`
+        : `<span class="pg-disabled">›</span><span class="pg-disabled">»</span>`;
+    nav.innerHTML = html;
+}
+
+function goPage(p) {
+    currentPage = p;
+    renderPage();
+    document.getElementById('productGrid').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ─────────────────────────────────────────────
@@ -2226,6 +2283,9 @@ document.addEventListener('DOMContentLoaded', () => {
         listViewBtn.classList.add('active');
         gridViewBtn.classList.remove('active');
     }
+    // initial JS pagination render
+    lastFiltered = [...allCards];
+    renderPage();
 });
 </script>
 <?php if ($_flash_welcome): ?>

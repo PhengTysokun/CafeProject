@@ -200,6 +200,7 @@ $cnt_out  = count(array_filter($rows, fn($r) => $r['status']==='out'));
 $stk_val  = array_sum(array_column($rows, 'value'));
 $critical = $cnt_low + $cnt_out;
 
+
 function fmt($n)   { return rtrim(rtrim(number_format((float)$n,2,'.','' ),'0'),'.'); }
 function money($n) { return number_format((float)$n,2); }
 function h($s)     { return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
@@ -521,6 +522,16 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
 /* Hide per-row Stock Value column — footer total still shows */
 #ingredientTable th:nth-child(6),
 #ingredientTable td:nth-child(6) { display:none; }
+
+/* Pagination */
+.pg-wrap { padding:14px 18px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.pg-nav { display:flex; gap:4px; flex-wrap:wrap; }
+.pg-btn { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; text-decoration:none; transition:var(--transition); }
+.pg-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pg-active { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; background:var(--accent); border:1px solid var(--accent); color:#000; font-size:13px; font-weight:700; }
+.pg-disabled { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); color:var(--text-muted); font-size:13px; opacity:.35; cursor:default; }
+.pg-ellipsis { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; color:var(--text-muted); font-size:13px; }
+.pg-info { font-size:12px; color:var(--text-muted); }
 </style>
 </head>
 <body>
@@ -767,6 +778,10 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
             <button class="btn-nav" onclick="resetFilters()"><i class="fa-solid fa-rotate-left"></i> Reset filters</button>
         </div>
     </div>
+    <div id="pgWrap" class="pg-wrap" style="display:none">
+        <span id="pgInfo" class="pg-info"></span>
+        <nav id="pgNav" class="pg-nav"></nav>
+    </div>
 </div>
 
 <!-- ── QUICK RESTOCK MODAL ── -->
@@ -939,27 +954,71 @@ function resetFilters() {
     setFilter(document.querySelector('[data-filter="all"]'), 'all');
 }
 
-/* ── APPLY FILTERS ── */
+/* ── APPLY FILTERS + JS PAGINATION ── */
+const PER_PAGE_ING = 10;
+let currentPageIng  = 1;
+let lastFilteredIng = [];
+
 function applyFilters() {
-    const q    = document.getElementById('searchInput').value.toLowerCase().trim();
-    const rows = document.querySelectorAll('#tableBody tr[data-name]');
-    let shown = 0, shownVal = 0;
-    rows.forEach(row => {
-        const nameOk   = !q || row.dataset.name.includes(q);
-        let   statOk;
-        if (currentFilter === 'all')      statOk = true;
-        else if (currentFilter === 'critical') statOk = row.dataset.status === 'low' || row.dataset.status === 'out';
-        else                               statOk = row.dataset.status === currentFilter;
-        const show = nameOk && statOk;
-        row.classList.toggle('hidden', !show);
-        if (show) {
-            shown++;
-            shownVal += parseFloat(row.children[5]?.dataset?.val) || 0;
-        }
+    const q = document.getElementById('searchInput').value.toLowerCase().trim();
+    const allRows = [...document.querySelectorAll('#tableBody tr[data-name]')];
+    lastFilteredIng = allRows.filter(row => {
+        const nameOk = !q || row.dataset.name.includes(q);
+        const statOk = currentFilter === 'all' ? true
+            : currentFilter === 'critical'
+                ? (row.dataset.status === 'low' || row.dataset.status === 'out')
+                : row.dataset.status === currentFilter;
+        return nameOk && statOk;
     });
-    document.getElementById('emptyState').style.display  = shown === 0 ? 'block' : 'none';
-    document.getElementById('rowCount').textContent  = `Showing ${shown} of ${TOTAL}`;
-    document.getElementById('footLabel').textContent = `Showing ${shown} of ${TOTAL} ingredients`;
+    currentPageIng = 1;
+    renderPageIng();
+}
+
+function renderPageIng() {
+    const total      = lastFilteredIng.length;
+    const totalPages = Math.max(1, Math.ceil(total / PER_PAGE_ING));
+    currentPageIng   = Math.min(currentPageIng, totalPages);
+    const start      = (currentPageIng - 1) * PER_PAGE_ING;
+    const pageRows   = lastFilteredIng.slice(start, start + PER_PAGE_ING);
+
+    document.querySelectorAll('#tableBody tr[data-name]').forEach(r => r.classList.add('hidden'));
+    pageRows.forEach(r => r.classList.remove('hidden'));
+
+    document.getElementById('emptyState').style.display = total === 0 ? 'block' : 'none';
+    document.getElementById('rowCount').textContent  = `Showing ${total} of ${TOTAL}`;
+    document.getElementById('footLabel').textContent = `Showing ${total} of ${TOTAL} ingredients`;
+
+    renderPaginationIng(total, totalPages);
+}
+
+function renderPaginationIng(total, totalPages) {
+    const wrap = document.getElementById('pgWrap');
+    if (totalPages <= 1) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'flex';
+    document.getElementById('pgInfo').textContent =
+        `Page ${currentPageIng} of ${totalPages} · ${total} shown`;
+    const nav = document.getElementById('pgNav');
+    let html = currentPageIng > 1
+        ? `<a href="#" class="pg-btn" onclick="goPageIng(1);return false;">«</a><a href="#" class="pg-btn" onclick="goPageIng(${currentPageIng - 1});return false;">‹</a>`
+        : `<span class="pg-disabled">«</span><span class="pg-disabled">‹</span>`;
+    const ws = Math.max(1, currentPageIng - 2);
+    const we = Math.min(totalPages, currentPageIng + 2);
+    if (ws > 1) html += `<span class="pg-ellipsis">…</span>`;
+    for (let i = ws; i <= we; i++) {
+        html += i === currentPageIng
+            ? `<span class="pg-active">${i}</span>`
+            : `<a href="#" class="pg-btn" onclick="goPageIng(${i});return false;">${i}</a>`;
+    }
+    if (we < totalPages) html += `<span class="pg-ellipsis">…</span>`;
+    html += currentPageIng < totalPages
+        ? `<a href="#" class="pg-btn" onclick="goPageIng(${currentPageIng + 1});return false;">›</a><a href="#" class="pg-btn" onclick="goPageIng(${totalPages});return false;">»</a>`
+        : `<span class="pg-disabled">›</span><span class="pg-disabled">»</span>`;
+    nav.innerHTML = html;
+}
+
+function goPageIng(p) {
+    currentPageIng = p;
+    renderPageIng();
 }
 
 /* ── SORT ── */
@@ -986,6 +1045,7 @@ function sortTable(col) {
         return asc ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     rows.forEach(r => tbody.appendChild(r));
+    applyFilters();
 }
 
 /* ── COMPACT VIEW ── */
@@ -1424,6 +1484,10 @@ function refreshStatCards() {
     const footLabel = document.getElementById('footLabel');
     if (footLabel) footLabel.textContent = `${total} ingredients total`;
 }
+
+// initial JS pagination render
+lastFilteredIng = [...document.querySelectorAll('#tableBody tr[data-name]')];
+renderPageIng();
 </script>
 <script src="animations.js"></script>
 </body>

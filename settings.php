@@ -29,6 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'currency' => [
             'khr_exchange_rate' => (string)max(100, min(99999, (int)($_POST['khr_exchange_rate'] ?? 4100))),
         ],
+        'tax' => [
+            'tax_rate' => (string)max(0, min(100, round((float)($_POST['tax_rate'] ?? 10), 2))),
+        ],
         default => [],
     };
 
@@ -73,6 +76,7 @@ $free_item_pid   = (int)($s['free_item_product_id'] ?? 0);
 $bx_start_date   = $s['buy_x_start_date'] ?? '';
 $bx_end_date     = $s['buy_x_end_date']   ?? '';
 $khr_rate        = (int)($s['khr_exchange_rate']   ?? 4100);
+$tax_rate        = (float)($s['tax_rate']          ?? 10);
 
 $_today      = date('Y-m-d');
 $hh_expired  = $hh_end_date !== '' && $_today > $hh_end_date;
@@ -541,6 +545,7 @@ body::after {
             'happy_hour' => 'Happy Hour',
             'free_drink' => 'Free Drink Promotion',
             'currency'   => 'Currency Settings',
+            'tax'        => 'Tax Settings',
             default      => 'Settings',
         };
     ?>
@@ -761,6 +766,46 @@ body::after {
                     <i class="fa-solid fa-circle-info"></i>
                     Saves Currency only
                 </div>
+                <button type="submit" class="btn btn-save" style="padding:10px 22px;font-size:13px;">
+                    <i class="fa-solid fa-floppy-disk"></i> Save
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <!-- ── TAX RATE ── -->
+    <form method="POST">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon"><i class="fa-solid fa-receipt"></i></div>
+                <div>
+                    <div class="card-title">Tax Rate</div>
+                    <div class="card-sub">Applied to every order total in the cart and on receipts</div>
+                </div>
+            </div>
+
+            <div class="card-inner">
+                <div class="fields-grid single">
+                    <div class="field">
+                        <label><i class="fa-solid fa-percent"></i> Tax Rate (%)</label>
+                        <input type="number" name="tax_rate" id="taxRate"
+                               value="<?= $tax_rate ?>" min="0" max="100" step="0.01">
+                        <span class="field-hint">Enter 0 to disable tax. Supports decimals (e.g. 7.5)</span>
+                    </div>
+                </div>
+
+                <div class="preview-row" id="taxPreview" style="margin-top:18px;">
+                    <i class="fa-solid fa-tag"></i>
+                    <span id="taxPreviewText"></span>
+                </div>
+            </div>
+
+            <input type="hidden" name="_section" value="tax">
+            <div class="form-actions">
+                <div class="form-actions-info">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Saves Tax Rate only
+                </div>
                 <div style="display:flex;gap:10px;">
                     <a href="dashboard.php" class="btn btn-cancel">
                         <i class="fa-solid fa-xmark"></i> Dashboard
@@ -847,6 +892,20 @@ function updateKHRPreview() {
 }
 document.getElementById('khrRate').addEventListener('input', updateKHRPreview);
 updateKHRPreview();
+
+// ── Tax Rate live preview ──
+function updateTaxPreview() {
+    const pct = parseFloat(document.getElementById('taxRate').value);
+    const el  = document.getElementById('taxPreviewText');
+    if (isNaN(pct) || pct <= 0) {
+        el.textContent = 'No tax applied — orders are tax-free.';
+    } else {
+        const example = (10 * (1 + pct / 100)).toFixed(2);
+        el.textContent = pct + '% tax · e.g. $10.00 subtotal → $' + example + ' total';
+    }
+}
+document.getElementById('taxRate').addEventListener('input', updateTaxPreview);
+updateTaxPreview();
 </script>
 
 </body>

@@ -1,5 +1,7 @@
 <?php
+session_start();
 require 'config.php';
+if (!isset($_SESSION['user_id'])) { echo json_encode([]); exit; }
 header('Content-Type: application/json');
 
 $check = $conn->query("SHOW TABLES LIKE 'announcements'");

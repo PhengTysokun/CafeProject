@@ -1226,6 +1226,16 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
                 grid-template-columns: 1fr 1fr;
             }
         }
+
+    /* ── PAGINATION ── */
+    .pg-wrap { padding:14px 18px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+    .pg-nav { display:flex; gap:4px; flex-wrap:wrap; }
+    .pg-btn { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; text-decoration:none; transition:var(--transition); }
+    .pg-btn:hover { border-color:var(--accent); color:var(--accent); }
+    .pg-active { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; background:var(--accent); border:1px solid var(--accent); color:#000; font-size:13px; font-weight:700; }
+    .pg-disabled { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); color:var(--text-muted); font-size:13px; opacity:.35; cursor:default; }
+    .pg-ellipsis { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; color:var(--text-muted); font-size:13px; }
+    .pg-info { font-size:12px; color:var(--text-muted); }
     </style>
 </head>
 <body>
@@ -1427,6 +1437,10 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
             <?php endif; ?>
         </div>
         <div class="no-results" id="noResults" style="display:none;">No cards match your search.</div>
+        <div id="pgWrap" class="pg-wrap" style="display:none">
+            <span id="pgInfo" class="pg-info"></span>
+            <nav id="pgNav" class="pg-nav"></nav>
+        </div>
     </div>
 
     <!-- RIGHT: Sidebar -->
@@ -1603,34 +1617,73 @@ window.addEventListener('storage', function (e) {
 });
 
 // ═══════════════════════════════════════════════════
-// LIVE TABLE SEARCH & TIER FILTER
+// LIVE TABLE SEARCH & TIER FILTER  (JS pagination)
 // ═══════════════════════════════════════════════════
-function applyFilters() {
-    const query = (document.getElementById('cardSearch').value || '').toLowerCase().trim();
-    const tierVal = (document.getElementById('tierFilter').value || '').toLowerCase();
-    const rows = document.querySelectorAll('#allCardsTbody .card-row');
-    let visible = 0;
+const PER_PAGE_LC = 20;
+let currentPageLC  = 1;
+let lastFilteredLC = [];
 
-    rows.forEach(function (row) {
-        const loyaltyId = (row.dataset.loyaltyId || '').toLowerCase();
-        const tier = (row.dataset.tier || '').toLowerCase();
-        const matchSearch = !query || loyaltyId.includes(query);
-        const matchTier = !tierVal || tier === tierVal;
-        if (matchSearch && matchTier) {
-            row.classList.remove('filtered-out');
-            visible++;
-        } else {
-            row.classList.add('filtered-out');
-        }
+function applyFilters() {
+    const query   = (document.getElementById('cardSearch').value || '').toLowerCase().trim();
+    const tierVal = (document.getElementById('tierFilter').value || '').toLowerCase();
+    const allRows = [...document.querySelectorAll('#allCardsTbody .card-row')];
+
+    lastFilteredLC = allRows.filter(function (row) {
+        const matchSearch = !query   || (row.dataset.loyaltyId || '').toLowerCase().includes(query);
+        const matchTier   = !tierVal || (row.dataset.tier || '').toLowerCase() === tierVal;
+        return matchSearch && matchTier;
     });
+    currentPageLC = 1;
+    renderPageLC();
+}
+
+function renderPageLC() {
+    const total      = lastFilteredLC.length;
+    const totalPages = Math.max(1, Math.ceil(total / PER_PAGE_LC));
+    currentPageLC    = Math.min(currentPageLC, totalPages);
+    const start      = (currentPageLC - 1) * PER_PAGE_LC;
+    const pageRows   = lastFilteredLC.slice(start, start + PER_PAGE_LC);
+
+    document.querySelectorAll('#allCardsTbody .card-row').forEach(function (r) { r.classList.add('filtered-out'); });
+    pageRows.forEach(function (r) { r.classList.remove('filtered-out'); });
 
     const badge = document.getElementById('visibleCount');
-    if (badge) badge.textContent = visible;
+    if (badge) badge.textContent = total;
 
     const noResults = document.getElementById('noResults');
-    if (noResults) {
-        noResults.style.display = (visible === 0 && rows.length > 0) ? 'block' : 'none';
+    if (noResults) noResults.style.display = (total === 0) ? 'block' : 'none';
+
+    renderPaginationLC(total, totalPages);
+}
+
+function renderPaginationLC(total, totalPages) {
+    const wrap = document.getElementById('pgWrap');
+    if (totalPages <= 1) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'flex';
+    document.getElementById('pgInfo').textContent =
+        `Page ${currentPageLC} of ${totalPages} · ${total} cards`;
+    const nav = document.getElementById('pgNav');
+    let html = currentPageLC > 1
+        ? `<a href="#" class="pg-btn" onclick="goPageLC(1);return false;">«</a><a href="#" class="pg-btn" onclick="goPageLC(${currentPageLC - 1});return false;">‹</a>`
+        : `<span class="pg-disabled">«</span><span class="pg-disabled">‹</span>`;
+    const ws = Math.max(1, currentPageLC - 2);
+    const we = Math.min(totalPages, currentPageLC + 2);
+    if (ws > 1) html += `<span class="pg-ellipsis">…</span>`;
+    for (let i = ws; i <= we; i++) {
+        html += i === currentPageLC
+            ? `<span class="pg-active">${i}</span>`
+            : `<a href="#" class="pg-btn" onclick="goPageLC(${i});return false;">${i}</a>`;
     }
+    if (we < totalPages) html += `<span class="pg-ellipsis">…</span>`;
+    html += currentPageLC < totalPages
+        ? `<a href="#" class="pg-btn" onclick="goPageLC(${currentPageLC + 1});return false;">›</a><a href="#" class="pg-btn" onclick="goPageLC(${totalPages});return false;">»</a>`
+        : `<span class="pg-disabled">›</span><span class="pg-disabled">»</span>`;
+    nav.innerHTML = html;
+}
+
+function goPageLC(p) {
+    currentPageLC = p;
+    renderPageLC();
 }
 
 document.getElementById('cardSearch').addEventListener('input', applyFilters);
@@ -2100,6 +2153,10 @@ document.addEventListener('keydown', function (e) {
         closeCreateModal();
     }
 });
+
+// initial JS pagination render
+lastFilteredLC = [...document.querySelectorAll('#allCardsTbody .card-row')];
+renderPageLC();
 </script>
 <script src="animations.js"></script>
 </body>

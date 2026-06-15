@@ -207,8 +207,8 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
         <a href="dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
         <span class="page-title">Staff <span>Attendance</span></span>
     </div>
-    <?php if ($is_today && $still_working > 0): ?>
-    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--success)">
+    <?php if ($is_today): ?>
+    <div id="liveIndicatorWrap" style="display:<?= $still_working > 0 ? 'flex' : 'none' ?>;align-items:center;gap:8px;font-size:13px;color:var(--success)">
         <span class="live-dot"></span> <span id="liveIndicator"><?= $still_working ?> currently working</span>
     </div>
     <?php endif; ?>
@@ -265,12 +265,6 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
                 <div class="card-sub"><?= $is_today ? 'Live — updates when staff clock in/out' : date('l, d F Y', strtotime($date)) ?></div>
             </div>
         </div>
-        <?php if (empty($records)): ?>
-        <div class="empty-state">
-            <i class="fa-solid fa-calendar-xmark"></i>
-            <p>No attendance records for <?= $is_today ? 'today' : date('d M Y', strtotime($date)) ?>.</p>
-        </div>
-        <?php else: ?>
         <table>
             <thead>
                 <tr>
@@ -282,6 +276,12 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
                 </tr>
             </thead>
             <tbody id="attTbody">
+            <?php if (empty($records)): ?>
+            <tr id="emptyRow"><td colspan="5" style="padding:40px;text-align:center;color:var(--text-muted)">
+                <i class="fa-solid fa-calendar-xmark" style="display:block;font-size:32px;margin-bottom:12px;opacity:.25"></i>
+                No attendance records for <?= $is_today ? 'today' : date('d M Y', strtotime($date)) ?>.
+            </td></tr>
+            <?php else: ?>
             <?php foreach ($records as $r):
                 $name = $r['emp_name'] ?: $r['username'];
                 $working = is_null($r['clock_out']);
@@ -314,9 +314,9 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
                 </td>
             </tr>
             <?php endforeach; ?>
+            <?php endif; ?>
             </tbody>
         </table>
-        <?php endif; ?>
     </div>
 
 </div>
@@ -350,7 +350,9 @@ function escHtml(s) {
 }
 
 function renderEmpty() {
-    return '<tr><td colspan="5" style="padding:40px;text-align:center;color:#777">No records yet.</td></tr>';
+    return '<tr id="emptyRow"><td colspan="5" style="padding:40px;text-align:center;color:#777">' +
+        '<i class="fa-solid fa-calendar-xmark" style="display:block;font-size:32px;margin-bottom:12px;opacity:.25"></i>' +
+        'No attendance records for today.</td></tr>';
 }
 
 async function pollAttendance() {
@@ -365,21 +367,22 @@ async function pollAttendance() {
         document.getElementById('s-done').textContent    = data.done;
         document.getElementById('s-hours').textContent   = data.total_hours + 'h';
 
-        // Update topbar live indicator
-        var liveEl = document.getElementById('liveIndicator');
-        if (liveEl) liveEl.textContent = data.still_working + ' currently working';
+        // Update topbar live indicator (always present in DOM, toggle visibility)
+        var liveWrap = document.getElementById('liveIndicatorWrap');
+        var liveEl   = document.getElementById('liveIndicator');
+        if (liveWrap) liveWrap.style.display = data.still_working > 0 ? 'flex' : 'none';
+        if (liveEl)   liveEl.textContent = data.still_working + ' currently working';
 
-        // Re-render tbody
+        // Re-render tbody (always present in DOM now)
         var tbody = document.getElementById('attTbody');
         if (!tbody) return;
-        if (data.records.length === 0) {
-            tbody.innerHTML = renderEmpty();
-        } else {
-            tbody.innerHTML = data.records.map(renderRow).join('');
-        }
+        tbody.innerHTML = data.records.length === 0
+            ? renderEmpty()
+            : data.records.map(renderRow).join('');
     } catch(e) { /* silent fail */ }
 }
 
+pollAttendance();
 setInterval(pollAttendance, 10000);
 </script>
 <?php endif; ?>

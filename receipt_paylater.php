@@ -24,7 +24,7 @@ if ($order_id <= 0) {
 $stmt = $conn->prepare("
     SELECT order_id, customer_name, total, order_date, daily_order_no, promotion_discount, token_number,
            manual_discount, manual_discount_reason, status, employee_name,
-           IFNULL(order_type,'drink_in') AS order_type, completed_at
+           IFNULL(order_type,'drink_in') AS order_type, completed_at, started_at, table_number
     FROM orders
     WHERE order_id = ?
 ");
@@ -66,7 +66,7 @@ $discount = (float)($order['promotion_discount'] ?? 0);
 $manual_discount_rpl = (float)($order['manual_discount'] ?? 0);
 $manual_reason_rpl   = trim($order['manual_discount_reason'] ?? '');
 $stored_total = (float)($order['total'] ?? 0);
-$tax_rate = 0.10;
+$tax_rate = TAX_RATE / 100;
 
 // ── RECALCULATE BUY 3 GET 1 FREE FOR DISPLAY ──
 $min_price = PHP_FLOAT_MAX;
@@ -103,8 +103,10 @@ if (abs($computed_total - $stored_total) > 0.009) {
 
 // ── Order type & time labels ──
 $order_type_label = ($order['order_type'] ?? 'drink_in') === 'drink_out' ? 'Drink Out' : 'Drink In';
-$time_in_label    = date("d-m-Y g:i A", strtotime($order['order_date']));
-$time_out_label   = !empty($order['completed_at']) ? date("d-m-Y g:i A", strtotime($order['completed_at'])) : '';
+$time_in_src      = !empty($order['started_at']) ? $order['started_at'] : $order['order_date'];
+$time_in_label    = date("d-m-Y g:i A", strtotime($time_in_src));
+$time_out_src     = !empty($order['completed_at']) ? $order['completed_at'] : $order['order_date'];
+$time_out_label   = date("d-m-Y g:i A", strtotime($time_out_src));
 
 // ── GENERATE HTML FOR PDF ──
 $html = '<!DOCTYPE html>
@@ -286,6 +288,7 @@ $html = '<!DOCTYPE html>
     <div class="row"><span class="label">Order #:</span> ' . $order['daily_order_no'] . '</div>
     <div class="row"><span class="label">Cashier:</span> ' . htmlspecialchars($order['employee_name'] ?: 'N/A') . '</div>
     <div class="row"><span class="label">Customer:</span> ' . htmlspecialchars($order['customer_name']) . '</div>
+    ' . (!empty($order['table_number']) ? '<div class="row"><span class="label">Stand:</span> <strong>' . htmlspecialchars($order['table_number']) . '</strong></div>' : '') . '
     <div class="row"><span class="label">Order Type:</span> <strong>' . $order_type_label . '</strong></div>
     <div class="row"><span class="label">Time In:</span> ' . $time_in_label . '</div>
     ' . ($time_out_label ? '<div class="row"><span class="label">Time Out:</span> ' . $time_out_label . '</div>' : '') . '
@@ -383,6 +386,10 @@ $html .= '
     <div class="row grand-total">
         <span class="label">Total ($)</span>
         <span class="value">' . number_format($total, 2) . '</span>
+    </div>
+    <div class="row" style="font-size:9px;color:#555;">
+        <span class="label">Total (KHR)</span>
+        <span class="value">KHR ' . number_format((int)(round($total * KHR_RATE / 100) * 100)) . '</span>
     </div>
 </div>';
 

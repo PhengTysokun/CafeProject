@@ -115,8 +115,17 @@ $must_change  = count(array_filter($all_users, fn($u) => $u['must_change_passwor
     --warning:      #f39c12;
     --info:         #3498db;
 }
+@keyframes fadeInUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+@keyframes scaleIn  { from{opacity:0;transform:scale(.94)}       to{opacity:1;transform:scale(1)}     }
+@keyframes rowIn    { from{opacity:0;transform:translateX(-6px)}  to{opacity:1;transform:translateX(0)} }
+@keyframes fadeIn   { from{opacity:0}                             to{opacity:1}                         }
+
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+body {
+    font-family:'Poppins',sans-serif;
+    background:radial-gradient(ellipse 80% 40% at 50% 0%,rgba(209,144,75,.07) 0%,transparent 100%),var(--bg);
+    color:var(--text); min-height:100vh;
+}
 
 /* Topbar */
 .topbar {
@@ -125,6 +134,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     backdrop-filter:blur(12px);
     display:flex; align-items:center; justify-content:space-between;
     padding:0 28px; height:62px;
+    animation:fadeIn .35s ease both;
 }
 .back-btn {
     display:inline-flex; align-items:center; gap:8px;
@@ -145,7 +155,13 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 .stat-card {
     background:var(--card); border:1px solid var(--border); border-radius:14px;
     padding:18px 20px; display:flex; align-items:center; gap:14px;
+    animation:scaleIn .45s cubic-bezier(.16,1,.3,1) both;
+    transition:transform .2s,border-color .2s;
 }
+.stat-card:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.12)}
+.stat-card:nth-child(1){animation-delay:.08s}
+.stat-card:nth-child(2){animation-delay:.15s}
+.stat-card:nth-child(3){animation-delay:.22s}
 .stat-icon {
     width:44px; height:44px; border-radius:12px; flex-shrink:0;
     display:flex; align-items:center; justify-content:center; font-size:18px;
@@ -154,7 +170,10 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 .stat-lbl  { font-size:11.5px; color:var(--text-muted); margin-top:1px; }
 
 /* Table card */
-.card { background:var(--card); border:1px solid var(--border); border-radius:18px; overflow:hidden; }
+.card {
+    background:var(--card); border:1px solid var(--border); border-radius:18px; overflow:hidden;
+    animation:fadeInUp .45s ease .28s both;
+}
 .card-header {
     padding:20px 24px; border-bottom:1px solid var(--border);
     display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
@@ -178,9 +197,15 @@ thead th {
     color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px;
     border-bottom:1px solid var(--border); text-align:left; white-space:nowrap;
 }
-tbody td { padding:14px 18px; font-size:13.5px; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:middle; }
+tbody td { padding:14px 18px; font-size:13.5px; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:middle; transition:background .15s; }
 tbody tr:last-child td { border-bottom:none; }
-tbody tr:hover td { background:rgba(255,255,255,0.02); }
+tbody tr:hover td { background:rgba(255,255,255,0.03); }
+tbody tr { animation:rowIn .3s ease both; }
+tbody tr:nth-child(1){animation-delay:.32s} tbody tr:nth-child(2){animation-delay:.36s}
+tbody tr:nth-child(3){animation-delay:.40s} tbody tr:nth-child(4){animation-delay:.44s}
+tbody tr:nth-child(5){animation-delay:.48s} tbody tr:nth-child(6){animation-delay:.52s}
+tbody tr:nth-child(7){animation-delay:.56s} tbody tr:nth-child(8){animation-delay:.60s}
+tbody tr:nth-child(9){animation-delay:.64s} tbody tr:nth-child(10){animation-delay:.68s}
 
 /* Badges */
 .badge {
@@ -424,7 +449,7 @@ tbody tr:hover td { background:rgba(255,255,255,0.02); }
     </div>
 
     <!-- Help note -->
-    <div style="margin-top:18px;padding:14px 18px;background:rgba(52,152,219,.06);border:1px solid rgba(52,152,219,.2);border-radius:12px;display:flex;gap:12px;align-items:flex-start">
+    <div style="margin-top:18px;padding:14px 18px;background:rgba(52,152,219,.06);border:1px solid rgba(52,152,219,.2);border-radius:12px;display:flex;gap:12px;align-items:flex-start;animation:fadeInUp .4s ease .5s both">
         <i class="fa-solid fa-circle-info" style="color:var(--info);margin-top:2px;flex-shrink:0"></i>
         <div style="font-size:12.5px;color:rgba(255,255,255,.5);line-height:1.6">
             <strong style="color:rgba(255,255,255,.7)">How force-reset works:</strong>

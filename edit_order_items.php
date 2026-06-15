@@ -1,6 +1,6 @@
 <?php
-require 'admin_only.php';
-require_once 'config.php';
+require 'auth.php';
+if (!in_array($_SESSION['role'], ['admin', 'manager', 'staff'])) { header("Location: dashboard.php?denied=1"); exit; }
 
 $order_id = (int)($_GET['order_id'] ?? 0);
 if ($order_id <= 0) { header("Location: find_order.php"); exit; }
@@ -58,6 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt_r->execute();
         $remaining = $stmt_r->get_result()->fetch_all(MYSQLI_ASSOC);
 
+        if (empty($remaining)) {
+            $conn->rollback();
+            echo json_encode(['success' => false, 'error' => 'Cannot remove all items. Cancel the order instead.']);
+            exit;
+        }
+
         $subtotal  = 0; $total_qty = 0; $min_price = PHP_FLOAT_MAX;
         foreach ($remaining as $row) {
             $p = (float)$row['price']; $q = (int)$row['quantity'];
@@ -77,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         $total_discount = $buy3 + $happy_hour;
         $after  = $subtotal - $total_discount;
-        $tax    = $after * 0.10;
+        $tax    = $after * (TAX_RATE / 100);
         $total  = round($after + $tax, 2);
 
         $stmt_upd = $conn->prepare("UPDATE orders SET total = ?, promotion_discount = ? WHERE order_id = ?");
@@ -352,7 +358,7 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                     <span id="sumSubtotal">$<?= number_format(array_sum(array_map(fn($i) => $i['price'] * $i['quantity'], $items)), 2) ?></span>
                 </div>
                 <div class="summary-row discount discount-row" id="discountRow">
-                    <span><i class="fa-solid fa-tag" style="font-size:10px;"></i> Buy 3 Get 1 Free</span>
+                    <span><i class="fa-solid fa-tag" style="font-size:10px;"></i> Buy <?= BUY_X_COUNT ?> Get 1 Free</span>
                     <span id="sumDiscount">-$<?= number_format($order['promotion_discount'], 2) ?></span>
                 </div>
                 <div class="summary-row">
@@ -383,6 +389,7 @@ const ORDER_ID          = <?= (int)$order_id ?>;
 const WAS_HAPPY_HOUR    = <?= ((int)date('H', strtotime($order['order_date'])) >= HAPPY_HOUR_START && (int)date('H', strtotime($order['order_date'])) < HAPPY_HOUR_END) ? 'true' : 'false' ?>;
 const HAPPY_HOUR_PCT    = <?= HAPPY_HOUR_DISCOUNT ?> / 100;
 const HAPPY_HOUR_ON     = <?= HAPPY_HOUR_ENABLED ? 'true' : 'false' ?>;
+const TAX_RATE_MULT     = <?= TAX_RATE ?> / 100;
 const BUY_X_ON          = <?= BUY_X_GET_1_ENABLED ? 'true' : 'false' ?>;
 const BUY_X_CNT         = <?= BUY_X_COUNT ?>;
 
@@ -488,7 +495,7 @@ function recalcSummary() {
     const totalDiscount = buy3 + happyHour;
 
     const after = subtotal - totalDiscount;
-    const tax   = after * 0.10;
+    const tax   = after * TAX_RATE_MULT;
     const total = Math.round((after + tax) * 100) / 100;
 
     document.getElementById('sumSubtotal').textContent = '$' + subtotal.toFixed(2);

@@ -28,27 +28,51 @@ if (!$card) {
     exit;
 }
 
-// Get full history
+// ── JSON output for dashboard modal — returns full history, bypasses pagination ──
+if (isset($_GET['json']) && $_GET['json'] === '1') {
+    $stmt = $conn->prepare("
+        SELECT h.*, o.daily_order_no
+        FROM loyalty_history h
+        LEFT JOIN orders o ON h.order_id = o.order_id
+        WHERE h.card_id = ?
+        ORDER BY h.created_at DESC
+    ");
+    $stmt->bind_param("i", $card['card_id']);
+    $stmt->execute();
+    header('Content-Type: application/json');
+    echo json_encode([
+        'card'    => $card,
+        'history' => $stmt->get_result()->fetch_all(MYSQLI_ASSOC),
+    ]);
+    exit;
+}
+
+// Count total transactions for this card
+$cs = $conn->prepare("SELECT COUNT(*) AS cnt FROM loyalty_history WHERE card_id = ?");
+$cs->bind_param("i", $card['card_id']);
+$cs->execute();
+$total_count = (int)$cs->get_result()->fetch_assoc()['cnt'];
+
+$per_page    = 10;
+$page        = max(1, (int)($_GET['page'] ?? 1));
+$total_pages = max(1, (int)ceil($total_count / $per_page));
+$page        = min($page, $total_pages);
+$offset      = ($page - 1) * $per_page;
+
+// Paginated history
 $stmt = $conn->prepare("
     SELECT h.*, o.daily_order_no
     FROM loyalty_history h
     LEFT JOIN orders o ON h.order_id = o.order_id
     WHERE h.card_id = ?
     ORDER BY h.created_at DESC
+    LIMIT ? OFFSET ?
 ");
-$stmt->bind_param("i", $card['card_id']);
+$stmt->bind_param("iii", $card['card_id'], $per_page, $offset);
 $stmt->execute();
 $history = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// ── JSON output for dashboard modal ──
-if (isset($_GET['json']) && $_GET['json'] === '1') {
-    header('Content-Type: application/json');
-    echo json_encode([
-        'card'    => $card,
-        'history' => $history
-    ]);
-    exit;
-}
+$pg_base = 'loyalty_history.php?id=' . urlencode($loyalty_id) . '&page=';
 
 $tier     = getTier((int)$card['points']);
 $next_pts = $tier['next_pts'];
@@ -539,6 +563,26 @@ function getTypeConfig($type) {
             .lh-header-left { flex-wrap: wrap; }
             .history-table .desc-cell { display: none; }
         }
+
+        /* PAGINATION */
+        .lh-pagination {
+            display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+            justify-content: center; padding: 16px 20px;
+            border-top: 1px solid var(--border);
+        }
+        .pg-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            min-width: 34px; height: 34px; padding: 0 10px;
+            border-radius: 8px; border: 1px solid var(--border);
+            background: rgba(255,255,255,.04); color: var(--text-muted);
+            text-decoration: none; font-size: 13px; font-weight: 500;
+            transition: all .2s; cursor: pointer;
+        }
+        .pg-btn:hover:not(.disabled) { border-color: var(--accent); color: var(--accent); }
+        .pg-btn.pg-active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; cursor: default; }
+        .pg-btn.disabled  { opacity: .3; cursor: default; pointer-events: none; }
+        .pg-ellipsis { color: var(--text-muted); padding: 0 2px; font-size: 14px; }
+        .pg-info { font-size: 12px; color: var(--text-muted); margin-left: 6px; }
     </style>
 </head>
 <body>
@@ -638,7 +682,7 @@ function getTypeConfig($type) {
                 <i class="fa-solid fa-clock-rotate-left"></i>
                 Transaction History
             </h2>
-            <span class="history-count"><?= count($history) ?> transaction<?= count($history) !== 1 ? 's' : '' ?></span>
+            <span class="history-count"><?= number_format($total_count) ?> transaction<?= $total_count !== 1 ? 's' : '' ?></span>
         </div>
 
         <?php if (empty($history)): ?>
@@ -699,6 +743,34 @@ function getTypeConfig($type) {
                 </tbody>
             </table>
         </div>
+        <?php if ($total_pages > 1): ?>
+        <div class="lh-pagination">
+            <?php if ($page > 1): ?>
+            <a href="<?= $pg_base . 1 ?>" class="pg-btn" title="First"><i class="fa-solid fa-angles-left"></i></a>
+            <a href="<?= $pg_base . ($page - 1) ?>" class="pg-btn" title="Previous"><i class="fa-solid fa-angle-left"></i></a>
+            <?php else: ?>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angles-left"></i></span>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angle-left"></i></span>
+            <?php endif; ?>
+            <?php
+            $window = array_unique(array_merge([1, $total_pages], range(max(2, $page - 2), min($total_pages - 1, $page + 2))));
+            sort($window);
+            $prev_p = null;
+            foreach ($window as $p_num):
+                if ($prev_p !== null && $p_num - $prev_p > 1) echo '<span class="pg-ellipsis">…</span>';
+            ?>
+            <a href="<?= $pg_base . $p_num ?>" class="pg-btn <?= $p_num === $page ? 'pg-active' : '' ?>"><?= $p_num ?></a>
+            <?php $prev_p = $p_num; endforeach; ?>
+            <?php if ($page < $total_pages): ?>
+            <a href="<?= $pg_base . ($page + 1) ?>" class="pg-btn" title="Next"><i class="fa-solid fa-angle-right"></i></a>
+            <a href="<?= $pg_base . $total_pages ?>" class="pg-btn" title="Last"><i class="fa-solid fa-angles-right"></i></a>
+            <?php else: ?>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angle-right"></i></span>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angles-right"></i></span>
+            <?php endif; ?>
+            <span class="pg-info">Page <?= $page ?> of <?= $total_pages ?></span>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
     </div>
 

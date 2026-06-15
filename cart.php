@@ -35,6 +35,7 @@ if (isset($_POST['ajax_remove'])) {
     if (isset($_SESSION['cart'][$i])) {
         unset($_SESSION['cart'][$i]);
         $_SESSION['cart'] = array_values($_SESSION['cart']);
+        if (empty($_SESSION['cart'])) unset($_SESSION['cart_started_at']);
     }
     $subtotal = 0; $total_qty = 0; $min_price = PHP_FLOAT_MAX; $min_item_name_aj = '';
     $_fpid_aj = defined('FREE_ITEM_PRODUCT_ID') ? (int)FREE_ITEM_PRODUCT_ID : 0;
@@ -68,7 +69,7 @@ if (isset($_POST['ajax_remove'])) {
         if ($md['type'] === 'percent') $manual_label .= ' (' . (int)$md['amount'] . '% off)';
         $after -= $manual_disc;
     }
-    $tax   = $after * 0.10;
+    $tax   = $after * (TAX_RATE / 100);
     $total = round($after + $tax, 2);
     header('Content-Type: application/json');
     echo json_encode([
@@ -194,7 +195,7 @@ if (isset($_POST['ajax_update'])) {
         $after_promos -= $manual_disc_aj;
     }
     $subtotal_after_discount = $after_promos;
-    $tax = $subtotal_after_discount * 0.10;
+    $tax = $subtotal_after_discount * (TAX_RATE / 100);
     $total = round($subtotal_after_discount + $tax, 2);
 
     $updated_item = $_SESSION['cart'][$i] ?? null;
@@ -228,6 +229,7 @@ if (isset($_GET['remove'])) {
     if (isset($_SESSION['cart'][$i])) {
         unset($_SESSION['cart'][$i]);
         $_SESSION['cart'] = array_values($_SESSION['cart']);
+        if (empty($_SESSION['cart'])) unset($_SESSION['cart_started_at']);
     }
     echo "<script>window.location.href = 'cart.php';</script>";
     exit;
@@ -306,7 +308,7 @@ if ($md_pg && (float)($md_pg['amount'] ?? 0) > 0) {
     $after_promos -= $manual_discount_amount;
 }
 $subtotal_after_discount = $after_promos;
-$tax   = $subtotal_after_discount * 0.10;
+$tax   = $subtotal_after_discount * (TAX_RATE / 100);
 $total = round($subtotal_after_discount + $tax, 2);
 
 $total_formatted                = number_format($total, 2);
@@ -1381,9 +1383,11 @@ body {
                        placeholder="Leave blank for Guest">
             </div>
             <div class="form-group" id="tableNumberGroup">
-                <label for="table_number"><i class="fa-solid fa-hashtag"></i> Table Number <span style="color:var(--text-muted);font-weight:400;font-size:12px;">(optional)</span></label>
+                <label for="table_number" style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-ticket"></i> Stand Number <span style="color:var(--text-muted);font-weight:400;font-size:12px;">(optional)</span><button type="button" onclick="toggleStandGrid('standGrid','table_number','standWarn','standWarnText')" style="margin-left:auto;background:none;border:1px solid var(--border-color,#ccc);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--text-secondary,#888);display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-table-cells-large"></i> Pick</button></label>
                 <input type="text" name="table_number" id="table_number" maxlength="10"
-                       placeholder="e.g. T1, T5, VIP...">
+                       placeholder="e.g. 1, 7, 12..." onblur="checkStandNumber(this.value,'standWarn','standWarnText')">
+                <div id="standWarn" style="display:none;margin-top:6px;padding:7px 10px;background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:8px;font-size:12px;color:#856404;align-items:center;gap:6px;"><i class="fa-solid fa-triangle-exclamation" style="color:#f0ad4e;"></i> <span id="standWarnText"></span></div>
+                <div id="standGrid" style="display:none;margin-top:6px;background:var(--card-bg,#fff);border:1px solid var(--border-color,#e2e8f0);border-radius:10px;padding:10px;box-shadow:0 4px 16px rgba(0,0,0,.1);"></div>
             </div>
 
             <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
@@ -2227,6 +2231,75 @@ async function redeemReward(rewardName, pointsRequired) {
         console.error('Redeem error:', error);
         showToast('Error redeeming reward', 'error');
     }
+}
+
+// ── Stand occupancy grid ──
+var STAND_MAX = 20;
+
+function toggleStandGrid(gridId, inputId, warnId, warnTextId) {
+    var grid = document.getElementById(gridId);
+    if (!grid) return;
+    if (grid.style.display !== 'none') { grid.style.display = 'none'; return; }
+    loadStandGrid(gridId, inputId, warnId, warnTextId);
+}
+
+function loadStandGrid(gridId, inputId, warnId, warnTextId) {
+    var grid = document.getElementById(gridId);
+    grid.innerHTML = '<div style="text-align:center;padding:10px;color:#888;font-size:12px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</div>';
+    grid.style.display = 'block';
+    fetch('get_stands.php')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var active = data.stands || {};
+            var cells = '';
+            for (var i = 1; i <= STAND_MAX; i++) {
+                var key = String(i);
+                var info = active[key];
+                if (info) {
+                    var tip = 'Order #' + info.order_no + (info.customer ? ' (' + info.customer + ')' : '') + ' — ' + info.status;
+                    cells += '<div title="' + tip.replace(/"/g, '&quot;') + '" style="display:flex;align-items:center;justify-content:center;height:36px;border-radius:7px;font-size:13px;font-weight:600;cursor:not-allowed;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;position:relative;">' + i + '<span style="position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#ef4444;border:1px solid #fff;"></span></div>';
+                } else {
+                    cells += '<div onclick="pickStand(' + i + ',\'' + inputId + '\',\'' + gridId + '\',\'' + warnId + '\',\'' + warnTextId + '\')" style="display:flex;align-items:center;justify-content:center;height:36px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;background:#dcfce7;color:#15803d;border:1px solid #86efac;transition:transform .1s;" onmouseover="this.style.transform=\'scale(1.1)\'" onmouseout="this.style.transform=\'\'">' + i + '</div>';
+                }
+            }
+            grid.innerHTML =
+                '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">' + cells + '</div>' +
+                '<div style="margin-top:8px;font-size:10px;color:#888;display:flex;gap:12px;">' +
+                '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dcfce7;border:1px solid #86efac;vertical-align:middle;margin-right:3px;"></span>Free — click to pick</span>' +
+                '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#fee2e2;border:1px solid #fca5a5;vertical-align:middle;margin-right:3px;"></span>In use — hover for details</span>' +
+                '</div>';
+        })
+        .catch(function() {
+            grid.innerHTML = '<div style="text-align:center;padding:10px;color:#ef4444;font-size:12px;">Could not load stands</div>';
+        });
+}
+
+function pickStand(num, inputId, gridId, warnId, warnTextId) {
+    var inp = document.getElementById(inputId);
+    if (inp) { inp.value = num; checkStandNumber(String(num), warnId, warnTextId); }
+    var grid = document.getElementById(gridId);
+    if (grid) grid.style.display = 'none';
+}
+
+// ── Stand number duplicate check ──
+function checkStandNumber(val, warnId, warnTextId) {
+    var warn = document.getElementById(warnId);
+    if (!warn) return;
+    val = (val || '').trim();
+    if (!val) { warn.style.display = 'none'; return; }
+    fetch('check_stand.php?stand=' + encodeURIComponent(val))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.in_use) {
+                document.getElementById(warnTextId).textContent =
+                    'Stand ' + val + ' is in use by Order #' + data.order_no +
+                    (data.customer ? ' (' + data.customer + ')' : '') + ' – ' + data.status;
+                warn.style.display = 'flex';
+            } else {
+                warn.style.display = 'none';
+            }
+        })
+        .catch(function() { warn.style.display = 'none'; });
 }
 
 function showToast(message, type = 'success') {

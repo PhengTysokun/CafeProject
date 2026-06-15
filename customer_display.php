@@ -1,567 +1,434 @@
 <?php
+session_start();
 require 'config.php';
 
-/* =========================
-   FETCH ORDERS
-========================= */
-date_default_timezone_set("Asia/Phnom_Penh");
-
-$now = new DateTime();
-if ((int)$now->format("H") < 6) {
-    $business_date = $now->modify("-1 day")->format("Y-m-d");
-} else {
-    $business_date = $now->format("Y-m-d");
-}
-
-// AJAX handler - returns ONLY order cards (no header, no HTML wrapper)
-if (isset($_GET['ajax'])) {
-    $sql = "
-        SELECT 
-            o.order_id,
-            o.daily_order_no,
-            o.customer_name,
-            o.status
-        FROM orders o
-        WHERE o.business_date = ?
-          AND o.status IN ('Preparing', 'Completed')
-        ORDER BY 
-            CASE o.status
-                WHEN 'Preparing' THEN 1
-                WHEN 'Completed' THEN 2
-            END,
-            o.order_id ASC
-        LIMIT 20
-    ";
-
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $business_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    $orders = [];
-    while ($row = $result->fetch_assoc()) {
-        $orders[] = $row;
-    }
-
-    if (count($orders) > 0) {
-        foreach ($orders as $o) {
-            $status = $o['status'];
-            $statusClass = strtolower($status);
-            $statusIcon = $status === 'Completed' ? 'fa-circle-check' : 'fa-clock';
-            $statusLabel = $status === 'Completed' ? '✅ Ready!' : '⏳ Preparing';
-            ?>
-            <div class="order-card" data-order-id="<?= $o['order_id'] ?>" data-status="<?= $status ?>" data-created="<?= time() ?>">
-                <div class="status-icon <?= $statusClass ?>">
-                    <i class="fa-solid <?= $statusIcon ?>"></i>
-                </div>
-                <div class="order-number">#<?= htmlspecialchars($o['daily_order_no']) ?></div>
-                <div class="customer-name"><?= htmlspecialchars($o['customer_name']) ?></div>
-                <div class="status-badge <?= $statusClass ?>">
-                    <?= $statusLabel ?>
-                </div>
-            </div>
-            <?php
-        }
-    } else {
-        ?>
-        <div class="empty-state">
-            <i class="fa-regular fa-rectangle-list"></i>
-            <h3>No orders today</h3>
-            <p>Check back soon!</p>
-        </div>
-        <?php
-    }
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
     exit;
 }
 
-// ── Main page ──
-$sql = "
-    SELECT 
-        o.order_id,
-        o.daily_order_no,
-        o.customer_name,
-        o.status
-    FROM orders o
-    WHERE o.business_date = ?
-      AND o.status IN ('Preparing', 'Completed')
-    ORDER BY 
-        CASE o.status
-            WHEN 'Preparing' THEN 1
-            WHEN 'Completed' THEN 2
-        END,
-        o.order_id ASC
-    LIMIT 20
-";
+date_default_timezone_set('Asia/Phnom_Penh');
+$now = new DateTime();
+$business_date = (int)$now->format('H') < 6
+    ? (clone $now)->modify('-1 day')->format('Y-m-d')
+    : $now->format('Y-m-d');
 
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("s", $business_date);
-$stmt->execute();
-$result = $stmt->get_result();
-
-$orders = [];
-while ($row = $result->fetch_assoc()) {
-    $orders[] = $row;
+// ── AJAX: return JSON ──
+if (isset($_GET['ajax'])) {
+    $stmt = $conn->prepare("
+        SELECT order_id, daily_order_no, customer_name, status
+        FROM orders
+        WHERE business_date = ?
+          AND status IN ('Preparing','Completed')
+        ORDER BY CASE status WHEN 'Preparing' THEN 1 WHEN 'Completed' THEN 2 END, order_id ASC
+        LIMIT 24
+    ");
+    $stmt->bind_param('s', $business_date);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    header('Content-Type: application/json');
+    echo json_encode($rows);
+    exit;
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Order Status | Bird's Nest Coffee</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <style>
-        /* ── RESET & ROOT ── */
-        :root {
-            --bg: #0c0c0c;
-            --bg-card: #121212;
-            --border: #1f1f1f;
-            --accent: #d1904b;
-            --success: #55e087;
-            --warning: #f1c40f;
-            --text: #f5f5f5;
-            --text-muted: #888888;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order Status — Bird's Nest Coffee</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;
+  --surface:#111;
+  --border:rgba(255,255,255,.07);
+  --amber:#d1904b;
+  --amber-dim:rgba(209,144,75,.12);
+  --amber-border:rgba(209,144,75,.25);
+  --green:#22c55e;
+  --green-dim:rgba(34,197,94,.12);
+  --green-border:rgba(34,197,94,.25);
+  --yellow:#f59e0b;
+  --yellow-dim:rgba(245,158,11,.12);
+  --yellow-border:rgba(245,158,11,.25);
+  --text:#f0f0f0;
+  --muted:#555;
+  --muted2:#888;
+  --r:18px;
+}
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+@keyframes fadeInUp  {from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeOut   {from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.88)}}
+@keyframes readyPop  {0%,100%{transform:scale(1)}40%{transform:scale(1.06)}70%{transform:scale(.97)}}
+@keyframes pulseDot  {0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes spin      {to{transform:rotate(360deg)}}
 
-        body {
-            font-family: 'Poppins', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 20px;
-        }
+body{
+  font-family:'Poppins',sans-serif;
+  background:radial-gradient(ellipse 80% 35% at 50% 0%,rgba(209,144,75,.06) 0%,transparent 100%),var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+}
 
-        /* ── HEADER ── */
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 20px 0;
-            width: 100%;
-            border-bottom: 1px solid var(--border);
-        }
+/* ── TOPBAR ── */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 28px;
+  background:rgba(255,255,255,.02);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.topbar-brand{display:flex;align-items:center;gap:12px;}
+.brand-icon{font-size:22px;color:var(--amber);}
+.brand-name{font-size:18px;font-weight:800;color:var(--text);letter-spacing:-.02em;}
+.brand-sub{font-size:11px;color:var(--muted2);margin-top:1px;}
 
-        .header h1 {
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--accent);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-        }
+.topbar-center{display:flex;align-items:center;gap:8px;}
+.live-pill{
+  display:flex;align-items:center;gap:7px;
+  background:var(--green-dim);border:1px solid var(--green-border);
+  color:var(--green);font-size:12px;font-weight:600;
+  padding:5px 14px;border-radius:50px;
+}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulseDot 1.8s ease infinite;}
 
-        .header h1 i {
-            font-size: 24px;
-        }
+.topbar-right{display:flex;align-items:center;gap:14px;}
+.clock{font-size:16px;font-weight:700;color:var(--amber);letter-spacing:.04em;}
+.back-btn{
+  display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:10px;
+  background:rgba(255,255,255,.05);border:1px solid var(--border);
+  color:var(--muted2);font-size:12px;font-weight:500;text-decoration:none;transition:all .2s;
+}
+.back-btn:hover{color:var(--text);background:rgba(255,255,255,.09);}
 
-        .header .subtitle {
-            color: var(--text-muted);
-            font-size: 14px;
-            margin-top: 4px;
-        }
+/* ── LEGEND ── */
+.legend{
+  display:flex;align-items:center;justify-content:center;gap:20px;
+  padding:12px 28px;border-bottom:1px solid var(--border);
+  background:rgba(255,255,255,.01);flex-shrink:0;
+}
+.legend-item{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--muted2);}
+.legend-dot{width:8px;height:8px;border-radius:50%;}
+.legend-dot.preparing{background:var(--yellow);}
+.legend-dot.ready{background:var(--green);}
 
-        .header .live-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            margin-top: 8px;
-            padding: 6px 16px;
-            background: rgba(85, 224, 135, 0.1);
-            border-radius: 50px;
-            font-size: 12px;
-            color: var(--success);
-            border: 1px solid rgba(85, 224, 135, 0.2);
-        }
+/* ── GRID AREA ── */
+.grid-area{
+  flex:1;padding:24px 28px;
+  overflow-y:auto;
+}
 
-        .header .live-indicator .dot {
-            width: 8px;
-            height: 8px;
-            background: var(--success);
-            border-radius: 50%;
-            animation: pulse-dot 1.5s infinite;
-        }
+.order-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:16px;
+  max-width:1280px;
+  margin:0 auto;
+}
 
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(0.8); }
-        }
+/* ── CARD ── */
+.order-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:28px 20px 22px;
+  text-align:center;
+  position:relative;overflow:hidden;
+  transition:border-color .25s,transform .2s,opacity .25s;
+}
+.order-card:hover{transform:translateY(-2px);}
 
-        /* ── TOGGLE BUTTON ── */
-        .toggle-container {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
-        }
+.order-card.preparing{
+  border-color:var(--yellow-border);
+  background:linear-gradient(160deg,rgba(245,158,11,.06) 0%,var(--surface) 60%);
+}
+.order-card.ready{
+  border-color:var(--green-border);
+  background:linear-gradient(160deg,rgba(34,197,94,.08) 0%,var(--surface) 60%);
+}
 
-        .toggle-btn {
-            padding: 8px 20px;
-            border-radius: 50px;
-            border: 1px solid var(--border);
-            background: var(--bg-card);
-            color: var(--text);
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-family: 'Poppins', sans-serif;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
+/* glow line at top */
+.order-card::before{
+  content:'';
+  position:absolute;top:0;left:10%;right:10%;
+  height:2px;border-radius:0 0 4px 4px;
+}
+.order-card.preparing::before{background:var(--yellow);}
+.order-card.ready::before{background:var(--green);}
 
-        .toggle-btn:hover {
-            border-color: var(--accent);
-            box-shadow: var(--shadow-accent);
-        }
+.card-status-icon{
+  font-size:28px;margin-bottom:10px;
+}
+.card-status-icon.preparing{color:var(--yellow);}
+.card-status-icon.ready{color:var(--green);}
 
-        /* ── ORDER GRID ── */
-        .order-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            max-width: 1200px;
-            width: 100%;
-        }
+.card-number{
+  font-size:52px;font-weight:800;line-height:1;
+  margin-bottom:6px;
+  letter-spacing:-.03em;
+}
+.order-card.preparing .card-number{color:var(--yellow);}
+.order-card.ready    .card-number{color:var(--green);}
 
-        .order-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 24px;
-            text-align: center;
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
+.card-name{
+  font-size:14px;font-weight:500;color:var(--muted2);
+  margin-bottom:14px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
 
-        .order-card:hover {
-            transform: translateY(-4px);
-            border-color: var(--border);
-        }
+.card-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;font-weight:700;
+  padding:6px 16px;border-radius:50px;
+  text-transform:uppercase;letter-spacing:.4px;
+}
+.card-badge.preparing{
+  background:var(--yellow-dim);color:var(--yellow);
+  border:1px solid var(--yellow-border);
+}
+.card-badge.ready{
+  background:var(--green-dim);color:var(--green);
+  border:1px solid var(--green-border);
+}
 
-        .order-card .order-number {
-            font-size: 48px;
-            font-weight: 800;
-            margin-bottom: 4px;
-        }
+/* ready pop animation */
+.order-card.pop{animation:readyPop .5s ease both;}
+/* fade-out when removing */
+.order-card.removing{animation:fadeOut .35s ease forwards;pointer-events:none;}
 
-        .order-card .customer-name {
-            font-size: 18px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
+/* ── FILTER BAR ── */
+.filter-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 28px;border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.filter-left{font-size:12px;color:var(--muted2);}
+.toggle-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:7px 16px;border-radius:50px;
+  background:rgba(255,255,255,.05);border:1px solid var(--border);
+  color:var(--muted2);font-family:inherit;font-size:12px;font-weight:500;
+  cursor:pointer;transition:all .2s;
+}
+.toggle-btn:hover{color:var(--text);border-color:var(--amber);}
+.toggle-btn.active{background:var(--amber-dim);border-color:var(--amber-border);color:var(--amber);}
 
-        .order-card .status-badge {
-            display: inline-block;
-            padding: 8px 24px;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 16px;
-            margin-top: 8px;
-        }
+/* ── EMPTY STATE ── */
+.empty-state{
+  grid-column:1/-1;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:40vh;gap:14px;color:var(--muted);text-align:center;
+}
+.empty-state i{font-size:60px;color:rgba(255,255,255,.05);}
+.empty-state h3{font-size:18px;font-weight:600;color:rgba(255,255,255,.12);}
+.empty-state p{font-size:13px;}
 
-        .order-card .status-badge.preparing {
-            background: rgba(241, 196, 15, 0.15);
-            color: var(--warning);
-            border: 1px solid rgba(241, 196, 15, 0.2);
-        }
-
-        .order-card .status-badge.ready {
-            background: rgba(85, 224, 135, 0.15);
-            color: var(--success);
-            border: 1px solid rgba(85, 224, 135, 0.2);
-        }
-
-        .order-card .status-icon {
-            font-size: 32px;
-            margin-bottom: 8px;
-        }
-
-        .order-card .status-icon.preparing {
-            color: var(--warning);
-        }
-
-        .order-card .status-icon.ready {
-            color: var(--success);
-        }
-
-        /* ── EMPTY STATE ── */
-        .empty-state {
-            text-align: center;
-            padding: 80px 20px;
-            color: var(--text-muted);
-            grid-column: 1 / -1;
-        }
-
-        .empty-state i {
-            font-size: 64px;
-            display: block;
-            margin-bottom: 16px;
-            color: var(--border);
-        }
-
-        .empty-state h3 {
-            color: var(--text);
-            font-weight: 600;
-            margin-bottom: 8px;
-            font-size: 24px;
-        }
-
-        .empty-state p {
-            font-size: 16px;
-        }
-
-        /* ── ANIMATIONS ── */
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .order-card {
-            animation: fadeIn 0.5s ease forwards;
-        }
-
-        @keyframes readyPulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-
-        .order-card.ready-pulse {
-            animation: readyPulse 0.5s ease 3;
-        }
-
-        @keyframes fadeOut {
-            from {
-                opacity: 1;
-                transform: scale(1);
-            }
-            to {
-                opacity: 0;
-                transform: scale(0.8);
-            }
-        }
-
-        .order-card.fade-out {
-            animation: fadeOut 0.3s ease forwards;
-        }
-
-        /* ── RESPONSIVE ── */
-        @media (max-width: 768px) {
-            .header h1 {
-                font-size: 22px;
-            }
-
-            .order-grid {
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-                gap: 16px;
-            }
-
-            .order-card {
-                padding: 16px;
-            }
-
-            .order-card .order-number {
-                font-size: 36px;
-            }
-
-            .order-card .customer-name {
-                font-size: 14px;
-            }
-
-            .order-card .status-badge {
-                font-size: 14px;
-                padding: 6px 18px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .header h1 {
-                font-size: 18px;
-            }
-
-            .order-grid {
-                grid-template-columns: 1fr;
-                gap: 12px;
-            }
-
-            .order-card .order-number {
-                font-size: 28px;
-            }
-
-            .order-card .customer-name {
-                font-size: 13px;
-            }
-
-            .order-card .status-badge {
-                font-size: 12px;
-                padding: 4px 14px;
-            }
-        }
-    </style>
+/* ── LOADING SPINNER ── */
+.spinner{
+  display:flex;align-items:center;justify-content:center;
+  grid-column:1/-1;min-height:40vh;
+}
+.spinner i{font-size:28px;color:var(--amber);animation:spin 1s linear infinite;}
+</style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>
-            <i class="fa-solid fa-mug-hot"></i>
-            Bird's Nest Coffee
-        </h1>
-        <div class="subtitle">Order Status</div>
-        <div class="live-indicator">
-            <span class="dot"></span>
+<div class="topbar">
+    <div class="topbar-brand">
+        <i class="fa-solid fa-mug-hot brand-icon"></i>
+        <div>
+            <div class="brand-name">Bird's Nest Coffee</div>
+            <div class="brand-sub">Order Status Board</div>
+        </div>
+    </div>
+    <div class="topbar-center">
+        <div class="live-pill">
+            <span class="live-dot"></span>
             Live
         </div>
     </div>
-
-    <!-- Toggle Button -->
-    <div class="toggle-container">
-        <button class="toggle-btn" id="toggleCompletedBtn" onclick="toggleCompleted()">
-            <i class="fa-solid fa-eye"></i> Show Completed
-        </button>
+    <div class="topbar-right">
+        <div class="clock" id="clock">--:--</div>
+        <a href="dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back</a>
     </div>
+</div>
 
+<div class="legend">
+    <div class="legend-item"><span class="legend-dot preparing"></span> Preparing — Your order is being made</div>
+    <div class="legend-item"><span class="legend-dot ready"></span> Ready — Please collect your order</div>
+</div>
+
+<div class="filter-bar">
+    <div class="filter-left" id="orderCount">Loading…</div>
+    <button class="toggle-btn" id="toggleBtn" onclick="toggleCompleted()">
+        <i class="fa-solid fa-eye"></i> Show Completed
+    </button>
+</div>
+
+<div class="grid-area">
     <div class="order-grid" id="orderGrid">
-        <?php if (count($orders) > 0): ?>
-            <?php foreach ($orders as $o): ?>
-                <?php
-                    $status = $o['status'];
-                    $statusClass = strtolower($status);
-                    $statusIcon = $status === 'Completed' ? 'fa-circle-check' : 'fa-clock';
-                    $statusLabel = $status === 'Completed' ? '✅ Ready!' : '⏳ Preparing';
-                ?>
-                <div class="order-card" data-order-id="<?= $o['order_id'] ?>" data-status="<?= $status ?>" data-created="<?= time() ?>">
-                    <div class="status-icon <?= $statusClass ?>">
-                        <i class="fa-solid <?= $statusIcon ?>"></i>
-                    </div>
-                    <div class="order-number">#<?= htmlspecialchars($o['daily_order_no']) ?></div>
-                    <div class="customer-name"><?= htmlspecialchars($o['customer_name']) ?></div>
-                    <div class="status-badge <?= $statusClass ?>">
-                        <?= $statusLabel ?>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        <?php else: ?>
-            <div class="empty-state">
-                <i class="fa-regular fa-rectangle-list"></i>
-                <h3>No orders today</h3>
-                <p>Check back soon!</p>
-            </div>
-        <?php endif; ?>
+        <div class="spinner"><i class="fa-solid fa-spinner"></i></div>
     </div>
+</div>
 
-    <script>
-        let showCompleted = false;
-        let readyTimestamps = new Map();
+<script>
+const readyAt       = new Map();  // order_id → JS ms when first became Completed
+let   prevCompleted = new Set();
+let   showCompleted = false;
+const REMOVE_AFTER_MS = 30000;
 
-        // ── Toggle Completed Orders ──
-        function toggleCompleted() {
-            showCompleted = !showCompleted;
-            const cards = document.querySelectorAll('.order-card');
-            cards.forEach(card => {
-                const status = card.dataset.status;
-                if (status === 'Completed') {
-                    card.style.display = showCompleted ? '' : 'none';
-                }
-            });
-            
-            const toggleBtn = document.getElementById('toggleCompletedBtn');
-            toggleBtn.innerHTML = showCompleted 
-                ? '<i class="fa-solid fa-eye-slash"></i> Hide Completed' 
-                : '<i class="fa-solid fa-eye"></i> Show Completed';
-        }
+function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-        // ── Hide completed orders on load ──
-        document.addEventListener('DOMContentLoaded', function() {
-            const cards = document.querySelectorAll('.order-card');
-            cards.forEach(card => {
-                const status = card.dataset.status;
-                if (status === 'Completed') {
-                    card.style.display = 'none';
-                }
-            });
+function buildCard(o) {
+    const prep  = o.status === 'Preparing';
+    const cls   = prep ? 'preparing' : 'ready';
+    const icon  = prep ? 'fa-fire-burner' : 'fa-circle-check';
+    const label = prep ? '<i class="fa-solid fa-fire-burner"></i> Preparing' : '<i class="fa-solid fa-circle-check"></i> Ready!';
+    return `<div class="order-card ${cls}" data-id="${esc(o.order_id)}" data-status="${esc(o.status)}">
+        <div class="card-status-icon ${cls}"><i class="fa-solid ${icon}"></i></div>
+        <div class="card-number">#${esc(o.daily_order_no)}</div>
+        <div class="card-name">${esc(o.customer_name || 'Guest')}</div>
+        <div class="card-badge ${cls}">${label}</div>
+    </div>`;
+}
+
+// Patch an existing card's status in-place — zero flicker, no DOM removal
+function patchCard(card, o) {
+    const cls   = o.status === 'Preparing' ? 'preparing' : 'ready';
+    const icon  = o.status === 'Preparing' ? 'fa-fire-burner' : 'fa-circle-check';
+    const label = o.status === 'Preparing'
+        ? '<i class="fa-solid fa-fire-burner"></i> Preparing'
+        : '<i class="fa-solid fa-circle-check"></i> Ready!';
+    card.dataset.status = o.status;
+    card.className      = `order-card ${cls}`;
+    const iconEl  = card.querySelector('.card-status-icon');
+    const badgeEl = card.querySelector('.card-badge');
+    if (iconEl)  { iconEl.className  = `card-status-icon ${cls}`; iconEl.innerHTML  = `<i class="fa-solid ${icon}"></i>`; }
+    if (badgeEl) { badgeEl.className = `card-badge ${cls}`;       badgeEl.innerHTML = label; }
+    card.classList.add('pop');
+    setTimeout(() => card.classList.remove('pop'), 520);
+}
+
+function playBell() {
+    try {
+        const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        osc.start(); osc.stop(ctx.currentTime + 0.6);
+    } catch(e) {}
+}
+
+async function refresh() {
+    try {
+        const res  = await fetch('customer_display.php?ajax=1');
+        const data = await res.json();
+        const grid = document.getElementById('orderGrid');
+        const now  = Date.now();
+
+        // Remove initial spinner once
+        grid.querySelector('.spinner')?.remove();
+
+        // Track newly completed → bell
+        const newCompleted = new Set();
+        data.forEach(o => {
+            if (o.status !== 'Completed') return;
+            const id = String(o.order_id);
+            newCompleted.add(id);
+            if (!prevCompleted.has(id)) { readyAt.set(id, now); playBell(); }
+        });
+        prevCompleted = newCompleted;
+
+        // Expired Ready cards (shown > 30s)
+        const removeIds = new Set();
+        readyAt.forEach((ts, id) => { if (now - ts > REMOVE_AFTER_MS) removeIds.add(id); });
+
+        const incomingIds = new Set(data.map(o => String(o.order_id)));
+
+        // Fade-out cards that left or expired — don't touch anything else
+        grid.querySelectorAll('.order-card').forEach(card => {
+            const gone = !incomingIds.has(card.dataset.id) || removeIds.has(card.dataset.id);
+            if (gone && !card.classList.contains('removing')) {
+                card.classList.add('removing');
+                setTimeout(() => card.remove(), 360);
+            }
         });
 
-        // ── Track ready orders to play sound ──
-        let previousReadyOrders = new Set();
+        const visible = data.filter(o => !removeIds.has(String(o.order_id)));
 
-        // ── Play sound ──
-        function playReadySound() {
-            const audio = new Audio('audio/bell.wav');
-            audio.play().catch(() => {});
+        visible.forEach((o, idx) => {
+            const id       = String(o.order_id);
+            const existing = grid.querySelector(`.order-card[data-id="${id}"]`);
+            if (existing) {
+                // Only touch the card if its status actually changed
+                if (existing.dataset.status !== o.status) patchCard(existing, o);
+            } else {
+                // Brand-new card — fade in quietly
+                const tmp = document.createElement('div');
+                tmp.innerHTML = buildCard(o);
+                const card = tmp.firstElementChild;
+                card.style.opacity = '0';
+                if (!showCompleted && o.status === 'Completed') card.style.display = 'none';
+                grid.appendChild(card);
+                requestAnimationFrame(() => { card.style.opacity = '1'; });
+            }
+        });
+
+        // Show empty state only after removing cards have animated out
+        if (visible.length === 0) {
+            setTimeout(() => {
+                if (!grid.querySelector('.order-card')) {
+                    grid.innerHTML = `<div class="empty-state">
+                        <i class="fa-solid fa-mug-hot"></i>
+                        <h3>All clear!</h3>
+                        <p>No active orders right now.</p>
+                    </div>`;
+                }
+            }, 400);
         }
 
-        // ── Refresh display ──
-        function refreshDisplay() {
-            fetch('customer_display.php?ajax=1')
-                .then(res => res.text())
-                .then(html => {
-                    const grid = document.getElementById('orderGrid');
-                    grid.innerHTML = html;
+        const nPrep  = visible.filter(o => o.status === 'Preparing').length;
+        const nReady = visible.filter(o => o.status === 'Completed').length;
+        document.getElementById('orderCount').textContent = `${nPrep} preparing · ${nReady} ready`;
 
-                    // Apply toggle state to new cards
-                    const cards = grid.querySelectorAll('.order-card');
-                    cards.forEach(card => {
-                        const status = card.dataset.status;
-                        if (status === 'Completed' && !showCompleted) {
-                            card.style.display = 'none';
-                        }
-                    });
+        removeIds.forEach(id => readyAt.delete(id));
+    } catch(e) {}
+}
 
-                    // Track ready timestamps for auto-remove
-                    const readyCards = grid.querySelectorAll('.order-card[data-status="Completed"]');
-                    const currentReadyOrders = new Set();
-                    
-                    readyCards.forEach(card => {
-                        const id = card.dataset.orderId;
-                        const created = parseInt(card.dataset.created);
-                        
-                        currentReadyOrders.add(id);
-                        
-                        // If this order wasn't ready before, record timestamp and play sound
-                        if (!previousReadyOrders.has(id)) {
-                            readyTimestamps.set(id, created);
-                            playReadySound();
-                            card.classList.add('ready-pulse');
-                        }
-                        
-                        // If this order has been ready for more than 30 seconds, remove it
-                        if (readyTimestamps.has(id)) {
-                            const readyTime = readyTimestamps.get(id);
-                            if (Date.now() - readyTime > 30000) {
-                                card.classList.add('fade-out');
-                                setTimeout(() => {
-                                    if (card.parentElement) {
-                                        card.remove();
-                                        readyTimestamps.delete(id);
-                                    }
-                                }, 300);
-                            }
-                        }
-                    });
-                    
-                    previousReadyOrders = currentReadyOrders;
-                })
-                .catch(() => {});
-        }
+function applyToggle() {
+    document.querySelectorAll('.order-card[data-status="Completed"]').forEach(card => {
+        card.style.display = showCompleted ? '' : 'none';
+    });
+}
 
-        // ── Refresh every 3 seconds ──
-        setInterval(refreshDisplay, 3000);
+function toggleCompleted() {
+    showCompleted = !showCompleted;
+    const btn = document.getElementById('toggleBtn');
+    btn.classList.toggle('active', showCompleted);
+    btn.innerHTML = showCompleted
+        ? '<i class="fa-solid fa-eye-slash"></i> Hide Completed'
+        : '<i class="fa-solid fa-eye"></i> Show Completed';
+    applyToggle();
+}
 
-        // ── Initial load ──
-        setTimeout(refreshDisplay, 500);
-    </script>
+function tick() {
+    document.getElementById('clock').textContent =
+        new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+}
+tick(); setInterval(tick, 1000);
 
+refresh(); setInterval(refresh, 3000);
+</script>
 </body>
 </html>

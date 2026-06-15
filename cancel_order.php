@@ -20,7 +20,7 @@ if ($order_id <= 0) {
     exit;
 }
 
-$stmt = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, status, loyalty_card_id, points_earned FROM orders WHERE order_id = ?");
+$stmt = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, status, is_open, loyalty_card_id, points_earned FROM orders WHERE order_id = ?");
 $stmt->bind_param("i", $order_id);
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();

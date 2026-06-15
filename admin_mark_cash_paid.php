@@ -1,7 +1,6 @@
 <?php
-session_start();
-require 'admin_only.php';
-require 'config.php';
+require 'auth.php';
+if (!in_array($_SESSION['role'], ['admin', 'manager', 'staff'])) { header("Location: dashboard.php?denied=1"); exit; }
 
 $order_id = (int)($_GET['order_id'] ?? 0);
 
@@ -89,7 +88,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } catch (Exception $e) {
         $conn->rollback();
-        die("Error marking cash as paid: " . $e->getMessage());
+        header("Location: dashboard.php?error=payment_failed");
+        exit;
     }
 }
 ?>

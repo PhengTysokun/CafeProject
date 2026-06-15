@@ -51,7 +51,7 @@ if ($md && (float)($md['amount'] ?? 0) > 0) {
     if ($md['type'] === 'percent') $manual_label .= ' (' . (int)$md['amount'] . '% off)';
     $after -= $manual;
 }
-$tax   = $after * 0.10;
+$tax   = $after * (TAX_RATE / 100);
 $total = round($after + $tax, 2);
 
 $items_out = [];

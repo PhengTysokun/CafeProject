@@ -32,6 +32,40 @@ $_SESSION['customer_name'] = $customer_name;
 $order_type    = in_array($_POST['order_type'] ?? '', ['drink_in','drink_out']) ? $_POST['order_type'] : 'drink_in';
 $table_number  = ($order_type === 'drink_in') ? (substr(trim($_POST['table_number'] ?? ''), 0, 10) ?: null) : null;
 
+// ── STAND DUPLICATE BLOCK ──
+if (!empty($table_number)) {
+    $s = $conn->prepare("SELECT daily_order_no, customer_name, status FROM orders WHERE UPPER(table_number) = UPPER(?) AND status IN ('Pending','Processing','Preparing','PendingPayment') LIMIT 1");
+    $s->bind_param("s", $table_number);
+    $s->execute();
+    $dup = $s->get_result()->fetch_assoc();
+    if ($dup) {
+        $by = $dup['customer_name'] ? ' (' . htmlspecialchars($dup['customer_name']) . ')' : '';
+        die('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stand In Use</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Poppins,sans-serif;background:#fdf4f4;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:#fff;border:1.5px solid #f5c6cb;border-radius:18px;padding:40px 36px;max-width:440px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(220,53,69,.1)}
+.icon{font-size:52px;color:#dc3545;margin-bottom:16px}
+h1{font-size:22px;font-weight:700;color:#1a1410;margin-bottom:8px}
+p{font-size:14px;color:#5a4a3a;line-height:1.6;margin-bottom:6px}
+.highlight{display:inline-block;margin:12px 0;padding:10px 18px;background:#fff3cd;border:1px solid #ffc107;border-radius:10px;color:#856404;font-size:13px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:8px;margin-top:20px;padding:12px 28px;background:#d1904b;color:#fff;border:none;border-radius:50px;font-size:14px;font-weight:600;text-decoration:none;cursor:pointer;font-family:Poppins,sans-serif;transition:all .2s}
+.btn:hover{filter:brightness(1.1);transform:translateY(-1px)}
+</style></head><body>
+<div class="card">
+  <div class="icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+  <h1>Stand Already In Use</h1>
+  <p>Stand number <strong>' . htmlspecialchars($table_number) . '</strong> is currently assigned to another active order.</p>
+  <div class="highlight"><i class="fa-solid fa-ticket"></i> Order #' . htmlspecialchars($dup['daily_order_no']) . $by . ' &mdash; ' . htmlspecialchars($dup['status']) . '</div>
+  <p>Please give the customer a different stand, or wait until the current order is completed.</p>
+  <a href="javascript:history.back()" class="btn"><i class="fa-solid fa-arrow-left"></i> Go Back</a>
+</div>
+</body></html>');
+    }
+}
+
 $payment_methods   = isset($_POST['payment_methods'])   ? $_POST['payment_methods']   : [];
 $payment_amounts   = isset($_POST['payment_amounts'])   ? $_POST['payment_amounts']   : [];
 $payment_references = isset($_POST['payment_references']) ? $_POST['payment_references'] : [];
@@ -56,41 +90,68 @@ $existing_order_id = ($is_add_to_order && isset($_SESSION['add_to_order_id']))
 
 if ($existing_order_id > 0) {
     $stmt = $conn->prepare("
-        SELECT order_id, customer_name, total, promotion_discount, is_open
+        SELECT order_id, customer_name, total, promotion_discount, is_open, order_date
         FROM orders
         WHERE order_id = ?
-          AND status IN ('Preparing', 'Paid')
           AND is_open = 1
+          AND (status IN ('Preparing', 'Paid') OR (payment_method = 'paylater' AND status = 'Completed'))
     ");
     $stmt->bind_param("i", $existing_order_id);
     $stmt->execute();
     $existing_order = $stmt->get_result()->fetch_assoc();
 
     if (!$existing_order) {
-        die("Order not found or already closed. <a href='menu.php'>Back to menu</a>");
+        $_SESSION['cart'] = [];
+        unset($_SESSION['add_to_order_id'], $_SESSION['add_to_daily_no']);
+        header("Location: menu.php?error=order_closed");
+        exit;
     }
 
-    $new_subtotal    = 0;
-    $new_total_qty   = 0;
-    $min_price       = PHP_FLOAT_MAX;
+    // Fetch existing items so promotion can be recalculated over all items combined
+    $stmt_ei = $conn->prepare("SELECT price, quantity FROM order_items WHERE order_id = ?");
+    $stmt_ei->bind_param("i", $existing_order_id);
+    $stmt_ei->execute();
+    $existing_items = $stmt_ei->get_result()->fetch_all(MYSQLI_ASSOC);
 
+    // Preserve happy hour based on original order time (same logic as edit_order_items.php)
+    $orig_hour      = (int)date('H', strtotime($existing_order['order_date']));
+    $was_happy_hour = ($orig_hour >= HAPPY_HOUR_START && $orig_hour < HAPPY_HOUR_END);
+
+    // Combine existing + new items for full recalculation
+    $subtotal = 0; $total_qty = 0; $min_price = PHP_FLOAT_MAX;
+    foreach ($existing_items as $ei) {
+        $p = (float)$ei['price']; $q = (int)$ei['quantity'];
+        $subtotal += $p * $q; $total_qty += $q;
+        if ($p < $min_price) $min_price = $p;
+    }
     foreach ($_SESSION['cart'] as $item) {
-        $qty   = max(1, (int)($item['qty'] ?? 1));
-        $price = (float)($item['price'] ?? 0.0);
-        $new_subtotal  += $price * $qty;
-        $new_total_qty += $qty;
-        if ($price < $min_price) $min_price = $price;
+        $p = (float)($item['price'] ?? 0.0); $q = max(1, (int)($item['qty'] ?? 1));
+        $subtotal += $p * $q; $total_qty += $q;
+        if ($p < $min_price) $min_price = $p;
     }
 
-    $new_tax        = $new_subtotal * 0.10;
-    $new_total      = round($new_subtotal + $new_tax, 2);
-
-    $final_total    = round((float)$existing_order['total'] + $new_total, 2);
-    $final_discount = (float)$existing_order['promotion_discount'];
+    $buy3 = 0;
+    if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT && $min_price < PHP_FLOAT_MAX) {
+        $buy3 = floor($total_qty / BUY_X_COUNT) * $min_price;
+    }
+    $happy_hour = 0;
+    if ($was_happy_hour && HAPPY_HOUR_ENABLED) {
+        $happy_hour = ($subtotal - $buy3) * (HAPPY_HOUR_DISCOUNT / 100);
+    }
+    $final_discount = $buy3 + $happy_hour;
+    $after          = $subtotal - $final_discount;
+    $final_total    = round($after + ($after * (TAX_RATE / 100)), 2);
 
     $conn->begin_transaction();
 
     try {
+        // Reset paylater status to Preparing inside the transaction (safe: rolls back if items fail)
+        if (!empty($_SESSION['paylater_reopen'])) {
+            $stmt_reset = $conn->prepare("UPDATE orders SET status = 'Preparing' WHERE order_id = ? AND status = 'Completed'");
+            $stmt_reset->bind_param("i", $existing_order_id);
+            $stmt_reset->execute();
+        }
+
         $stmt_upd = $conn->prepare("UPDATE orders SET total = ?, promotion_discount = ? WHERE order_id = ?");
         $stmt_upd->bind_param("ddi", $final_total, $final_discount, $existing_order_id);
         $stmt_upd->execute();
@@ -120,15 +181,16 @@ if ($existing_order_id > 0) {
 
         $conn->commit();
         $_SESSION['cart'] = [];
-        unset($_SESSION['add_to_order_id']);
-        unset($_SESSION['add_to_daily_no']);
+        unset($_SESSION['add_to_order_id'], $_SESSION['add_to_daily_no'], $_SESSION['paylater_reopen']);
 
         header("Location: payment_paylater.php?order_id=" . $existing_order_id);
         exit;
 
     } catch (Exception $e) {
         $conn->rollback();
-        die("Error adding to order: " . htmlspecialchars($e->getMessage()));
+        unset($_SESSION['paylater_reopen']);
+        header("Location: menu.php?error=add_failed");
+        exit;
     }
 }
 
@@ -169,7 +231,7 @@ if ($md_co && (float)($md_co['amount'] ?? 0) > 0) {
 // Only happy_hour and manual discounts reduce the chargeable total.
 $total_discount      = $happy_hour_discount + $manual_discount_co;
 $subtotal_after      = $after_promos_co;
-$tax                 = $subtotal_after * 0.10;
+$tax                 = $subtotal_after * (TAX_RATE / 100);
 $total               = round($subtotal_after + $tax, 2);
 
 // ── PAYMENT VALIDATION ──
@@ -272,19 +334,22 @@ try {
     // Only stamp completed_at for fully-paid orders (not paylater which is still open)
     $completed_at = ($order_status === 'Preparing' && $is_open === 0) ? date('Y-m-d H:i:s') : null;
 
+    // started_at = when first item was added to the session cart
+    $started_at = $_SESSION['cart_started_at'] ?? date('Y-m-d H:i:s');
+
     $stmt_order = $conn->prepare("
         INSERT INTO orders
         (customer_name, total, daily_order_no, status, business_date, payment_method,
          promotion_discount, is_open, token_number, employee_id, employee_name,
-         manual_discount, manual_discount_reason, order_type, completed_at, table_number)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         manual_discount, manual_discount_reason, order_type, completed_at, table_number, started_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt_order->bind_param(
-        "sdisssdiiisdssss",
+        "sdisssdiiisdsssss",
         $customer_name, $total, $daily_no, $order_status, $business_date,
         $primary_method, $total_discount, $is_open, $token_number,
         $employee_id, $employee_name,
-        $manual_discount_co, $manual_reason_co, $order_type, $completed_at, $table_number
+        $manual_discount_co, $manual_reason_co, $order_type, $completed_at, $table_number, $started_at
     );
     $stmt_order->execute();
     $order_id = $conn->insert_id;
@@ -388,15 +453,11 @@ try {
         $stmt_cu->execute();
     }
 
-    // ── MARK TABLE OCCUPIED ──
-    if (!empty($table_number) && $order_type === 'drink_in') {
-        $conn->query("UPDATE cafe_tables SET status = 'occupied' WHERE table_number = '" . $conn->real_escape_string($table_number) . "'");
-    }
-
     $conn->commit();
     unset($_SESSION['csrf_token']);
     $_SESSION['cart'] = [];
     unset($_SESSION['manual_discount']);
+    unset($_SESSION['cart_started_at']);
 
     // ── LOYALTY POINTS (1 point per drink ordered) ──
     $loyalty_card_id = isset($_SESSION['loyalty_card_id']) ? (int)$_SESSION['loyalty_card_id'] : 0;

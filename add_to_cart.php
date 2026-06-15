@@ -63,6 +63,8 @@ if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
 
+$cart_was_empty = empty($_SESSION['cart']);
+
 // Merge identical items
 $found = false;
 foreach ($_SESSION['cart'] as &$item) {
@@ -90,6 +92,11 @@ if (!$found) {
         'milk'         => $milk,
         'qty'          => $qty,
     ];
+}
+
+// Stamp when the first item is added to the cart
+if ($cart_was_empty && !isset($_SESSION['cart_started_at'])) {
+    $_SESSION['cart_started_at'] = date('Y-m-d H:i:s');
 }
 
 // Calculate totals

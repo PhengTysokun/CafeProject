@@ -2,9 +2,13 @@
 date_default_timezone_set('Asia/Phnom_Penh');
 
 // Database connection
+// ⚠️  Run this once in phpMyAdmin/MySQL CLI before changing these credentials:
+//   CREATE USER 'cafe_pos'@'localhost' IDENTIFIED BY 'Caf3P0S!2025#Kh';
+//   GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER ON db_coffee.* TO 'cafe_pos'@'localhost';
+//   FLUSH PRIVILEGES;
 $servername = "localhost";
-$username   = "root";
-$password   = "";
+$username   = "cafe_pos";
+$password   = "Caf3P0S!2025#Kh";
 $dbname     = "db_coffee";
 
 $conn = new mysqli($servername, $username, $password, $dbname);
@@ -46,6 +50,7 @@ if (!defined('BUY_X_GET_1_ENABLED')) define('BUY_X_GET_1_ENABLED',(bool)(int)($_
 if (!defined('BUY_X_COUNT'))         define('BUY_X_COUNT',         (int)($_cafe_settings['buy_x_count']         ?? 3));
 if (!defined('KHR_RATE'))            define('KHR_RATE',             (int)($_cafe_settings['khr_exchange_rate']   ?? 4100));
 if (!defined('FREE_ITEM_PRODUCT_ID')) define('FREE_ITEM_PRODUCT_ID', (int)($_cafe_settings['free_item_product_id'] ?? 0));
+if (!defined('TAX_RATE'))            define('TAX_RATE',             (float)($_cafe_settings['tax_rate']           ?? 10));
 unset($_cafe_settings, $_sr, $_today, $_hh_sd, $_hh_ed, $_hh_in_range, $_bx_sd, $_bx_ed, $_bx_in_range);
 
 // ── Schema migrations tracker ──
@@ -56,6 +61,7 @@ if (!function_exists('_migrate')) {
         $chk->bind_param("s", $id); $chk->execute();
         if ($chk->get_result()->num_rows) return;
         $fn($db);
+        if ($db->errno !== 0) return; // don't mark applied if last query failed
         $ins = $db->prepare("INSERT IGNORE INTO schema_migrations (id) VALUES (?)");
         $ins->bind_param("s", $id); $ins->execute();
     }
@@ -68,6 +74,9 @@ _migrate($conn, 'orders_cols_v1', function($db) {
     $db->query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_number VARCHAR(10) NULL DEFAULT NULL");
     $db->query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_id INT NULL");
 });
+_migrate($conn, 'orders_started_at_v1', function($db) {
+    $db->query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS started_at DATETIME NULL DEFAULT NULL");
+});
 _migrate($conn, 'employees_user_id', function($db) {
     $db->query("ALTER TABLE employees ADD COLUMN IF NOT EXISTS user_id INT NULL");
 });
@@ -78,6 +87,26 @@ _migrate($conn, 'products_badge_text', function($db) {
     $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_text VARCHAR(40) NULL DEFAULT NULL");
 });
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
+
+$conn->query("CREATE TABLE IF NOT EXISTS cash_reconciliations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    username VARCHAR(100) NOT NULL,
+    shift_date DATE NOT NULL,
+    login_time DATETIME NOT NULL,
+    expected_cash DECIMAL(10,2) NOT NULL DEFAULT 0,
+    actual_cash DECIMAL(10,2) NOT NULL DEFAULT 0,
+    difference DECIMAL(10,2) GENERATED ALWAYS AS (actual_cash - expected_cash) STORED,
+    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_date (user_id, shift_date)
+) DEFAULT CHARSET=utf8mb4");
+
+$conn->query("CREATE TABLE IF NOT EXISTS announcement_reads (
+    user_id INT NOT NULL,
+    announcement_id INT NOT NULL,
+    read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, announcement_id)
+) DEFAULT CHARSET=utf8mb4");
 
 $conn->query("CREATE TABLE IF NOT EXISTS ingredient_history (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -227,6 +256,48 @@ _migrate($conn, 'rbac_perm_upgrades_v1', function($db) {
     $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'inventory_clerk', id FROM permissions WHERE slug IN ('products','ingredients','recipes','suppliers','purchase_orders')");
     $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Reset Password', 'reset_password', 'Staff', 18)");
     $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='reset_password'");
+});
+
+_migrate($conn, 'rbac_my_profile_v1', function($db) {
+    $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('My Profile', 'my_profile', 'Staff', 19)");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='my_profile'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'staff', id FROM permissions WHERE slug='my_profile'");
+});
+
+_migrate($conn, 'rbac_my_profile_v2', function($db) {
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'barista', id FROM permissions WHERE slug='my_profile'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'supervisor', id FROM permissions WHERE slug='my_profile'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'inventory_clerk', id FROM permissions WHERE slug='my_profile'");
+});
+
+_migrate($conn, 'rbac_barista_station_recon_v1', function($db) {
+    $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Barista Station', 'barista_station', 'Operations', 20)");
+    $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Cash Reconciliation', 'cash_reconciliation', 'Analytics', 21)");
+    // Barista station: all operational roles
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'admin',    id FROM permissions WHERE slug='barista_station'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager',  id FROM permissions WHERE slug='barista_station'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'supervisor',id FROM permissions WHERE slug='barista_station'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'staff',    id FROM permissions WHERE slug='barista_station'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'barista',  id FROM permissions WHERE slug='barista_station'");
+    // Cash reconciliation report: managers and admins only
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'admin',   id FROM permissions WHERE slug='cash_reconciliation'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='cash_reconciliation'");
+});
+
+// ── Add customer_display permission ──
+_migrate($conn, 'rbac_customer_display_v1', function($db) {
+    $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Customer Display', 'customer_display', 'Operations', 21)");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'supervisor', id FROM permissions WHERE slug='customer_display'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'staff',      id FROM permissions WHERE slug='customer_display'");
+    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'barista',    id FROM permissions WHERE slug='customer_display'");
+});
+
+// ── Remove barista_station from management roles (they use full dashboard, not barista display) ──
+_migrate($conn, 'rbac_barista_station_mgmt_fix_v1', function($db) {
+    $db->query("DELETE rp FROM role_permissions rp
+                JOIN permissions p ON rp.permission_id = p.id
+                WHERE p.slug = 'barista_station'
+                  AND rp.role IN ('admin', 'manager', 'supervisor')");
 });
 
 // ── Audit log table ──

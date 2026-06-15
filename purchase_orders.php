@@ -19,19 +19,32 @@ while ($sr = $sres->fetch_assoc()) {
     if (in_array($sr['status'], ['Draft','Ordered'])) $pendingCount += $sr['cnt'];
 }
 
-// PO list
-$where = $filter !== 'all' ? "WHERE p.status = '$filter'" : '';
+// Pagination
+$filter_count = $filter === 'all' ? $allCount : (int)($stats[$filter]['cnt'] ?? 0);
+$per_page     = 10;
+$page         = max(1, (int)($_GET['page'] ?? 1));
+$total_pages  = max(1, (int)ceil($filter_count / $per_page));
+$page         = min($page, $total_pages);
+$offset       = ($page - 1) * $per_page;
+$pg_base      = 'purchase_orders.php?status=' . urlencode($filter) . '&page=';
+
+// PO list (paginated)
+$where_clause = $filter !== 'all' ? "WHERE p.status = '$filter'" : '';
 $pos = [];
-$res = $conn->query("
+$stmt = $conn->prepare("
     SELECT p.*, s.name AS supplier_name,
            COUNT(i.poi_id) AS item_count
     FROM purchase_orders p
     JOIN suppliers s ON s.supplier_id = p.supplier_id
     LEFT JOIN purchase_order_items i ON i.po_id = p.po_id
-    $where
+    $where_clause
     GROUP BY p.po_id
     ORDER BY p.created_at DESC
+    LIMIT ? OFFSET ?
 ");
+$stmt->bind_param("ii", $per_page, $offset);
+$stmt->execute();
+$res = $stmt->get_result();
 if ($res) while ($r = $res->fetch_assoc()) $pos[] = $r;
 
 $statusColors = [
@@ -114,6 +127,14 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 .actions{display:flex;gap:6px;justify-content:flex-end;}
 .empty-state{text-align:center;padding:60px 20px;color:var(--text-muted);}
 .empty-state i{font-size:48px;color:var(--border-hover);display:block;margin-bottom:12px;}
+
+.po-pagination{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center;padding:16px 18px;border-top:1px solid var(--border);}
+.pg-btn{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 10px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;transition:var(--transition);cursor:pointer;}
+.pg-btn:hover:not(.disabled){border-color:var(--accent);color:var(--accent);}
+.pg-btn.pg-active{background:var(--accent);border-color:var(--accent);color:#000;font-weight:700;cursor:default;}
+.pg-btn.disabled{opacity:.3;cursor:default;pointer-events:none;}
+.pg-ellipsis{color:var(--text-muted);padding:0 2px;font-size:14px;}
+.pg-info{font-size:12px;color:var(--text-muted);margin-left:6px;}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:768px){
@@ -223,6 +244,34 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
             <?php endforeach; ?>
             </tbody>
         </table>
+        <?php endif; ?>
+        <?php if ($total_pages > 1): ?>
+        <div class="po-pagination">
+            <?php if ($page > 1): ?>
+            <a href="<?= $pg_base . 1 ?>" class="pg-btn" title="First"><i class="fa-solid fa-angles-left"></i></a>
+            <a href="<?= $pg_base . ($page - 1) ?>" class="pg-btn" title="Previous"><i class="fa-solid fa-angle-left"></i></a>
+            <?php else: ?>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angles-left"></i></span>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angle-left"></i></span>
+            <?php endif; ?>
+            <?php
+            $window = array_unique(array_merge([1, $total_pages], range(max(2, $page - 2), min($total_pages - 1, $page + 2))));
+            sort($window);
+            $prev_p = null;
+            foreach ($window as $p_num):
+                if ($prev_p !== null && $p_num - $prev_p > 1) echo '<span class="pg-ellipsis">…</span>';
+            ?>
+            <a href="<?= $pg_base . $p_num ?>" class="pg-btn <?= $p_num === $page ? 'pg-active' : '' ?>"><?= $p_num ?></a>
+            <?php $prev_p = $p_num; endforeach; ?>
+            <?php if ($page < $total_pages): ?>
+            <a href="<?= $pg_base . ($page + 1) ?>" class="pg-btn" title="Next"><i class="fa-solid fa-angle-right"></i></a>
+            <a href="<?= $pg_base . $total_pages ?>" class="pg-btn" title="Last"><i class="fa-solid fa-angles-right"></i></a>
+            <?php else: ?>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angle-right"></i></span>
+            <span class="pg-btn disabled"><i class="fa-solid fa-angles-right"></i></span>
+            <?php endif; ?>
+            <span class="pg-info">Page <?= $page ?> of <?= $total_pages ?> &nbsp;·&nbsp; <?= number_format($filter_count) ?> total</span>
+        </div>
         <?php endif; ?>
     </div>
 </div>

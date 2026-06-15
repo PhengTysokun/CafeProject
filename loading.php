@@ -15,6 +15,7 @@ $glow = 'rgba(209,144,75,0.12)';
 
 $roles = [
     'admin' => [
+        'speed'     => 'normal',
         'icon'      => 'fa-user-shield',
         'color'     => $gold,
         'glow'      => $glow,
@@ -27,6 +28,7 @@ $roles = [
         'features'  => ['Manage staff, roles & permissions', 'System-wide settings & analytics', 'Full order & payment control'],
     ],
     'manager' => [
+        'speed'     => 'normal',
         'icon'      => 'fa-user-tie',
         'color'     => $gold,
         'glow'      => $glow,
@@ -39,6 +41,7 @@ $roles = [
         'features'  => ['Real-time sales monitoring', 'Reports & daily analytics', 'Staff & inventory oversight'],
     ],
     'staff' => [
+        'speed'     => 'skip',
         'icon'      => 'fa-cash-register',
         'color'     => $gold,
         'glow'      => $glow,
@@ -51,6 +54,7 @@ $roles = [
         'features'  => ['Menu & order management', 'Payment processing', 'Loyalty card handling'],
     ],
     'barista' => [
+        'speed'     => 'skip',
         'icon'      => 'fa-mug-hot',
         'color'     => $gold,
         'glow'      => $glow,
@@ -63,6 +67,7 @@ $roles = [
         'features'  => ['Live order queue', 'Drink recipe reference', 'Order status updates'],
     ],
     'supervisor' => [
+        'speed'     => 'normal',
         'icon'      => 'fa-user-check',
         'color'     => $gold,
         'glow'      => $glow,
@@ -75,6 +80,7 @@ $roles = [
         'features'  => ['Staff attendance tracking', 'Inventory & stock overview', 'Operational order control'],
     ],
     'inventory_clerk' => [
+        'speed'     => 'medium',
         'icon'      => 'fa-box-open',
         'color'     => $gold,
         'glow'      => $glow,
@@ -89,6 +95,7 @@ $roles = [
 ];
 
 $cfg       = $roles[$role] ?? $roles['staff'];
+$speed     = $cfg['speed'] ?? 'normal';
 $color     = $cfg['color'];
 $glow      = $cfg['glow'];
 $icon      = $cfg['icon'];
@@ -99,6 +106,11 @@ $bar_label = $cfg['bar_label'];
 $dest      = $cfg['dest'];
 $duration  = $cfg['duration'];
 $features  = $cfg['features'];
+
+if ($speed === 'skip') {
+    header("Location: " . $dest);
+    exit;
+}
 
 // Greeting based on hour
 $hour = (int)date('H');
@@ -446,6 +458,7 @@ html, body {
 const dest      = <?= json_encode($dest) ?>;
 const initLabel = <?= json_encode($bar_label) ?>;
 const role      = <?= json_encode($role) ?>;
+const speed     = <?= json_encode($speed) ?>;
 
 const pctEl   = document.getElementById('pct');
 const barFill = document.getElementById('barFill');
@@ -507,18 +520,58 @@ function updateTagline(data) {
 }
 
 async function run() {
-    // Bar-wrap fades in at 0.1s delay — wait for it to be visible
-    await wait(600);
+    // ── Fast: cashier (<1s total) ──────────────────────────────────────────
+    if (speed === 'fast') {
+        spinEl.style.display = 'none';
+        // Fire preload in background — don't block redirect on it
+        fetch('api/preload.php')
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) try { sessionStorage.setItem('cafe_preload', JSON.stringify(d)); } catch(_) {} })
+            .catch(() => {});
+        barLabel.textContent = initLabel;
+        await smoothBar(0, 100, 500);
+        document.getElementById('wrapper').classList.add('fade-out');
+        setTimeout(() => { window.location.href = dest; }, 300);
+        return;
+    }
 
-    // Kill the idle spinner, real progress starts now
+    // ── Medium: inventory (~1.5s total) ───────────────────────────────────
+    if (speed === 'medium') {
+        spinEl.style.display = 'none';
+        barLabel.textContent = initLabel;
+        await smoothBar(0, 25, 200);
+
+        barLabel.textContent = 'Loading your data';
+        const fetchMed = fetch('api/preload.php')
+            .then(r => r.ok ? r.json() : Promise.reject(new Error('server')))
+            .then(data => {
+                try { sessionStorage.setItem('cafe_preload', JSON.stringify(data)); } catch(_) {}
+                updateTagline(data);
+            })
+            .catch(() => {
+                errEl.textContent = 'Connection issue — continuing anyway';
+                errEl.classList.add('show');
+            });
+
+        await Promise.all([fetchMed, smoothBar(25, 85, 600), wait(600)]);
+
+        barLabel.textContent = 'Almost ready';
+        await smoothBar(85, 100, 200);
+        await wait(100);
+
+        document.getElementById('wrapper').classList.add('fade-out');
+        setTimeout(() => { window.location.href = dest; }, 400);
+        return;
+    }
+
+    // ── Normal: admin / manager / supervisor ──────────────────────────────
+    await wait(600);
     spinEl.style.display = 'none';
 
-    // Stage 1 — role-specific label (0 → 18%)
     barLabel.textContent = initLabel;
     await smoothBar(0, 18, 350);
     await wait(350);
 
-    // Stage 2 — real data fetch (18 → 76%, 700ms minimum so label is readable)
     barLabel.textContent = 'Loading your data';
     const fetchDone = fetch('api/preload.php')
         .then(r => r.ok ? r.json() : Promise.reject(new Error('server')))
@@ -534,7 +587,6 @@ async function run() {
     await Promise.all([fetchDone, smoothBar(18, 76, 700), wait(700)]);
     await wait(200);
 
-    // Stage 3 — almost ready (76 → 100%)
     barLabel.textContent = 'Almost ready';
     await smoothBar(76, 100, 450);
     await wait(350);
