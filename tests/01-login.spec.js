@@ -17,6 +17,7 @@ test('wrong password redirects back with error message', async ({ page }) => {
   await page.click('button[type="submit"]');
   await page.waitForURL(/login\.php.*error/, { timeout: 5000 });
   await expect(page.locator('.error-box')).toBeVisible();
+  await expect(page.locator('.error-box')).toContainText('Invalid username or password');
 });
 
 test('logout redirects to login page', async ({ page }) => {
