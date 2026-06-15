@@ -300,6 +300,11 @@ _migrate($conn, 'rbac_barista_station_mgmt_fix_v1', function($db) {
                   AND rp.role IN ('admin', 'manager', 'supervisor')");
 });
 
+// ── Drop legacy token_number_old column (unused) ──
+_migrate($conn, 'orders_drop_token_number_old_v1', function($db) {
+    $db->query("ALTER TABLE orders DROP COLUMN IF EXISTS token_number_old");
+});
+
 // ── Migrate role_permissions: replace role VARCHAR with role_id INT FK ──
 _migrate($conn, 'rbac_role_permissions_int_fk_v1', function($db) {
     // Add role_id column (idempotent — IF NOT EXISTS)
