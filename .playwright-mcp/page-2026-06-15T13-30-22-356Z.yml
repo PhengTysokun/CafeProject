@@ -1,0 +1,61 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Good evening, Sok_Dara Cashier" [level=1] [ref=e6]:
+        - text: Good evening, Sok_Dara
+        - generic [ref=e7]: Cashier
+      - paragraph [ref=e8]:
+        - generic [ref=e9]: 
+        - text: Monday, 15 June 2026
+    - generic [ref=e10]:
+      - button " Dark" [ref=e11] [cursor=pointer]:
+        - generic [ref=e12]: 
+        - generic [ref=e13]: Dark
+      - button " Clock In" [ref=e14] [cursor=pointer]:
+        - generic [ref=e15]: 
+        - text: Clock In
+      - generic [ref=e16]: 8:30 PM
+      - link " Logout" [ref=e17] [cursor=pointer]:
+        - /url: shift_report.php
+        - generic [ref=e18]: 
+        - generic [ref=e19]: Logout
+  - generic [ref=e20]:
+    - generic [ref=e21]:
+      - generic [ref=e22]: "16"
+      - generic [ref=e23]: Orders Today
+    - generic [ref=e24]:
+      - generic [ref=e25]: "10"
+      - generic [ref=e26]: Completed
+    - generic [ref=e27]:
+      - generic [ref=e28]: "5"
+      - generic [ref=e29]: Preparing
+    - generic [ref=e30]:
+      - generic [ref=e31]: "1"
+      - generic [ref=e32]: Pending Pay
+  - generic [ref=e33]:
+    - link " New Order" [ref=e34] [cursor=pointer]:
+      - /url: menu.php
+      - generic [ref=e35]: 
+      - generic [ref=e36]: New Order
+    - generic [ref=e37]:
+      - text: 
+      - generic [ref=e38]:
+        - link " Orders" [ref=e39] [cursor=pointer]:
+          - /url: view_order.php
+          - generic [ref=e40]: 
+          - generic [ref=e41]: Orders
+        - link "3  Find Order" [ref=e42] [cursor=pointer]:
+          - /url: find_order.php
+          - generic [ref=e43]: "3"
+          - generic [ref=e44]: 
+          - generic [ref=e45]: Find Order
+        - link " Tables" [ref=e46] [cursor=pointer]:
+          - /url: tables.php
+          - generic [ref=e47]: 
+          - generic [ref=e48]: Tables
+    - generic [ref=e49]:
+      - text: 
+      - link " Loyalty" [ref=e51] [cursor=pointer]:
+        - /url: loyalty_dashboard.php
+        - generic [ref=e52]: 
+        - generic [ref=e53]: Loyalty

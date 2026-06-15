@@ -93,7 +93,7 @@ if ($order_ids) {
 // ── AJAX: save cash reconciliation ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['actual_cash'])) {
     $actual = (float)$_POST['actual_cash'];
-    $s = $conn->prepare("INSERT INTO cash_reconciliations (user_id, username, shift_date, login_time, expected_cash, actual_cash) VALUES (?,?,CURDATE(),?,?,?)");
+    $s = $conn->prepare("INSERT INTO cash_counts (user_id, username, shift_date, login_time, expected_cash, actual_cash) VALUES (?,?,CURDATE(),?,?,?)");
     $s->bind_param("issdd", $uid, $uname, $login_dt, $expected_cash, $actual);
     $s->execute();
     header('Content-Type: application/json');

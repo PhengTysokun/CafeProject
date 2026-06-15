@@ -120,6 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     exit;
 }
 
+
 /* ── POST: Bulk reassign ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_reassign') {
     $from = trim($_POST['from_role'] ?? '');
@@ -503,6 +504,7 @@ tr:last-child td { border-bottom:none; }
 .btn-save:disabled { opacity:.6; transform:none; cursor:not-allowed; }
 .btn-cancel-modal { padding:12px 20px; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer; font-family:'Poppins',sans-serif; transition:var(--transition); }
 .btn-cancel-modal:hover { border-color:var(--border-hover); color:var(--text); }
+
 
 /* ── TOAST ── */
 #toast-cnt { position:fixed; bottom:24px; right:20px; z-index:99999; display:flex; flex-direction:column-reverse; gap:8px; pointer-events:none; }
@@ -972,8 +974,13 @@ tr:last-child td { border-bottom:none; }
                     </td>
                 </tr>
                 <?php foreach ($mperms as $p): ?>
-                <tr class="perm-row" data-module="<?= htmlspecialchars($module) ?>">
-                    <td><div class="perm-name"><div class="perm-dot"></div><?= htmlspecialchars($p['name']) ?></div></td>
+                <tr class="perm-row" data-module="<?= htmlspecialchars($module) ?>" id="perm-row-<?= $p['id'] ?>">
+                    <td>
+                        <div class="perm-name">
+                            <div class="perm-dot"></div>
+                            <span class="perm-name-text" id="perm-name-<?= $p['id'] ?>"><?= htmlspecialchars($p['name']) ?></span>
+                        </div>
+                    </td>
                     <?php foreach ($roles as $rslug => $rinfo):
                         $col = $rinfo['color'];
                         if ($rslug === 'admin'): ?>
@@ -1383,6 +1390,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('themeIcon').className = 'fa-solid fa-sun';
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeEditMeta(); closeDeleteModal(); closeBulkReassign(); } });
+</script>
+
 </script>
 </body>
 </html>

@@ -59,7 +59,7 @@ $low_recipe_count = mysqli_fetch_assoc($low_recipe_result)['low_recipe_count'];
 // Cash reconciliation alert — short/over records today
 $_recon_alerts = 0;
 if (can('cash_reconciliation')) {
-    $_rar = $conn->query("SELECT COUNT(*) FROM cash_reconciliations WHERE shift_date = CURDATE() AND ABS(difference) >= 0.01");
+    $_rar = $conn->query("SELECT COUNT(*) FROM cash_counts WHERE shift_date = CURDATE() AND ABS(difference) >= 0.01");
     if ($_rar) $_recon_alerts = (int)$_rar->fetch_row()[0];
 }
 
@@ -867,9 +867,22 @@ body.no-sidebar{--sidebar-w:0px;}
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:90;}
 .overlay.active{display:block;}
 
+/* ── LOGOUT BUTTON ── */
+.logout-btn {
+    display:inline-flex;align-items:center;gap:7px;
+    padding:9px 16px;border-radius:10px;
+    font-size:13px;font-family:'Poppins',sans-serif;font-weight:500;cursor:pointer;
+    background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);
+    color:var(--red);transition:all .2s;
+}
+.logout-btn:hover{background:rgba(255,107,107,.14);border-color:rgba(255,107,107,.45);transform:translateY(-1px);}
+
 /* ── ANIMATIONS ── */
 .fu{animation:fu .45s var(--ease) both;}
 @keyframes fu{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
+
+
+
 
 /* ── RESPONSIVE ── */
 @media(max-width:1100px){.mid-grid{grid-template-columns:1fr;}}
@@ -1037,6 +1050,12 @@ body.no-sidebar{--sidebar-w:0px;}
                 <?php if ($low_stock > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto"><?= $low_stock ?></span><?php endif; ?>
             </a>
             <?php endif; ?>
+            <?php if (can('stock_count')): ?>
+            <a class="nav-item<?= basename($_SERVER['PHP_SELF']) === 'stock_count.php' ? ' active' : '' ?>" href="stock_count.php">
+                <i class="fa-solid fa-clipboard-list"></i>
+                <span class="nav-label">Stock Count</span>
+            </a>
+            <?php endif; ?>
             <?php if (can('recipes')): ?>
             <a class="nav-item" href="recipes_view.php">
                 <i class="fa-solid fa-utensils"></i>
@@ -1082,7 +1101,7 @@ body.no-sidebar{--sidebar-w:0px;}
             <?php if (can('cash_reconciliation')): ?>
             <a class="nav-item" href="reconciliation_report.php">
                 <i class="fa-solid fa-cash-register"></i>
-                <span class="nav-label">Cash Reconciliation</span>
+                <span class="nav-label">Cash Count</span>
                 <?php if ($_recon_alerts > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto"><?= $_recon_alerts ?></span><?php endif; ?>
             </a>
             <?php endif; ?>
@@ -1602,6 +1621,7 @@ setInterval(updateSidebarClock,1000);
     const g=h<12?'morning':h<17?'afternoon':'evening';
     document.getElementById('timeOfDay').textContent=g;
 })();
+
 
 /* ── Mobile sidebar (absent for roles without sidebar access) ── */
 function toggleSidebar(){

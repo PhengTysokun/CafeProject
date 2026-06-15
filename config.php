@@ -272,7 +272,7 @@ _migrate($conn, 'rbac_my_profile_v2', function($db) {
 
 _migrate($conn, 'rbac_barista_station_recon_v1', function($db) {
     $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Barista Station', 'barista_station', 'Operations', 20)");
-    $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Cash Reconciliation', 'cash_reconciliation', 'Analytics', 21)");
+    $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Cash Count', 'cash_reconciliation', 'Analytics', 21)");
     // Barista station: all operational roles
     $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'admin',    id FROM permissions WHERE slug='barista_station'");
     $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager',  id FROM permissions WHERE slug='barista_station'");
@@ -440,8 +440,8 @@ _migrate($conn, 'add_missing_fks_v1', function($db) {
     $db->query("ALTER TABLE announcement_reads ADD CONSTRAINT fk_ar_announcement FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE");
     if ($db->errno) return;
 
-    // cash_reconciliations → users (RESTRICT: keep financial history)
-    $db->query("ALTER TABLE cash_reconciliations ADD CONSTRAINT fk_cr_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE RESTRICT");
+    // cash_counts → users (RESTRICT: keep financial history)
+    $db->query("ALTER TABLE cash_counts ADD CONSTRAINT fk_cr_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE RESTRICT");
     if ($db->errno) return;
 
     // ingredients → suppliers (nullable → SET NULL when supplier deleted)
@@ -474,6 +474,22 @@ _migrate($conn, 'products_category_fk_v1', function($db) {
     $db->query("UPDATE products p JOIN categories c ON c.slug = p.category SET p.category_id = c.category_id WHERE p.category_id IS NULL");
     if ($db->errno) return;
     $db->query("ALTER TABLE products ADD CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(category_id) ON DELETE SET NULL");
+});
+
+// ── Rename cash_reconciliations → cash_counts ──
+_migrate($conn, 'rename_cash_reconciliations_to_cash_counts_v1', function($db) {
+    $db->query("RENAME TABLE cash_reconciliations TO cash_counts");
+});
+
+// ── Rename permission display name ──
+_migrate($conn, 'rename_permission_cash_reconciliation_to_cash_count_v1', function($db) {
+    $db->query("UPDATE permissions SET name = 'Cash Count' WHERE slug = 'cash_reconciliation'");
+});
+
+// ── Remove test permission ──
+_migrate($conn, 'delete_test_permission_only_sigma_boy_v3', function($db) {
+    $db->query("DELETE FROM permissions WHERE name = 'OnlySigmaBoy' OR slug IN ('only_sigma_boy','onlysigmaboy')");
+    $db->query("DELETE FROM role_permissions WHERE permission_id NOT IN (SELECT id FROM permissions)");
 });
 
 // ── SANITIZE FUNCTION ──

@@ -18,7 +18,32 @@ $is_ajax  = !empty($_GET['ajax']);
 
 // ── CASHIER LIST ──
 $cashiers = [];
-$cr = $conn->query("SELECT DISTINCT user_id, username FROM cash_reconciliations ORDER BY username ASC");
+$cr = $conn->query("SELECT DISTINCT user_id, username FROM cash_counts ORDER BY username ASC");
+
+// ── STOCK COUNT SESSIONS in date range ──
+$sc_stmt = $conn->prepare("
+    SELECT
+        sc.count_id,
+        sc.business_date,
+        sc.status,
+        sc.submitted_by,
+        sc.submitted_at,
+        sc.notes,
+        COUNT(sci.item_id)                                             AS total_items,
+        SUM(sci.actual_qty IS NOT NULL)                                AS counted_items,
+        SUM(sci.variance < -0.01)                                      AS shortage_items,
+        SUM(sci.variance >  0.01)                                      AS overage_items,
+        SUM(CASE WHEN sci.variance < -0.01 THEN sci.variance ELSE 0 END) AS total_shortage,
+        SUM(CASE WHEN sci.variance >  0.01 THEN sci.variance ELSE 0 END) AS total_overage
+    FROM stock_counts sc
+    LEFT JOIN stock_count_items sci ON sci.count_id = sc.count_id
+    WHERE sc.business_date BETWEEN ? AND ?
+    GROUP BY sc.count_id
+    ORDER BY sc.business_date DESC
+");
+$sc_stmt->bind_param("ss", $filter_from, $filter_to);
+$sc_stmt->execute();
+$sc_rows = $sc_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 while ($row = $cr->fetch_assoc()) $cashiers[] = $row;
 
 // ── WHERE CLAUSE ──
@@ -35,7 +60,7 @@ $ss = $conn->prepare("SELECT
     SUM(CASE WHEN difference > 0.005     THEN 1 ELSE 0 END) AS overs,
     SUM(CASE WHEN difference < -0.005    THEN 1 ELSE 0 END) AS shorts,
     COALESCE(SUM(difference), 0)                         AS total_diff
-    FROM cash_reconciliations cr WHERE $where_sql");
+    FROM cash_counts cr WHERE $where_sql");
 $ss->bind_param($types, ...$params);
 $ss->execute();
 $stats      = $ss->get_result()->fetch_assoc();
@@ -52,7 +77,7 @@ $pparams = [...$params, $per_page, $offset];
 $ptypes  = $types . 'ii';
 $stmt = $conn->prepare("SELECT cr.id, cr.user_id, cr.username, cr.shift_date, cr.login_time,
                cr.expected_cash, cr.actual_cash, cr.difference, cr.recorded_at
-        FROM cash_reconciliations cr
+        FROM cash_counts cr
         WHERE $where_sql
         ORDER BY cr.recorded_at DESC
         LIMIT ? OFFSET ?");
@@ -178,7 +203,7 @@ if ($is_ajax) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cash Reconciliation Report</title>
+<title>Cash Count Report</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
@@ -381,6 +406,32 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
 /* ── AJAX loading state ── */
 #results-box{transition:opacity .15s ease}
 #results-box.loading{opacity:.35;pointer-events:none}
+
+/* ── Inventory section ── */
+.inv-section{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  overflow:hidden;margin-top:20px;
+  animation:fadeInUp .45s ease .5s both;
+}
+.inv-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);
+}
+.inv-title{font-size:13px;font-weight:600;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:8px}
+.inv-new-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:7px 14px;border-radius:9px;font-size:12px;font-weight:600;
+  background:var(--amber-dim);border:1px solid var(--amber-border);
+  color:var(--amber);text-decoration:none;transition:all .2s;
+}
+.inv-new-btn:hover{background:rgba(209,144,75,.2);}
+.inv-view-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 11px;border-radius:8px;font-size:11px;font-weight:500;
+  background:rgba(255,255,255,.05);border:1px solid var(--border);
+  color:var(--muted2);text-decoration:none;transition:all .2s;white-space:nowrap;
+}
+.inv-view-btn:hover{color:var(--text);background:rgba(255,255,255,.09);}
 </style>
 </head>
 <body>
@@ -389,7 +440,7 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
     <div class="topbar-left">
         <a href="dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
         <div>
-            <div class="page-title"><i class="fa-solid fa-cash-register" style="color:var(--amber);margin-right:8px"></i>Cash Reconciliation Report</div>
+            <div class="page-title"><i class="fa-solid fa-cash-register" style="color:var(--amber);margin-right:8px"></i>Cash Count Report</div>
             <div class="page-sub">Drawer counts submitted by cashiers at end of shift</div>
         </div>
     </div>
@@ -460,6 +511,93 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
         </span>
     </div>
     <?php endif; ?>
+
+    <!-- ── INVENTORY STOCK COUNTS ── -->
+    <div class="inv-section">
+        <div class="inv-header">
+            <div class="inv-title">
+                <i class="fa-solid fa-clipboard-list" style="color:var(--amber)"></i>
+                Inventory Stock Counts
+            </div>
+            <a href="stock_count.php" class="inv-new-btn">
+                <i class="fa-solid fa-plus"></i> New Count
+            </a>
+        </div>
+
+        <?php if (empty($sc_rows)): ?>
+        <div class="empty" style="padding:40px 20px">
+            <i class="fa-solid fa-clipboard-list"></i>
+            <h3>No stock counts in this period</h3>
+            <p>Stock counts submitted via the Stock Count page will appear here.</p>
+        </div>
+        <?php else: ?>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th style="text-align:right">Items Counted</th>
+                    <th style="text-align:right;color:#f87171">Shortages</th>
+                    <th style="text-align:right;color:#fbbf24">Overages</th>
+                    <th>Submitted By</th>
+                    <th>Notes</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($sc_rows as $scr):
+                $shortage = (int)$scr['shortage_items'];
+                $overage  = (int)$scr['overage_items'];
+                $counted  = (int)$scr['counted_items'];
+                $total_i  = (int)$scr['total_items'];
+                $row_class = $shortage > 0 ? 'row-short' : ($overage > 0 ? 'row-over' : ($counted > 0 ? 'row-match' : ''));
+            ?>
+            <tr class="<?= $row_class ?>">
+                <td>
+                    <strong><?= date('d M Y', strtotime($scr['business_date'])) ?></strong>
+                    <?php if ($scr['business_date'] === date('Y-m-d')): ?>
+                    <span class="badge match" style="font-size:10px;padding:2px 7px;margin-left:6px">Today</span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($scr['status'] === 'submitted'): ?>
+                    <span class="badge match"><i class="fa-solid fa-lock"></i> Submitted</span>
+                    <?php else: ?>
+                    <span class="badge" style="background:rgba(255,255,255,.06);color:#888;border:1px solid rgba(255,255,255,.1)">
+                        <i class="fa-solid fa-pencil"></i> Draft
+                    </span>
+                    <?php endif; ?>
+                </td>
+                <td style="text-align:right;color:var(--muted2)"><?= $counted ?> / <?= $total_i ?></td>
+                <td style="text-align:right">
+                    <?php if ($shortage > 0): ?>
+                    <span class="badge short"><?= $shortage ?> item<?= $shortage !== 1 ? 's' : '' ?></span>
+                    <?php else: ?>
+                    <span style="color:var(--muted)">—</span>
+                    <?php endif; ?>
+                </td>
+                <td style="text-align:right">
+                    <?php if ($overage > 0): ?>
+                    <span class="badge over"><?= $overage ?> item<?= $overage !== 1 ? 's' : '' ?></span>
+                    <?php else: ?>
+                    <span style="color:var(--muted)">—</span>
+                    <?php endif; ?>
+                </td>
+                <td style="color:var(--muted2)"><?= htmlspecialchars($scr['submitted_by'] ?? '—') ?></td>
+                <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    <?= htmlspecialchars($scr['notes'] ?? '') ?>
+                </td>
+                <td>
+                    <a href="stock_count.php?date=<?= $scr['business_date'] ?>" class="inv-view-btn">
+                        View <i class="fa-solid fa-arrow-right" style="font-size:10px"></i>
+                    </a>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif; ?>
+    </div>
 
 </div>
 
