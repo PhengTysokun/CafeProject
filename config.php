@@ -305,11 +305,6 @@ _migrate($conn, 'orders_drop_token_number_old_v1', function($db) {
     $db->query("ALTER TABLE orders DROP COLUMN IF EXISTS token_number_old");
 });
 
-// ── Drop empty unused migrations table ──
-_migrate($conn, 'drop_empty_migrations_table_v1', function($db) {
-    $db->query("DROP TABLE IF EXISTS migrations");
-});
-
 // ── Migrate role_permissions: replace role VARCHAR with role_id INT FK ──
 _migrate($conn, 'rbac_role_permissions_int_fk_v1', function($db) {
     // Add role_id column (idempotent — IF NOT EXISTS)
