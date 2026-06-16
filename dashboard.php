@@ -1437,7 +1437,72 @@ body.no-sidebar{--sidebar-w:0px;}
         </table>
     </div>
 
-    <?php else: /* non-admin/manager: show quick-access tiles */ ?>
+    <?php else: /* non-admin/manager: role-aware focus + quick-access tiles */ ?>
+
+    <?php
+    // ── Role-aware focus card: surface each role's single most relevant task on landing ──
+    // NOTE: barista_station is granted to both barista AND staff(cashier), so match on
+    // role first (barista/inventory), then fall back to permissions for everyone else.
+    $_role  = $_SESSION['role'] ?? '';
+    $_focus = null;
+
+    $_focus_barista = [
+        'icon'  => 'fa-fire-burner',
+        'count' => (int)$preparing_count,
+        'label' => $preparing_count == 1 ? 'drink to prepare' : 'drinks to prepare',
+        'sub'   => $preparing_count > 0 ? 'Orders are waiting in the queue' : 'All caught up — nothing in the queue',
+        'href'  => 'barista_display.php',
+        'cta'   => 'Open Barista Station',
+        'color' => $preparing_count > 0 ? '#ff8a3d' : '#55c97e',
+    ];
+    $_pending_total = (int)$unpaid_count + (int)$paylater_count;
+    $_focus_cashier = [
+        'icon'  => 'fa-cash-register',
+        'count' => $_pending_total,
+        'label' => $_pending_total == 1 ? 'order awaiting payment' : 'orders awaiting payment',
+        'sub'   => (int)$unpaid_count . ' unpaid · ' . (int)$paylater_count . ' pay-later',
+        'href'  => 'find_order.php',
+        'cta'   => 'Find Orders',
+        'color' => $_pending_total > 0 ? '#9b59b6' : '#55c97e',
+    ];
+    $_focus_inventory = [
+        'icon'  => 'fa-triangle-exclamation',
+        'count' => (int)$low_stock,
+        'label' => $low_stock == 1 ? 'item low on stock' : 'items low on stock',
+        'sub'   => $low_stock > 0 ? 'Restock needed soon' : 'Stock levels look healthy',
+        'href'  => 'ingredients.php',
+        'cta'   => 'Review Stock',
+        'color' => $low_stock > 0 ? '#ff6b6b' : '#55c97e',
+    ];
+
+    if ($_role === 'barista') {
+        $_focus = $_focus_barista;                       // barista → drinks to prepare
+    } elseif ($_role === 'inventory_clerk') {
+        $_focus = $_focus_inventory;                      // inventory clerk → stock
+    } elseif (can('find_orders')) {
+        $_focus = $_focus_cashier;                        // cashier / order-taking → payments
+    } elseif (can('ingredients') || can('products')) {
+        $_focus = $_focus_inventory;                      // other stock-facing roles
+    } elseif (can('barista_station')) {
+        $_focus = $_focus_barista;                        // prep-only roles
+    }
+    ?>
+    <?php if ($_focus): ?>
+    <a href="<?= htmlspecialchars($_focus['href']) ?>" class="fu" style="animation-delay:.06s;display:flex;align-items:center;gap:18px;text-decoration:none;background:var(--surface-2);border:1px solid var(--border);border-left:4px solid <?= $_focus['color'] ?>;border-radius:16px;padding:18px 22px;margin-bottom:22px;transition:transform .15s ease,border-color .15s ease;" onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='var(--border-hi)'" onmouseout="this.style.transform='';this.style.borderColor='var(--border)'">
+        <div style="flex:0 0 auto;width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:25px;color:<?= $_focus['color'] ?>;background:<?= $_focus['color'] ?>22;">
+            <i class="fa-solid <?= $_focus['icon'] ?>"></i>
+        </div>
+        <div style="flex:1 1 auto;min-width:0;">
+            <div style="font-size:26px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;">
+                <?= (int)$_focus['count'] ?> <span style="font-size:15px;font-weight:500;color:var(--text-muted);"><?= htmlspecialchars($_focus['label']) ?></span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;"><?= htmlspecialchars($_focus['sub']) ?></div>
+        </div>
+        <span style="flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:<?= $_focus['color'] ?>;white-space:nowrap;">
+            <?= htmlspecialchars($_focus['cta']) ?> <i class="fa-solid fa-arrow-right"></i>
+        </span>
+    </a>
+    <?php endif; ?>
 
     <!-- QUICK ACCESS GRID -->
     <div class="qa-grid fu" style="animation-delay:.1s">
