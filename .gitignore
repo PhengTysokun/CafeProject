@@ -1,0 +1,21 @@
+# Dependencies (managed by composer / npm)
+/node_modules/
+/vendor/
+
+# Local secrets — real Bakong payment credentials live here, never commit
+bakong_config.local.php
+
+# Generated output
+/reports/
+/stock_alerts/
+
+# Logs & temp
+*.log
+*.bak
+*.tmp
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
