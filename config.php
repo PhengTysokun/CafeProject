@@ -134,7 +134,7 @@ _migrate($conn, 'order_remakes_v1', function($db) {
     ) DEFAULT CHARSET=utf8mb4");
 });
 
-// ── New tables: categories, customers, cafe_tables ──
+// ── New tables: categories, customers ──
 $conn->query("CREATE TABLE IF NOT EXISTS categories (
     category_id INT AUTO_INCREMENT PRIMARY KEY,
     slug VARCHAR(50) NOT NULL UNIQUE,
@@ -160,18 +160,6 @@ $conn->query("CREATE TABLE IF NOT EXISTS customers (
     email VARCHAR(100) DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) DEFAULT CHARSET=utf8mb4");
-
-$conn->query("CREATE TABLE IF NOT EXISTS cafe_tables (
-    table_id INT AUTO_INCREMENT PRIMARY KEY,
-    table_number VARCHAR(10) NOT NULL UNIQUE,
-    capacity INT DEFAULT 4,
-    status ENUM('available','occupied') DEFAULT 'available'
-) DEFAULT CHARSET=utf8mb4");
-
-if ((int)$conn->query("SELECT COUNT(*) FROM cafe_tables")->fetch_row()[0] === 0) {
-    $conn->query("INSERT INTO cafe_tables (table_number, capacity) VALUES
-        ('T1',2),('T2',2),('T3',4),('T4',4),('T5',4),('T6',6),('T7',6),('VIP',8)");
-}
 
 // ── RBAC: create tables ──
 $conn->query("CREATE TABLE IF NOT EXISTS permissions (
@@ -237,19 +225,17 @@ if ((int)$conn->query("SELECT COUNT(*) FROM permissions")->fetch_row()[0] === 0)
     $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'manager',id FROM permissions WHERE slug IN ('dashboard','find_orders','view_orders','loyalty','products','ingredients','recipes','manage_recipes','suppliers','purchase_orders','report','announcements','attendance','promotions','reset_password')");
 
     // Default staff permissions
-    $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'staff',id FROM permissions WHERE slug IN ('dashboard','find_orders','loyalty','tables')");
+    $conn->query("INSERT IGNORE INTO role_permissions (role,permission_id) SELECT 'staff',id FROM permissions WHERE slug IN ('dashboard','find_orders','loyalty')");
 }
 
 // ── RBAC: register newly-added permissions for existing installs (run once via migrations) ──
 _migrate($conn, 'rbac_perm_upgrades_v1', function($db) {
-    $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Tables', 'tables', 'Orders', 16)");
-    $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='tables'");
     $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Manage Recipes', 'manage_recipes', 'Inventory', 17)");
     $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='manage_recipes'");
     $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'manager', id FROM permissions WHERE slug='promotions'");
     $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'barista', id FROM permissions WHERE slug IN ('view_orders','recipes')");
     $db->query("INSERT IGNORE INTO role_permissions (role, permission_id) SELECT 'supervisor', id FROM permissions WHERE slug IN (
-        'dashboard','find_orders','view_orders','tables','loyalty',
+        'dashboard','find_orders','view_orders','loyalty',
         'ingredients','recipes','manage_recipes','suppliers',
         'announcements','attendance'
     )");
@@ -303,6 +289,15 @@ _migrate($conn, 'rbac_barista_station_mgmt_fix_v1', function($db) {
 // ── Drop legacy token_number_old column (unused) ──
 _migrate($conn, 'orders_drop_token_number_old_v1', function($db) {
     $db->query("ALTER TABLE orders DROP COLUMN IF EXISTS token_number_old");
+});
+
+// ── Remove redundant Table Management (cafe_tables) — superseded by stand numbers ──
+_migrate($conn, 'remove_cafe_tables_v1', function($db) {
+    $db->query("DELETE rp FROM role_permissions rp
+                JOIN permissions p ON rp.permission_id = p.id
+                WHERE p.slug = 'tables'");
+    $db->query("DELETE FROM permissions WHERE slug = 'tables'");
+    $db->query("DROP TABLE IF EXISTS cafe_tables");
 });
 
 // ── Migrate role_permissions: replace role VARCHAR with role_id INT FK ──

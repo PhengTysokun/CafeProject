@@ -959,7 +959,7 @@ body.no-sidebar{--sidebar-w:0px;}
         </div>
 
         <!-- ORDERS -->
-        <?php if (can('find_orders') || can('view_orders') || can('tables')): ?>
+        <?php if (can('find_orders') || can('view_orders')): ?>
         <div class="nav-group-label" onclick="toggleGroup(this)" data-group="orders">
             <span>Orders</span>
             <i class="fa-solid fa-chevron-right nav-chevron"></i>
@@ -980,17 +980,6 @@ body.no-sidebar{--sidebar-w:0px;}
             <a class="nav-item" href="view_order.php">
                 <i class="fa-solid fa-receipt"></i>
                 <span class="nav-label">Orders</span>
-            </a>
-            <?php endif; ?>
-            <?php if (can('tables')): ?>
-            <a class="nav-item" href="tables.php">
-                <i class="fa-solid fa-table-cells"></i>
-                <span class="nav-label">Tables</span>
-                <?php
-                $_occ = $conn->query("SELECT COUNT(*) FROM cafe_tables WHERE status='occupied'")->fetch_row()[0];
-                if ($_occ > 0): ?>
-                <span class="order-badge" style="background:var(--red,#e74c3c);"><?= (int)$_occ ?></span>
-                <?php endif; ?>
             </a>
             <?php endif; ?>
         </div>
@@ -1459,7 +1448,7 @@ body.no-sidebar{--sidebar-w:0px;}
         </a>
         <?php endif; ?>
 
-        <?php if (can('view_orders') || can('find_orders') || can('tables')): ?>
+        <?php if (can('view_orders') || can('find_orders')): ?>
         <div class="qa-group">
             <div class="qa-group-label"><i class="fa-solid fa-receipt"></i> Orders</div>
             <div class="qa-tiles">
@@ -1478,12 +1467,6 @@ body.no-sidebar{--sidebar-w:0px;}
                     <?php endif; ?>
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <span>Find Order</span>
-                </a>
-                <?php endif; ?>
-                <?php if (can('tables')): ?>
-                <a href="tables.php" class="qa-tile">
-                    <i class="fa-solid fa-table-cells"></i>
-                    <span>Tables</span>
                 </a>
                 <?php endif; ?>
             </div>
