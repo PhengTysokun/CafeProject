@@ -1,12 +1,21 @@
 <?php
+// Bakong payment config loader.
+// Real credentials live in bakong_config.local.php (git-ignored).
+// This tracked file only holds safe placeholders as a fallback/template.
 
 use KHQR\Helpers\KHQRData;
 
+$local = __DIR__ . '/bakong_config.local.php';
+if (file_exists($local)) {
+    return require $local;
+}
+
+// Fallback placeholders — create bakong_config.local.php from the example to enable payments.
 return [
-    'token' => 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7ImlkIjoiOWI4ODI0MzEyNmUzNGRlMCJ9LCJpYXQiOjE3NzQxMDY1MzYsImV4cCI6MTc4MTg4MjUzNn0.o1EaA4R4QsNUMXbZL-87kfRHwaTdEEAArFG-bCFuJd8',
-    'bakong_id' => 'ban_ekreach@bkrt',
-    'merchant_name' => 'EKARECH BAN',
+    'token' => 'YOUR_BAKONG_JWT_TOKEN',
+    'bakong_id' => 'your_account@bank',
+    'merchant_name' => 'YOUR MERCHANT NAME',
     'merchant_city' => 'PHNOM PENH',
-    'mobile_number' => '85512304227',
+    'mobile_number' => '855000000000',
     'currency' => KHQRData::CURRENCY_USD,
 ];
