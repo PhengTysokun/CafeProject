@@ -20,12 +20,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     header('Content-Type: application/json');
     $count_id      = (int)($_POST['count_id']      ?? 0);
     $ingredient_id = (int)($_POST['ingredient_id'] ?? 0);
-    $actual        = $_POST['actual_qty'];
+    $actual        = $_POST['actual_qty'] ?? null;
     if ($count_id <= 0 || $ingredient_id <= 0 || !is_numeric($actual)) {
         echo json_encode(['ok'=>false,'msg'=>'Invalid input']); exit;
     }
     $actual  = (float)$actual;
-    // fetch expected from item row
+    // fetch expected qty (fast-fail if already submitted)
     $chk = $conn->prepare("
         SELECT sci.item_id, sci.expected_qty
         FROM stock_count_items sci
@@ -35,11 +35,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     $chk->bind_param("ii", $count_id, $ingredient_id);
     $chk->execute();
     $item = $chk->get_result()->fetch_assoc();
+    $chk->close();
     if (!$item) { echo json_encode(['ok'=>false,'msg'=>'Locked or not found']); exit; }
     $variance = $actual - (float)$item['expected_qty'];
-    $upd = $conn->prepare("UPDATE stock_count_items SET actual_qty=?, variance=? WHERE item_id=?");
+    // JOIN on sc.status='draft' makes the lock-check atomic with the write (fixes TOCTOU)
+    $upd = $conn->prepare("
+        UPDATE stock_count_items sci
+        JOIN stock_counts sc ON sc.count_id = sci.count_id AND sc.status = 'draft'
+        SET sci.actual_qty=?, sci.variance=?
+        WHERE sci.item_id=?
+    ");
     $upd->bind_param("ddi", $actual, $variance, $item['item_id']);
     $upd->execute();
+    if ($upd->affected_rows === 0) {
+        $upd->close();
+        echo json_encode(['ok'=>false,'msg'=>'Count was locked by another user']); exit;
+    }
+    $upd->close();
     echo json_encode(['ok'=>true,'variance'=>round($variance,2)]);
     exit;
 }
@@ -56,6 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
     $s = $conn->prepare("UPDATE stock_counts SET status='submitted', submitted_by=?, submitted_at=NOW(), notes=? WHERE count_id=? AND status='draft'");
     $s->bind_param("ssi", $by, $notes, $count_id);
     $s->execute();
+    if ($s->affected_rows === 0) {
+        echo json_encode(['ok'=>false,'msg'=>'Already submitted or not found']); exit;
+    }
     echo json_encode(['ok'=>true]);
     exit;
 }
@@ -154,6 +169,15 @@ $day_label = ($bdate === $today) ? 'Today' : (($bdate === date('Y-m-d', strtotim
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0a0a0a;--surface:#111;--surface2:#161616;--border:rgba(255,255,255,.07);
+  --amber:#d1904b;--amber-dim:rgba(209,144,75,.12);--amber-border:rgba(209,144,75,.2);
+  --green:#22c55e;--green-dim:rgba(34,197,94,.1);--green-border:rgba(34,197,94,.2);
+  --red:#ef4444;--red-dim:rgba(239,68,68,.1);--red-border:rgba(239,68,68,.2);
+  --blue:#60a5fa;
+  --text:#f0f0f0;--muted:#555;--muted2:#888;
+  --radius:14px;
+}
 
 @keyframes fadeInUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
 @keyframes scaleIn  { from{opacity:0;transform:scale(.93)}        to{opacity:1;transform:scale(1)}     }
@@ -162,205 +186,232 @@ $day_label = ($bdate === $today) ? 'Today' : (($bdate === date('Y-m-d', strtotim
 
 body{
   font-family:'Poppins',sans-serif;
-  background:radial-gradient(ellipse 70% 40% at 50% 0%,rgba(209,144,75,.09) 0%,transparent 100%),#0a0a0a;
-  color:#e8e8e8;min-height:100vh;
-  display:flex;flex-direction:column;align-items:center;
-  padding:36px 16px 80px;
+  background:radial-gradient(ellipse 80% 40% at 50% 0%,rgba(209,144,75,.07) 0%,transparent 100%),#0a0a0a;
+  color:var(--text);min-height:100vh;
 }
 body.fading{opacity:0;pointer-events:none;transition:opacity .4s ease;}
 a{text-decoration:none;}
 
-/* Header */
-.page-header{width:100%;max-width:860px;margin-bottom:28px;text-align:center;animation:fadeInUp .5s ease both;}
-.page-header .date{font-size:13px;color:#666;margin-bottom:5px;letter-spacing:.6px;}
-.page-header h1{font-size:24px;font-weight:700;color:#f0f0f0;margin-bottom:6px;}
-.page-header .sub{font-size:13px;color:#888;}
-.page-header .sub strong{color:#d1904b;}
+/* ── Topbar ── */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 28px;
+  background:rgba(255,255,255,.02);
+  border-bottom:1px solid var(--border);
+  animation:fadeIn .4s ease both;
+}
+.topbar-left{display:flex;align-items:center;gap:14px;}
+.back-btn{
+  display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;
+  background:rgba(255,255,255,.05);border:1px solid var(--border);
+  color:var(--muted2);font-size:12px;font-weight:500;text-decoration:none;transition:all .2s;
+}
+.back-btn:hover{color:var(--text);background:rgba(255,255,255,.09);}
+.page-title{font-size:18px;font-weight:700;color:var(--text);}
+.page-sub{font-size:12px;color:var(--muted);margin-top:1px;}
+.page-sub strong{color:var(--amber);}
 
-/* Date nav */
-.date-nav{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:24px;animation:fadeIn .5s ease both;}
-.date-nav a,.date-nav button{
+/* ── Wrap ── */
+.wrap{max-width:960px;margin:0 auto;padding:28px 24px 80px;}
+
+/* ── Date nav ── */
+.date-nav{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:24px;animation:fadeIn .4s ease both;}
+.date-nav a{
   display:inline-flex;align-items:center;gap:6px;
   padding:7px 14px;border-radius:9px;font-size:12px;font-weight:500;
-  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
-  color:#ccc;cursor:pointer;font-family:inherit;transition:background .2s,border-color .2s;
+  background:rgba(255,255,255,.05);border:1px solid var(--border);
+  color:var(--muted2);transition:background .2s,color .2s;
 }
-.date-nav a:hover,.date-nav button:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.18);}
-.date-nav .current-date{font-size:13px;font-weight:600;color:#f0f0f0;padding:7px 16px;
-  background:rgba(209,144,75,.12);border:1px solid rgba(209,144,75,.3);border-radius:9px;}
+.date-nav a:hover{background:rgba(255,255,255,.09);color:var(--text);}
+.date-nav .current-date{
+  font-size:13px;font-weight:600;color:var(--text);padding:7px 16px;
+  background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:9px;
+}
 
-/* Stats */
-.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;width:100%;max-width:860px;margin-bottom:20px;}
-@media(min-width:500px){.stat-grid{grid-template-columns:repeat(4,1fr);}}
+/* ── Stats ── */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
+@media(max-width:600px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
 .stat-card{
-  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
-  border-radius:16px;padding:18px 14px;text-align:center;
-  animation:scaleIn .45s ease both;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px 22px;text-align:center;
+  animation:scaleIn .45s cubic-bezier(.16,1,.3,1) both;
+  transition:transform .2s,border-color .2s;
 }
+.stat-card:hover{transform:translateY(-2px);}
 .stat-card:nth-child(1){animation-delay:.08s}
-.stat-card:nth-child(2){animation-delay:.16s}
-.stat-card:nth-child(3){animation-delay:.24s}
-.stat-card:nth-child(4){animation-delay:.32s}
-.stat-card .val{font-size:24px;font-weight:700;margin-bottom:3px;}
-.stat-card .lbl{font-size:11px;color:#666;font-weight:400;letter-spacing:.3px;}
-.stat-card.c-total .val{color:#60a5fa;}
-.stat-card.c-ok    .val{color:#22c55e;}
-.stat-card.c-miss  .val{color:#f87171;}
-.stat-card.c-over  .val{color:#d1904b;}
+.stat-card:nth-child(2){animation-delay:.14s}
+.stat-card:nth-child(3){animation-delay:.20s}
+.stat-card:nth-child(4){animation-delay:.26s}
+.stat-card .val{font-size:30px;font-weight:800;line-height:1;margin-bottom:4px;}
+.stat-card .lbl{font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px;}
+.stat-card.c-total{border-color:rgba(96,165,250,.2);background:rgba(96,165,250,.06);}
+.stat-card.c-total .val{color:var(--blue);}
+.stat-card.c-ok   {border-color:var(--green-border);background:var(--green-dim);}
+.stat-card.c-ok   .val{color:var(--green);}
+.stat-card.c-miss {border-color:var(--red-border);background:var(--red-dim);}
+.stat-card.c-miss .val{color:var(--red);}
+.stat-card.c-over {border-color:var(--amber-border);background:var(--amber-dim);}
+.stat-card.c-over .val{color:var(--amber);}
 
-/* Section */
+/* ── Section ── */
 .section{
-  width:100%;max-width:860px;
-  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
-  border-radius:16px;padding:20px;margin-bottom:16px;
-  animation:fadeInUp .5s ease both;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;margin-bottom:16px;
+  animation:fadeInUp .45s ease both;
 }
-.section.s1{animation-delay:.38s}
-.section.s2{animation-delay:.46s}
-.section-title{font-size:11px;font-weight:600;color:#555;letter-spacing:.9px;text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:7px;}
+.section.s1{animation-delay:.32s}
+.section.s2{animation-delay:.40s}
+.section-inner{padding:20px;}
+.section-title{
+  font-size:11px;font-weight:600;color:var(--muted2);letter-spacing:.9px;text-transform:uppercase;
+  margin-bottom:16px;display:flex;align-items:center;gap:7px;
+}
 
-/* Locked banner */
+/* ── Locked banner ── */
 .locked-banner{
-  width:100%;max-width:860px;
-  background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
-  border-radius:12px;padding:12px 18px;margin-bottom:16px;
+  background:var(--green-dim);border:1px solid var(--green-border);
+  border-radius:var(--radius);padding:12px 18px;margin-bottom:16px;
   display:flex;align-items:center;gap:10px;
   font-size:13px;color:#86efac;
   animation:fadeIn .4s ease both;
 }
-.locked-banner i{color:#22c55e;font-size:15px;}
+.locked-banner i{color:var(--green);font-size:15px;}
 
-/* Table */
+/* ── Table ── */
 .count-table{width:100%;border-collapse:collapse;}
 .count-table th{
-  font-size:10px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;
-  color:#555;padding:0 12px 12px;text-align:right;
+  font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;
+  color:var(--muted);padding:11px 16px;text-align:right;
+  border-bottom:1px solid var(--border);background:var(--surface2);
 }
 .count-table th:first-child{text-align:left;}
-.count-table th.col-actual{color:#d1904b;}
-.count-table tr.item-row{border-top:1px solid rgba(255,255,255,.05);transition:background .15s;}
-.count-table tr.item-row:hover{background:rgba(255,255,255,.025);}
-.count-table td{padding:11px 12px;font-size:13px;text-align:right;vertical-align:middle;}
+.count-table th.col-actual{color:var(--amber);}
+.count-table tr.item-row{border-bottom:1px solid rgba(255,255,255,.04);transition:background .15s;}
+.count-table tr.item-row:last-child{border-bottom:none;}
+.count-table tr.item-row:hover{background:rgba(255,255,255,.03);}
+.count-table td{padding:13px 16px;font-size:13px;text-align:right;vertical-align:middle;}
 .count-table td:first-child{text-align:left;}
-.ing-name{font-weight:500;color:#e0e0e0;}
-.ing-unit{font-size:11px;color:#555;margin-top:2px;}
-.num-cell{font-variant-numeric:tabular-nums;color:#aaa;}
+.ing-name{font-weight:500;color:var(--text);}
+.ing-unit{font-size:11px;color:var(--muted);margin-top:2px;}
+.num-cell{font-variant-numeric:tabular-nums;color:var(--muted2);}
 .num-cell.expected{color:#ccc;font-weight:500;}
 
-/* Actual input */
+/* ── Actual input ── */
 .actual-wrap{display:flex;justify-content:flex-end;align-items:center;gap:6px;}
 .actual-input{
   width:90px;padding:6px 10px;text-align:right;
   background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);
-  border-radius:8px;color:#f0f0f0;font-size:13px;font-family:inherit;font-weight:500;
+  border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;font-weight:500;
   transition:border-color .2s,background .2s;
 }
-.actual-input:focus{outline:none;border-color:rgba(209,144,75,.6);background:rgba(209,144,75,.08);}
+.actual-input:focus{outline:none;border-color:rgba(209,144,75,.6);background:var(--amber-dim);}
 .actual-input:disabled{opacity:.5;cursor:not-allowed;}
 .save-indicator{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.save-indicator .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.15);border-top-color:#d1904b;border-radius:50%;animation:spin .7s linear infinite;}
-.save-indicator .ok-icon{color:#22c55e;font-size:13px;opacity:0;transition:opacity .3s;}
+.save-indicator .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--amber);border-radius:50%;animation:spin .7s linear infinite;}
+.save-indicator .ok-icon{color:var(--green);font-size:13px;opacity:0;transition:opacity .3s;}
 .save-indicator .ok-icon.show{opacity:1;}
 
-/* Variance badge */
-.var-badge{
-  display:inline-flex;align-items:center;gap:4px;
-  padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;
-}
-.var-badge.ok   {background:rgba(34,197,94,.1); color:#86efac;}
-.var-badge.miss {background:rgba(248,113,113,.1);color:#fca5a5;}
-.var-badge.over {background:rgba(209,144,75,.1); color:#fbbf24;}
-.var-badge.empty{background:rgba(255,255,255,.06);color:#555;}
+/* ── Variance badge ── */
+.var-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.var-badge.ok   {background:var(--green-dim);color:#86efac;border:1px solid var(--green-border);}
+.var-badge.miss {background:var(--red-dim);color:#fca5a5;border:1px solid var(--red-border);}
+.var-badge.over {background:var(--amber-dim);color:#fbbf24;border:1px solid var(--amber-border);}
+.var-badge.empty{background:rgba(255,255,255,.04);color:var(--muted);}
 
-/* Status badge */
-.status-pill{
-  display:inline-flex;align-items:center;gap:5px;
-  padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;
-}
-.status-pill.ok    {background:rgba(34,197,94,.1); color:#86efac;}
-.status-pill.review{background:rgba(248,113,113,.1);color:#fca5a5;}
-.status-pill.low   {background:rgba(209,144,75,.1); color:#fbbf24;}
-.status-pill.empty {background:rgba(255,255,255,.05);color:#555;}
+/* ── Status pill ── */
+.status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+.status-pill.ok    {background:var(--green-dim);color:#86efac;border:1px solid var(--green-border);}
+.status-pill.review{background:var(--red-dim);color:#fca5a5;border:1px solid var(--red-border);}
+.status-pill.low   {background:var(--amber-dim);color:#fbbf24;border:1px solid var(--amber-border);}
+.status-pill.empty {background:rgba(255,255,255,.04);color:var(--muted);}
 
-/* Progress */
+/* ── Progress ── */
 .progress-wrap{margin-bottom:20px;}
-.progress-label{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#888;margin-bottom:7px;}
-.progress-label strong{color:#d1904b;}
+.progress-label{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted2);margin-bottom:7px;}
+.progress-label strong{color:var(--amber);}
 .progress-bar-bg{background:rgba(255,255,255,.06);border-radius:6px;height:6px;overflow:hidden;}
-.progress-bar{height:100%;background:linear-gradient(90deg,#d1904b,#f5a623);border-radius:6px;transition:width .6s ease;}
+.progress-bar{height:100%;background:linear-gradient(90deg,var(--amber),#f5a623);border-radius:6px;transition:width .6s ease;}
 
-/* Notes */
-.notes-row{display:flex;gap:10px;align-items:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07);}
+/* ── Notes / submit ── */
+.notes-row{display:flex;gap:10px;align-items:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);}
 .notes-input{
   flex:1;padding:9px 12px;
-  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
-  border-radius:10px;color:#e8e8e8;font-size:13px;font-family:inherit;resize:none;
+  background:rgba(255,255,255,.06);border:1px solid var(--border);
+  border-radius:10px;color:var(--text);font-size:13px;font-family:inherit;resize:none;
   transition:border-color .2s;
 }
 .notes-input:focus{outline:none;border-color:rgba(209,144,75,.5);}
 .notes-input:disabled{opacity:.5;cursor:not-allowed;}
-
-/* Submit */
 .submit-btn{
-  padding:10px 22px;border-radius:10px;font-size:13px;font-weight:600;
-  background:linear-gradient(135deg,#d1904b,#f5a623);color:#000;
+  padding:10px 22px;border-radius:10px;font-size:13px;font-weight:700;
+  background:var(--amber);color:#000;
   border:none;cursor:pointer;font-family:inherit;
   transition:opacity .2s,transform .1s;
   display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
 }
-.submit-btn:hover:not(:disabled){opacity:.88;transform:translateY(-1px);}
+.submit-btn:hover:not(:disabled){opacity:.85;transform:translateY(-1px);}
 .submit-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
 
-/* Back link */
-.back-link{
-  display:inline-flex;align-items:center;gap:7px;
-  color:#888;font-size:13px;margin-bottom:20px;
-  animation:fadeIn .4s ease both;
-  transition:color .2s;
-}
-.back-link:hover{color:#d1904b;}
-
-/* Mobile */
+/* ── Mobile ── */
 @media(max-width:600px){
-  .count-table th.col-open,
-  .count-table th.col-used,
-  .count-table td.col-open,
-  .count-table td.col-used{display:none;}
+  .topbar{padding:12px 16px;}
+  .wrap{padding:20px 14px 60px;}
+  .count-table th.col-open,.count-table th.col-used,
+  .count-table td.col-open,.count-table td.col-used{display:none;}
   .actual-input{width:76px;}
 }
+
+/* ── Pagination ── */
+.pg-wrap{display:flex;align-items:center;justify-content:center;gap:4px;padding:16px 20px;}
+.pg-btn{
+  min-width:34px;height:34px;padding:0 10px;
+  background:rgba(255,255,255,.06);border:1px solid var(--border);
+  border-radius:8px;color:var(--muted2);font-size:12px;font-weight:600;
+  cursor:pointer;font-family:inherit;transition:background .15s,color .15s,border-color .15s;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.pg-btn:hover:not(:disabled){background:rgba(255,255,255,.11);color:var(--text);}
+.pg-btn:disabled{opacity:.28;cursor:not-allowed;}
+.pg-btn.active{background:var(--amber);color:#000;border-color:var(--amber);}
+.pg-ellipsis{color:var(--muted);font-size:13px;padding:0 4px;line-height:34px;}
 </style>
 </head>
 <body>
 
-<a href="dashboard.php" class="back-link" onclick="document.body.classList.add('fading')">
-    <i class="fa-solid fa-arrow-left"></i> Dashboard
-</a>
-
-<!-- Header -->
-<div class="page-header">
-    <div class="date"><?= h($day_label) ?> · <?= h($date_fmt) ?></div>
-    <h1><i class="fa-solid fa-clipboard-list" style="color:#d1904b;margin-right:8px"></i>Stock Count</h1>
-    <div class="sub">
-        Logged in as <strong><?= h($_SESSION['username'] ?? '') ?></strong>
-        <?php if ($is_locked): ?>
-        · Submitted by <strong><?= h($session['submitted_by'] ?? '') ?></strong>
-        at <strong><?= h(date('g:i A', strtotime($session['submitted_at']))) ?></strong>
-        <?php endif; ?>
+<!-- Topbar -->
+<div class="topbar">
+    <div class="topbar-left">
+        <a href="dashboard.php" class="back-btn" onclick="document.body.classList.add('fading')">
+            <i class="fa-solid fa-arrow-left"></i> Back
+        </a>
+        <div>
+            <div class="page-title"><i class="fa-solid fa-clipboard-list" style="color:var(--amber);margin-right:8px"></i>Stock Count</div>
+            <div class="page-sub">
+                Logged in as <strong><?= h($_SESSION['username'] ?? '') ?></strong>
+                <?php if ($is_locked): ?>
+                · Submitted by <strong><?= h($session['submitted_by'] ?? '') ?></strong>
+                at <strong><?= h(date('g:i A', strtotime($session['submitted_at']))) ?></strong>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
+    <div style="font-size:12px;color:var(--muted)"><?= h($date_fmt) ?></div>
 </div>
 
+<div class="wrap">
+
 <!-- Date navigation -->
+<?php
+$prev = date('Y-m-d', strtotime($bdate . ' -1 day'));
+$next = date('Y-m-d', strtotime($bdate . ' +1 day'));
+?>
 <div class="date-nav">
-    <?php
-    $prev = date('Y-m-d', strtotime($bdate . ' -1 day'));
-    $next = date('Y-m-d', strtotime($bdate . ' +1 day'));
-    ?>
     <a href="?date=<?= $prev ?>"><i class="fa-solid fa-chevron-left"></i> <?= date('M j', strtotime($prev)) ?></a>
     <span class="current-date"><?= h($day_label === 'Today' || $day_label === 'Yesterday' ? $day_label : $date_fmt) ?></span>
     <?php if ($bdate < $today): ?>
     <a href="?date=<?= $next ?>"><?= date('M j', strtotime($next)) ?> <i class="fa-solid fa-chevron-right"></i></a>
     <?php else: ?>
-    <span style="padding:7px 14px;opacity:.25;font-size:12px">—</span>
+    <span style="opacity:.25;font-size:12px;padding:7px 8px">—</span>
     <?php endif; ?>
 </div>
 
@@ -393,23 +444,25 @@ a{text-decoration:none;}
 
 <!-- Main count table -->
 <div class="section s1">
-    <div class="section-title">
-        <i class="fa-solid fa-boxes-stacked"></i>
-        INVENTORY COUNT — <?= h(strtoupper($day_label !== 'Today' && $day_label !== 'Yesterday' ? $date_fmt : $day_label)) ?>
-    </div>
+    <div class="section-inner">
+        <div class="section-title">
+            <i class="fa-solid fa-boxes-stacked"></i>
+            INVENTORY COUNT — <?= h(strtoupper($day_label !== 'Today' && $day_label !== 'Yesterday' ? $date_fmt : $day_label)) ?>
+        </div>
 
-    <!-- Progress bar -->
-    <?php if (!$is_locked): ?>
-    <div class="progress-wrap">
-        <div class="progress-label">
-            <span>Progress</span>
-            <strong><?= $counted_count ?> / <?= $total_items ?> counted</strong>
+        <!-- Progress bar -->
+        <?php if (!$is_locked): ?>
+        <div class="progress-wrap">
+            <div class="progress-label">
+                <span>Progress</span>
+                <strong><?= $counted_count ?> / <?= $total_items ?> counted</strong>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar" id="progressBar" style="width:<?= $total_items > 0 ? round($counted_count/$total_items*100) : 0 ?>%"></div>
+            </div>
         </div>
-        <div class="progress-bar-bg">
-            <div class="progress-bar" id="progressBar" style="width:<?= $total_items > 0 ? round($counted_count/$total_items*100) : 0 ?>%"></div>
-        </div>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 
     <table class="count-table">
         <thead>
@@ -491,6 +544,9 @@ a{text-decoration:none;}
         </tbody>
     </table>
 
+    <div id="pagination"></div>
+
+    <div class="section-inner" style="padding-top:0">
     <?php if (!$is_locked): ?>
     <div class="notes-row">
         <textarea
@@ -505,11 +561,12 @@ a{text-decoration:none;}
         </button>
     </div>
     <?php elseif ($session['notes']): ?>
-    <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.07);font-size:13px;color:#888;">
-        <span style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#555;margin-right:8px;">Notes</span>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;color:var(--muted2);">
+        <span style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-right:8px;">Notes</span>
         <?= h($session['notes']) ?>
     </div>
     <?php endif; ?>
+    </div>
 </div>
 
 <!-- Variance summary (only after any counted) -->
@@ -518,9 +575,11 @@ $counted_arr = array_values(array_filter($items, fn($r) => $r['actual_qty'] !== 
 if ($counted_arr):
 ?>
 <div class="section s2">
-    <div class="section-title">
-        <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b"></i>
-        VARIANCES
+    <div class="section-inner">
+        <div class="section-title">
+            <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b"></i>
+            VARIANCES
+        </div>
     </div>
     <table class="count-table">
         <thead>
@@ -560,6 +619,8 @@ if ($counted_arr):
 </div>
 <?php endif; ?>
 
+</div><!-- /.wrap -->
+
 <script>
 const COUNT_ID = <?= $count_id ?>;
 const TOTAL    = <?= $total_items ?>;
@@ -595,6 +656,7 @@ function showSpinner(id) {
 function saveItem(ingredient_id, value) {
     if (value === '' || isNaN(parseFloat(value))) {
         clearIndicator(ingredient_id);
+        clearVarianceCell(ingredient_id);
         return;
     }
     const fd = new FormData();
@@ -629,6 +691,14 @@ function showOK(id) {
 function clearIndicator(id) {
     const si = document.getElementById('si-' + id);
     if (si) si.innerHTML = '<i class="fa-solid fa-check ok-icon" id="ok-' + id + '"></i>';
+}
+
+function clearVarianceCell(id) {
+    const varCell = document.getElementById('var-' + id);
+    const stCell  = document.getElementById('st-'  + id);
+    if (varCell) varCell.innerHTML = '<span class="var-badge empty">—</span>';
+    if (stCell)  stCell.innerHTML  = '<span class="status-pill empty">—</span>';
+    updateStatCards();
 }
 
 function updateVariance(id, variance, actual) {
@@ -727,6 +797,53 @@ function submitCount() {
             }
         });
 }
+
+/* ── Pagination ── */
+const PAGE_SIZE = 10;
+let currentPage = 1;
+
+function allRows() {
+    return Array.from(document.querySelectorAll('.count-table tbody .item-row[data-id]'));
+}
+
+function goPage(page) {
+    const rows = allRows();
+    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    currentPage = Math.max(1, Math.min(page, totalPages));
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const end   = start + PAGE_SIZE;
+    rows.forEach((row, i) => { row.style.display = (i >= start && i < end) ? '' : 'none'; });
+    renderPagination(totalPages);
+}
+
+function renderPagination(totalPages) {
+    const pg = document.getElementById('pagination');
+    if (!pg) return;
+    if (totalPages <= 1) { pg.innerHTML = ''; return; }
+
+    const range = 2;
+    let html = '<div class="pg-wrap">';
+    html += `<button class="pg-btn" onclick="goPage(1)" ${currentPage===1?'disabled':''}>«</button>`;
+    html += `<button class="pg-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>`;
+
+    let lastPrinted = 0;
+    for (let i = 1; i <= totalPages; i++) {
+        const inRange = (i === 1 || i === totalPages || (i >= currentPage - range && i <= currentPage + range));
+        if (inRange) {
+            if (lastPrinted && i - lastPrinted > 1) html += '<span class="pg-ellipsis">…</span>';
+            html += `<button class="pg-btn${i===currentPage?' active':''}" onclick="goPage(${i})">${i}</button>`;
+            lastPrinted = i;
+        }
+    }
+
+    html += `<button class="pg-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>›</button>`;
+    html += `<button class="pg-btn" onclick="goPage(${totalPages})" ${currentPage===totalPages?'disabled':''}>»</button>`;
+    html += '</div>';
+    pg.innerHTML = html;
+}
+
+// Init pagination on load
+goPage(1);
 </script>
 </body>
 </html>

@@ -492,6 +492,51 @@ _migrate($conn, 'delete_test_permission_only_sigma_boy_v3', function($db) {
     $db->query("DELETE FROM role_permissions WHERE permission_id NOT IN (SELECT id FROM permissions)");
 });
 
+// ── Stock Count: tables + permission + role grants ──
+_migrate($conn, 'stock_count_v1', function($db) {
+    $db->query("CREATE TABLE IF NOT EXISTS stock_counts (
+        count_id      INT AUTO_INCREMENT PRIMARY KEY,
+        business_date DATE NOT NULL,
+        status        ENUM('draft','submitted') NOT NULL DEFAULT 'draft',
+        created_by    VARCHAR(100) NULL,
+        submitted_by  VARCHAR(100) NULL,
+        submitted_at  DATETIME NULL,
+        notes         TEXT NULL,
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_business_date (business_date)
+    ) DEFAULT CHARSET=utf8mb4");
+    if ($db->errno) return;
+
+    $db->query("CREATE TABLE IF NOT EXISTS stock_count_items (
+        item_id       INT AUTO_INCREMENT PRIMARY KEY,
+        count_id      INT NOT NULL,
+        ingredient_id INT NOT NULL,
+        opening_stock DECIMAL(10,4) NOT NULL DEFAULT 0,
+        system_used   DECIMAL(10,4) NOT NULL DEFAULT 0,
+        expected_qty  DECIMAL(10,4) NOT NULL DEFAULT 0,
+        actual_qty    DECIMAL(10,4) NULL,
+        variance      DECIMAL(10,4) NULL,
+        UNIQUE KEY uq_count_ingredient (count_id, ingredient_id),
+        CONSTRAINT fk_sci_count      FOREIGN KEY (count_id)      REFERENCES stock_counts(count_id)          ON DELETE CASCADE,
+        CONSTRAINT fk_sci_ingredient FOREIGN KEY (ingredient_id) REFERENCES ingredients(ingredient_id)      ON DELETE RESTRICT
+    ) DEFAULT CHARSET=utf8mb4");
+    if ($db->errno) return;
+
+    $db->query("INSERT IGNORE INTO permissions (name, slug, module, sort_order) VALUES ('Stock Count', 'stock_count', 'Reconciliation', 22)");
+    if ($db->errno) return;
+
+    // Grant to admin, manager, inventory_clerk, supervisor by default
+    foreach (['admin','manager','inventory_clerk','supervisor'] as $role) {
+        $db->query("INSERT IGNORE INTO role_permissions (role_id, permission_id)
+            SELECT r.id, p.id FROM roles r, permissions p
+            WHERE r.slug='$role' AND p.slug='stock_count'");
+    }
+});
+
+_migrate($conn, 'stock_count_module_fix_v2', function($db) {
+    $db->query("UPDATE permissions SET module='Reconciliation' WHERE slug IN ('stock_count','cash_reconciliation')");
+});
+
 // ── SANITIZE FUNCTION ──
 if (!function_exists('sanitizeForReceipt')) {
     function sanitizeForReceipt(string $text): string {

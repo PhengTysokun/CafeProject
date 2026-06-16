@@ -92,11 +92,15 @@ if ($order_ids) {
 
 // ── AJAX: save cash reconciliation ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['actual_cash'])) {
+    header('Content-Type: application/json');
+    if (in_array($role, ['admin', 'manager', 'supervisor', 'inventory_clerk'])) {
+        echo json_encode(['ok' => false, 'msg' => 'Not applicable for this role']);
+        exit;
+    }
     $actual = (float)$_POST['actual_cash'];
     $s = $conn->prepare("INSERT INTO cash_counts (user_id, username, shift_date, login_time, expected_cash, actual_cash) VALUES (?,?,CURDATE(),?,?,?)");
     $s->bind_param("issdd", $uid, $uname, $login_dt, $expected_cash, $actual);
     $s->execute();
-    header('Content-Type: application/json');
     echo json_encode(['ok' => true, 'diff' => round($actual - $expected_cash, 2)]);
     exit;
 }
@@ -394,8 +398,8 @@ a{text-decoration:none;}
 </div>
 
 <?php
-$has_countdown  = !in_array($role, ['admin', 'manager', 'supervisor']);
-$show_cash_step = $has_countdown; // only cashier/staff/barista count the drawer
+$has_countdown  = !in_array($role, ['admin', 'manager', 'supervisor', 'inventory_clerk']);
+$show_cash_step = $has_countdown; // cashier/staff/barista count the drawer; inventory_clerk does not handle cash
 ?>
 
 <?php if ($show_cash_step): ?>

@@ -1050,16 +1050,32 @@ body.no-sidebar{--sidebar-w:0px;}
                 <?php if ($low_stock > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto"><?= $low_stock ?></span><?php endif; ?>
             </a>
             <?php endif; ?>
-            <?php if (can('stock_count')): ?>
-            <a class="nav-item<?= basename($_SERVER['PHP_SELF']) === 'stock_count.php' ? ' active' : '' ?>" href="stock_count.php">
-                <i class="fa-solid fa-clipboard-list"></i>
-                <span class="nav-label">Stock Count</span>
-            </a>
-            <?php endif; ?>
             <?php if (can('recipes')): ?>
             <a class="nav-item" href="recipes_view.php">
                 <i class="fa-solid fa-utensils"></i>
                 <span class="nav-label">Drink Recipe</span>
+            </a>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- RECONCILIATION -->
+        <?php if (can('cash_reconciliation') || can('stock_count')): ?>
+        <div class="nav-group-label" onclick="toggleGroup(this)" data-group="reconciliation">
+            <span>Reconciliation</span><i class="fa-solid fa-chevron-right nav-chevron"></i>
+        </div>
+        <div class="nav-group-items collapsed" id="grp-reconciliation">
+            <?php if (can('cash_reconciliation')): ?>
+            <a class="nav-item" href="reconciliation_report.php">
+                <i class="fa-solid fa-cash-register"></i>
+                <span class="nav-label">Cash Count</span>
+                <?php if ($_recon_alerts > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto"><?= $_recon_alerts ?></span><?php endif; ?>
+            </a>
+            <?php endif; ?>
+            <?php if (can('stock_count')): ?>
+            <a class="nav-item<?= basename($_SERVER['PHP_SELF']) === 'stock_count.php' ? ' active' : '' ?>" href="stock_count.php">
+                <i class="fa-solid fa-clipboard-list"></i>
+                <span class="nav-label">Stock Count</span>
             </a>
             <?php endif; ?>
         </div>
@@ -1096,13 +1112,6 @@ body.no-sidebar{--sidebar-w:0px;}
             <a class="nav-item" href="report.php">
                 <i class="fa-solid fa-chart-simple"></i>
                 <span class="nav-label">Daily Report</span>
-            </a>
-            <?php endif; ?>
-            <?php if (can('cash_reconciliation')): ?>
-            <a class="nav-item" href="reconciliation_report.php">
-                <i class="fa-solid fa-cash-register"></i>
-                <span class="nav-label">Cash Count</span>
-                <?php if ($_recon_alerts > 0): ?><span class="order-badge" style="background:var(--red);margin-left:auto"><?= $_recon_alerts ?></span><?php endif; ?>
             </a>
             <?php endif; ?>
         </div>

@@ -20,30 +20,34 @@ $is_ajax  = !empty($_GET['ajax']);
 $cashiers = [];
 $cr = $conn->query("SELECT DISTINCT user_id, username FROM cash_counts ORDER BY username ASC");
 
-// ── STOCK COUNT SESSIONS in date range ──
-$sc_stmt = $conn->prepare("
-    SELECT
-        sc.count_id,
-        sc.business_date,
-        sc.status,
-        sc.submitted_by,
-        sc.submitted_at,
-        sc.notes,
-        COUNT(sci.item_id)                                             AS total_items,
-        SUM(sci.actual_qty IS NOT NULL)                                AS counted_items,
-        SUM(sci.variance < -0.01)                                      AS shortage_items,
-        SUM(sci.variance >  0.01)                                      AS overage_items,
-        SUM(CASE WHEN sci.variance < -0.01 THEN sci.variance ELSE 0 END) AS total_shortage,
-        SUM(CASE WHEN sci.variance >  0.01 THEN sci.variance ELSE 0 END) AS total_overage
-    FROM stock_counts sc
-    LEFT JOIN stock_count_items sci ON sci.count_id = sc.count_id
-    WHERE sc.business_date BETWEEN ? AND ?
-    GROUP BY sc.count_id
-    ORDER BY sc.business_date DESC
-");
-$sc_stmt->bind_param("ss", $filter_from, $filter_to);
-$sc_stmt->execute();
-$sc_rows = $sc_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+// ── STOCK COUNT SESSIONS in date range (only if tables exist) ──
+$sc_rows = [];
+$_sc_tables = $conn->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('stock_counts','stock_count_items')")->fetch_row()[0];
+if ((int)$_sc_tables === 2) {
+    $sc_stmt = $conn->prepare("
+        SELECT
+            sc.count_id,
+            sc.business_date,
+            sc.status,
+            sc.submitted_by,
+            sc.submitted_at,
+            sc.notes,
+            COUNT(sci.item_id)                                             AS total_items,
+            SUM(sci.actual_qty IS NOT NULL)                                AS counted_items,
+            SUM(sci.variance < -0.01)                                      AS shortage_items,
+            SUM(sci.variance >  0.01)                                      AS overage_items,
+            SUM(CASE WHEN sci.variance < -0.01 THEN sci.variance ELSE 0 END) AS total_shortage,
+            SUM(CASE WHEN sci.variance >  0.01 THEN sci.variance ELSE 0 END) AS total_overage
+        FROM stock_counts sc
+        LEFT JOIN stock_count_items sci ON sci.count_id = sc.count_id
+        WHERE sc.business_date BETWEEN ? AND ?
+        GROUP BY sc.count_id
+        ORDER BY sc.business_date DESC
+    ");
+    $sc_stmt->bind_param("ss", $filter_from, $filter_to);
+    $sc_stmt->execute();
+    $sc_rows = $sc_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
 while ($row = $cr->fetch_assoc()) $cashiers[] = $row;
 
 // ── WHERE CLAUSE ──
