@@ -9,6 +9,9 @@ bakong_config.local.php
 /reports/
 /stock_alerts/
 
+# Browser automation artifacts (Playwright MCP screenshots/snapshots)
+/.playwright-mcp/
+
 # Logs & temp
 *.log
 *.bak
