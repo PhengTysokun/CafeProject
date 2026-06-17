@@ -1524,6 +1524,10 @@ body.no-sidebar{--sidebar-w:0px;}
     $_role  = $_SESSION['role'] ?? '';
     $_focus = null;
 
+    // Compact redesign (cashier + inventory). Barista & others keep the legacy .qa-* layout.
+    $_redesign = in_array($_role, ['staff', 'inventory_clerk'], true);
+    $G = $_redesign ? 'qx' : 'qa';
+
     $_focus_barista = [
         'icon'  => 'fa-fire-burner',
         'count' => (int)$preparing_count,
@@ -1583,30 +1587,30 @@ body.no-sidebar{--sidebar-w:0px;}
     <?php endif; ?>
 
     <!-- QUICK ACCESS GRID -->
-    <div class="qa-grid fu" style="animation-delay:.1s">
+    <div class="<?= $_redesign ? 'qx-grid' : 'qa-grid' ?> fu" style="animation-delay:.1s">
         <?php if (can('find_orders')): ?>
-        <a href="menu.php" class="qa-hero-btn">
+        <a href="menu.php" class="<?= $_redesign ? 'qx-hero' : 'qa-hero-btn' ?>">
             <i class="fa-solid fa-plus"></i>
             <span>Take New Order</span>
         </a>
         <?php endif; ?>
 
         <?php if (can('view_orders') || can('find_orders')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-receipt"></i> Orders</div>
-            <div class="qa-tiles">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-receipt"></i> Orders</div>
+            <div class="<?= $G ?>-tiles">
                 <?php if (can('view_orders')): ?>
-                <a href="view_order.php" class="qa-tile">
+                <a href="view_order.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-receipt"></i>
                     <span>Orders</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('find_orders')): ?>
-                <a href="find_order.php" class="qa-tile">
+                <a href="find_order.php" class="<?= $G ?>-tile">
                     <?php if ($_SESSION['role'] === 'staff' && $paylater_count > 0): ?>
-                    <span class="qa-tile-badge" style="background:var(--purple);"><?= $paylater_count ?></span>
+                    <span class="<?= $G ?>-tile-badge" style="background:var(--purple);"><?= $paylater_count ?></span>
                     <?php elseif ($unpaid_count > 0): ?>
-                    <span class="qa-tile-badge"><?= $unpaid_count ?></span>
+                    <span class="<?= $G ?>-tile-badge"><?= $unpaid_count ?></span>
                     <?php endif; ?>
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <span>Find Order</span>
@@ -1617,25 +1621,25 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('products') || can('ingredients') || can('recipes')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-boxes-stacked"></i> Inventory</div>
-            <div class="qa-tiles">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-boxes-stacked"></i> Inventory</div>
+            <div class="<?= $G ?>-tiles">
                 <?php if (can('products')): ?>
-                <a href="products.php" class="qa-tile">
+                <a href="products.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-cube"></i>
                     <span>Products</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('ingredients')): ?>
-                <a href="ingredients.php" class="qa-tile">
+                <a href="ingredients.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-flask"></i>
                     <span>Ingredients</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('recipes')): ?>
-                <a href="recipes_view.php" class="qa-tile">
+                <a href="recipes_view.php" class="<?= $G ?>-tile">
                     <?php if ($low_recipe_count > 0): ?>
-                    <span class="qa-tile-badge" title="<?= $low_recipe_count ?> recipe<?= $low_recipe_count == 1 ? '' : 's' ?> low on ingredients"><?= $low_recipe_count ?></span>
+                    <span class="<?= $G ?>-tile-badge" title="<?= $low_recipe_count ?> recipe<?= $low_recipe_count == 1 ? '' : 's' ?> low on ingredients"><?= $low_recipe_count ?></span>
                     <?php endif; ?>
                     <i class="fa-solid fa-utensils"></i>
                     <span>Drink Recipe</span>
@@ -1646,17 +1650,17 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('suppliers') || can('purchase_orders')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-truck-ramp-box"></i> Procurement</div>
-            <div class="qa-tiles">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-truck-ramp-box"></i> Procurement</div>
+            <div class="<?= $G ?>-tiles">
                 <?php if (can('suppliers')): ?>
-                <a href="suppliers.php" class="qa-tile">
+                <a href="suppliers.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-truck-ramp-box"></i>
                     <span>Suppliers</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('purchase_orders')): ?>
-                <a href="purchase_orders.php" class="qa-tile">
+                <a href="purchase_orders.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-file-invoice"></i>
                     <span>Purchase Orders</span>
                 </a>
@@ -1666,10 +1670,10 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('loyalty')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-star"></i> Loyalty</div>
-            <div class="qa-tiles">
-                <a href="loyalty_dashboard.php" class="qa-tile">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-star"></i> Loyalty</div>
+            <div class="<?= $G ?>-tiles">
+                <a href="loyalty_dashboard.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-star"></i>
                     <span>Loyalty</span>
                 </a>
@@ -1678,23 +1682,23 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('employees') || can('attendance') || can('announcements')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-users"></i> Staff</div>
-            <div class="qa-tiles">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-users"></i> Staff</div>
+            <div class="<?= $G ?>-tiles">
                 <?php if (can('employees')): ?>
-                <a href="employees.php" class="qa-tile">
+                <a href="employees.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-user-tie"></i>
                     <span>Employees</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('attendance')): ?>
-                <a href="attendance.php" class="qa-tile">
+                <a href="attendance.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-fingerprint"></i>
                     <span>Attendance</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('announcements')): ?>
-                <a href="announcements.php" class="qa-tile" style="position:relative">
+                <a href="announcements.php" class="<?= $G ?>-tile" style="position:relative">
                     <i class="fa-solid fa-bullhorn"></i>
                     <span>Announcements</span>
                     <?php if ($_unread_ann > 0): ?>
@@ -1707,10 +1711,10 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('report')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-chart-simple"></i> Analytics</div>
-            <div class="qa-tiles">
-                <a href="report.php" class="qa-tile">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-chart-simple"></i> Analytics</div>
+            <div class="<?= $G ?>-tiles">
+                <a href="report.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-chart-simple"></i>
                     <span>Daily Report</span>
                 </a>
@@ -1719,10 +1723,10 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('my_profile')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-circle-user"></i> Account</div>
-            <div class="qa-tiles">
-                <a href="profile.php" class="qa-tile">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-circle-user"></i> Account</div>
+            <div class="<?= $G ?>-tiles">
+                <a href="profile.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-circle-user"></i>
                     <span>My Profile</span>
                 </a>
