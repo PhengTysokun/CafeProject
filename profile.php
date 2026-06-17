@@ -7,7 +7,7 @@ $username = $_SESSION['username'] ?? '';
 $role     = $_SESSION['role']     ?? 'staff';
 
 // Load current user record
-$stmt = $conn->prepare("SELECT username, role, security_question, must_change_password FROM users WHERE user_id = ?");
+$stmt = $conn->prepare("SELECT username, security_question, must_change_password FROM users WHERE user_id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
