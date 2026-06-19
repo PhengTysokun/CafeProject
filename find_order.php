@@ -780,26 +780,11 @@ function closeOrder(orderId, btn) {
 // Shared flag — polling skips reload while any table edit is open
 let tableEditOpen = false;
 
-(function() {
-    <?php
-    $sig_parts = '';
-    foreach ($orders as $o) $sig_parts .= $o['order_id'] . ':' . $o['status'] . '|';
-    ?>
-    const currentSig = <?= json_encode(md5($sig_parts)) ?>;
-    const tab = <?= json_encode($filter_tab) ?>;
-
-    setInterval(async function() {
-        if (tableEditOpen) return; // don't reload while user is typing
-        try {
-            const res = await fetch('find_order.php?action=poll&tab=' + encodeURIComponent(tab));
-            const data = await res.json();
-            if (data.sig !== currentSig) {
-                sessionStorage.setItem('skipEntranceAnim', '1'); // poll refresh — no re-fade
-                location.reload();
-            }
-        } catch(e) {}
-    }, 5000);
-})();
+setInterval(function() {
+    if (tableEditOpen) return;            // don't disturb an open edit
+    if (document.getElementById('lpModal').style.display === 'flex') return; // skip while loyalty modal open
+    loadPage(currentPage, { silent: true });
+}, 5000);
 
 // ── Inline table number edit ──
 function bindCardHandlers() {
