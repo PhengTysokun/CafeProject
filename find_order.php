@@ -147,6 +147,28 @@ while ($r = mysqli_fetch_assoc($count_result)) {
     }
     if ($r['status'] === 'Paid' && $r['is_open'] == 1) $tab_counts['paid_open'] += $r['cnt'];
 }
+
+// ── AJAX: rendered card list + pagination meta for the current page ──
+if (isset($_GET['action']) && $_GET['action'] === 'list') {
+    header('Content-Type: application/json');
+    ob_start();
+    foreach ($orders as $order) include '_order_card.php';
+    $html = ob_get_clean();
+
+    $sig = '';
+    foreach ($orders as $o) $sig .= $o['order_id'] . ':' . $o['status'] . '|';
+
+    echo json_encode([
+        'html'       => $html,
+        'page'       => $page,
+        'perPage'    => $perPage,
+        'total'      => $total,
+        'totalPages' => $totalPages,
+        'sig'        => md5($sig),
+        'tabCounts'  => $tab_counts,
+    ]);
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
