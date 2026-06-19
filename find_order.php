@@ -856,7 +856,7 @@ function closeOrder(orderId, btn) {
     });
 }
 </script>
-<script src="animations.js"></script>
+<script src="animations.js?v=<?= @filemtime('animations.js') ?>"></script>
 <script>
 // Shared flag — polling skips reload while any table edit is open
 let tableEditOpen = false;
@@ -875,6 +875,7 @@ let tableEditOpen = false;
             const res = await fetch('find_order.php?action=poll&tab=' + encodeURIComponent(tab));
             const data = await res.json();
             if (data.sig !== currentSig) {
+                sessionStorage.setItem('skipEntranceAnim', '1'); // poll refresh — no re-fade
                 location.reload();
             }
         } catch(e) {}

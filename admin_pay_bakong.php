@@ -1,11 +1,10 @@
 <?php
-// Only start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+require 'auth.php'; // starts session, loads config ($conn), re-syncs $_SESSION['role']
+// Cashiers (staff) collect pay-later payments from find_order.php — allow them alongside admin/manager
+if (!in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'staff'])) {
+    header("Location: dashboard.php?denied=1");
+    exit;
 }
-
-require 'config.php';
-require 'admin_only.php';
 require __DIR__ . '/bakong-khqr-php-main/vendor/autoload.php';
 
 use KHQR\BakongKHQR;

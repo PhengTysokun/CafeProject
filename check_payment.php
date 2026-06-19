@@ -81,10 +81,10 @@ if ($manual === 1) {
         // 3. If no pending payments, advance order status
         if ($pending['pending_count'] == 0) {
             if ($order['payment_method'] === 'paylater') {
-                // Paylater order settled via Bakong at the counter → mark as Completed and close
+                // Paylater order settled via Bakong at the counter → mark Paid & close (drops from unpaid list)
                 $stmt_status = $conn->prepare("
-                    UPDATE orders SET status = 'Completed', is_open = 0
-                    WHERE order_id = ? AND status = 'Preparing'
+                    UPDATE orders SET status = 'Paid', is_open = 0
+                    WHERE order_id = ?
                 ");
             } else {
                 // Regular Bakong order → move to Preparing (kitchen view)
@@ -186,10 +186,10 @@ try {
             // 3. If no pending payments, advance order status
             if ($pending['pending_count'] == 0) {
                 if ($order['payment_method'] === 'paylater') {
-                    // Paylater order settled via Bakong at the counter → mark as Completed and close
+                    // Paylater order settled via Bakong at the counter → mark Paid & close (drops from unpaid list)
                     $stmt_status = $conn->prepare("
-                        UPDATE orders SET status = 'Completed', is_open = 0
-                        WHERE order_id = ? AND status = 'Preparing'
+                        UPDATE orders SET status = 'Paid', is_open = 0
+                        WHERE order_id = ?
                     ");
                 } else {
                     // Regular Bakong order → move to Preparing (kitchen view)

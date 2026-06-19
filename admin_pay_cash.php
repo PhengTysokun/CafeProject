@@ -1,11 +1,10 @@
 <?php
-// Only start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+require 'auth.php'; // starts session, loads config ($conn), re-syncs $_SESSION['role']
+// Cashiers (staff) collect pay-later payments from find_order.php — allow them alongside admin/manager
+if (!in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'staff'])) {
+    header("Location: dashboard.php?denied=1");
+    exit;
 }
-
-require 'config.php';
-require 'admin_only.php';
 
 $order_id = (int)($_GET['order_id'] ?? 0);
 $return_page = ($_GET['return'] ?? '') === 'dashboard' ? 'dashboard.php' : 'find_order.php?tab=pending';
@@ -33,8 +32,13 @@ if (!$order) {
 // Mark order as Paid, close it, and sync all payment records atomically
 $conn->begin_transaction();
 try {
-    $stmt = $conn->prepare("UPDATE orders SET status = 'Preparing', is_open = 0, completed_at = NOW() WHERE order_id = ?");
-    $stmt->bind_param("i", $order_id);
+    // Paylater settled at the counter → 'Paid' (drops it from the unpaid list);
+    // otherwise advance normally (matches admin_pay_confirm.php).
+    $new_status = ($order['payment_method'] === 'paylater')
+        ? 'Paid'
+        : (($order['status'] === 'PendingPayment') ? 'Preparing' : 'Completed');
+    $stmt = $conn->prepare("UPDATE orders SET status = ?, is_open = 0, completed_at = NOW() WHERE order_id = ?");
+    $stmt->bind_param("si", $new_status, $order_id);
     $stmt->execute();
 
     $stmt = $conn->prepare("
