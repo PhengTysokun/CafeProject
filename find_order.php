@@ -100,6 +100,13 @@ $count_main_sql = preg_replace(
     1
 );
 $total      = (int)(mysqli_fetch_assoc(mysqli_query($conn, $count_main_sql))['c'] ?? 0);
+$sum_main_sql = preg_replace(
+    '/^\s*SELECT .*?FROM orders/s',
+    'SELECT COALESCE(SUM(total),0) AS s FROM orders',
+    $sql,
+    1
+);
+$total_unpaid = (float)(mysqli_fetch_assoc(mysqli_query($conn, $sum_main_sql))['s'] ?? 0);
 $totalPages = max(1, (int)ceil($total / $perPage));
 if ($page > $totalPages) $page = $totalPages;
 $offset = ($page - 1) * $perPage;
@@ -140,8 +147,6 @@ while ($r = mysqli_fetch_assoc($count_result)) {
     }
     if ($r['status'] === 'Paid' && $r['is_open'] == 1) $tab_counts['paid_open'] += $r['cnt'];
 }
-
-$total_unpaid = array_sum(array_column($orders, 'total'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
