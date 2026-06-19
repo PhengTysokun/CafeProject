@@ -26,7 +26,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'poll') {
         (status NOT IN ('Completed','Cancelled','Refunded') AND status != 'Paid')
         OR (status = 'Paid' AND is_open = 1)
         OR (payment_method = 'paylater' AND status = 'Completed')
-    )";
+    )
+    AND ( business_date = CURDATE() OR payment_method = 'paylater' )";
     if ($poll_tab === 'paylater') {
         $poll_sql .= " AND payment_method = 'paylater' AND status IN ('Preparing','PendingPayment','Completed')";
     } elseif ($poll_tab === 'preparing') {
@@ -63,6 +64,7 @@ WHERE (
     OR (status = 'Paid' AND is_open = 1)
     OR (payment_method = 'paylater' AND status = 'Completed')
 )
+AND ( business_date = CURDATE() OR payment_method = 'paylater' )
 ";
 
 if (!empty($search_value)) {
@@ -103,6 +105,7 @@ WHERE (
     OR (status = 'Paid' AND is_open = 1)
     OR (payment_method = 'paylater' AND status = 'Completed')
 )
+AND ( business_date = CURDATE() OR payment_method = 'paylater' )
 GROUP BY status, is_open, payment_method
 ";
 $count_result = mysqli_query($conn, $count_sql);
