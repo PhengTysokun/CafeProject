@@ -330,6 +330,15 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
         .count-badge { background: var(--purple); color: #fff; padding: 3px 14px; border-radius: 50px; font-size: 12px; font-weight: 700; }
         .total-amount { color: var(--accent); font-weight: 700; font-size: 14px; }
 
+        /* Pagination bar */
+        .pagination-bar{display:flex;justify-content:center;align-items:center;gap:6px;margin:22px 0 8px;flex-wrap:wrap;}
+        .pagination-bar button{min-width:38px;height:38px;padding:0 10px;border-radius:10px;border:1px solid var(--border);
+          background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px;cursor:pointer;transition:all .15s;}
+        .pagination-bar button:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+        .pagination-bar button.active{background:var(--accent);border-color:var(--accent);color:#1a1a1a;font-weight:600;}
+        .pagination-bar button:disabled{opacity:.4;cursor:default;}
+        .pagination-bar .ellipsis{color:var(--text-muted);padding:0 4px;}
+
         /* Order card */
         .order-card {
             background: var(--bg-card); border-radius: 16px; padding: 18px 20px;
@@ -584,6 +593,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
     <div id="orderList">
     <?php foreach ($orders as $order) include '_order_card.php'; ?>
     </div>
+    <div id="pagination" class="pagination-bar"></div>
 
     <div id="noFilterResults" style="display:none;" class="no-results">
         <i class="fa-solid fa-filter" style="color:var(--text-muted);"></i>
@@ -792,54 +802,117 @@ let tableEditOpen = false;
 })();
 
 // ── Inline table number edit ──
-document.querySelectorAll('.table-edit-wrap').forEach(function(wrap) {
-    const orderId    = wrap.dataset.order;
-    const labelEl    = wrap.querySelector('.table-label');
-    const editBtn    = wrap.querySelector('.table-edit-btn');
-    const inputWrap  = wrap.querySelector('.table-input-wrap');
-    const input      = wrap.querySelector('.table-input');
-    const saveBtn    = wrap.querySelector('.table-save-btn');
-    const cancelBtn  = wrap.querySelector('.table-cancel-btn');
+function bindCardHandlers() {
+    document.querySelectorAll('.table-edit-wrap').forEach(function(wrap) {
+        if (wrap.dataset.bound === '1') return; // idempotent
+        wrap.dataset.bound = '1';
+        const orderId    = wrap.dataset.order;
+        const labelEl    = wrap.querySelector('.table-label');
+        const editBtn    = wrap.querySelector('.table-edit-btn');
+        const inputWrap  = wrap.querySelector('.table-input-wrap');
+        const input      = wrap.querySelector('.table-input');
+        const saveBtn    = wrap.querySelector('.table-save-btn');
+        const cancelBtn  = wrap.querySelector('.table-cancel-btn');
 
-    editBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        tableEditOpen = true;
-        editBtn.style.display = 'none';
-        labelEl.style.display = 'none';
-        inputWrap.style.display = 'inline-flex';
-        input.focus();
-        input.select();
-    });
+        editBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            tableEditOpen = true;
+            editBtn.style.display = 'none';
+            labelEl.style.display = 'none';
+            inputWrap.style.display = 'inline-flex';
+            input.focus();
+            input.select();
+        });
 
-    cancelBtn.addEventListener('click', function() {
-        tableEditOpen = false;
-        inputWrap.style.display = 'none';
-        editBtn.style.display = '';
-        labelEl.style.display = '';
-    });
+        cancelBtn.addEventListener('click', function() {
+            tableEditOpen = false;
+            inputWrap.style.display = 'none';
+            editBtn.style.display = '';
+            labelEl.style.display = '';
+        });
 
-    saveBtn.addEventListener('click', async function() {
-        const val = input.value.trim();
-        const body = new URLSearchParams({ order_id: orderId, table_number: val });
-        try {
-            const res = await fetch('update_table.php', { method: 'POST', body });
-            const data = await res.json();
-            if (data.ok) {
-                tableEditOpen = false;
-                labelEl.textContent = val ? 'Table ' + val : 'No table';
-                input.value = val;
-                inputWrap.style.display = 'none';
-                editBtn.style.display = '';
-                labelEl.style.display = '';
-            }
-        } catch(e) {}
-    });
+        saveBtn.addEventListener('click', async function() {
+            const val = input.value.trim();
+            const body = new URLSearchParams({ order_id: orderId, table_number: val });
+            try {
+                const res = await fetch('update_table.php', { method: 'POST', body });
+                const data = await res.json();
+                if (data.ok) {
+                    tableEditOpen = false;
+                    labelEl.textContent = val ? 'Table ' + val : 'No table';
+                    input.value = val;
+                    inputWrap.style.display = 'none';
+                    editBtn.style.display = '';
+                    labelEl.style.display = '';
+                }
+            } catch(e) {}
+        });
 
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') saveBtn.click();
-        if (e.key === 'Escape') cancelBtn.click();
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') saveBtn.click();
+            if (e.key === 'Escape') cancelBtn.click();
+        });
     });
-});
+}
+bindCardHandlers();
+
+// ── AJAX pagination ──
+let currentPage = <?= (int)$page ?>;
+let lastSig = null;
+
+function currentQuery() {
+    const p = new URLSearchParams(location.search);
+    return {
+        tab: p.get('tab') || <?= json_encode($filter_tab) ?>,
+        search_type: p.get('search_type') || '',
+        search_value: p.get('search_value') || ''
+    };
+}
+
+async function loadPage(n, opts = {}) {
+    const q = currentQuery();
+    const url = 'find_order.php?action=list&tab=' + encodeURIComponent(q.tab)
+              + '&search_type=' + encodeURIComponent(q.search_type)
+              + '&search_value=' + encodeURIComponent(q.search_value)
+              + '&page=' + n;
+    let data;
+    try { data = await (await fetch(url)).json(); }
+    catch (e) { return; }
+
+    if (opts.silent && data.sig === lastSig) { currentPage = data.page; return; }
+
+    const list = document.getElementById('orderList');
+    if (list) list.innerHTML = data.html;
+    currentPage = data.page;
+    lastSig = data.sig;
+    renderPagination(data.page, data.totalPages);
+    bindCardHandlers();
+}
+
+function renderPagination(page, totalPages) {
+    const bar = document.getElementById('pagination');
+    if (!bar) return;
+    if (totalPages <= 1) { bar.innerHTML = ''; return; }
+    const btn = (label, target, {active = false, disabled = false} = {}) =>
+        `<button ${disabled ? 'disabled' : ''} class="${active ? 'active' : ''}" data-pg="${target}">${label}</button>`;
+    let html = '';
+    html += btn('&laquo;', 1, {disabled: page === 1});
+    html += btn('&lsaquo;', page - 1, {disabled: page === 1});
+    const win = [];
+    for (let i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) win.push(i);
+    if (win[0] > 1) { html += btn('1', 1); if (win[0] > 2) html += '<span class="ellipsis">…</span>'; }
+    win.forEach(i => html += btn(i, i, {active: i === page}));
+    const last = win[win.length - 1];
+    if (last < totalPages) { if (last < totalPages - 1) html += '<span class="ellipsis">…</span>'; html += btn(totalPages, totalPages); }
+    html += btn('&rsaquo;', page + 1, {disabled: page === totalPages});
+    html += btn('&raquo;', totalPages, {disabled: page === totalPages});
+    bar.innerHTML = html;
+    bar.querySelectorAll('button[data-pg]').forEach(b =>
+        b.addEventListener('click', () => loadPage(parseInt(b.dataset.pg, 10))));
+}
+
+renderPagination(currentPage, <?= (int)$totalPages ?>);
+lastSig = <?= json_encode(md5(implode('|', array_map(fn($o) => $o['order_id'].':'.$o['status'], $orders)))) ?>;
 </script>
 </body>
 </html>
