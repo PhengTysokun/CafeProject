@@ -55,6 +55,9 @@ if ($is_cashier) {
     $filter_tab = 'paylater';
 }
 
+$perPage = 10;
+$page    = max(1, (int)($_GET['page'] ?? 1));
+
 // ── Main query: unpaid OR paid-but-open orders ──
 $sql = "
 SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number, table_number
@@ -89,7 +92,19 @@ if ($filter_tab === 'preparing') {
     $sql .= " AND payment_method = 'paylater' AND status IN ('Preparing', 'PendingPayment', 'Completed')";
 }
 
-$sql .= " ORDER BY order_date DESC";
+// Total matching rows (same filters, for pagination)
+$count_main_sql = preg_replace(
+    '/^\s*SELECT .*?FROM orders/s',
+    'SELECT COUNT(*) AS c FROM orders',
+    $sql,
+    1
+);
+$total      = (int)(mysqli_fetch_assoc(mysqli_query($conn, $count_main_sql))['c'] ?? 0);
+$totalPages = max(1, (int)ceil($total / $perPage));
+if ($page > $totalPages) $page = $totalPages;
+$offset = ($page - 1) * $perPage;
+
+$sql .= " ORDER BY order_date DESC LIMIT $perPage OFFSET $offset";
 $result = mysqli_query($conn, $sql);
 $orders = [];
 while ($row = mysqli_fetch_assoc($result)) {
