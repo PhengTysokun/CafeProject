@@ -258,7 +258,14 @@ $_SESSION['cart'] = [];
             font-size: 11.5px;
             font-weight: 600;
         }
-        .badge i { font-size: 11px; }
+        .badge i {
+            font-size: 11px;
+            animation: hourglassTurn 2.6s ease-in-out infinite;
+        }
+        @keyframes hourglassTurn {
+            0%, 55%   { transform: rotate(0deg); }
+            70%, 100% { transform: rotate(180deg); }
+        }
 
         /* ── Receipt tear (signature) ── */
         .tear {
