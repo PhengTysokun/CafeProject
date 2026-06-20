@@ -532,9 +532,6 @@ $_SESSION['cart'] = [];
 
     <!-- Actions -->
     <div class="actions">
-        <a href="view_order.php" class="btn btn-primary">
-            <i class="fa-solid fa-receipt"></i> View Orders
-        </a>
         <?php if ($order['is_open'] == 1): ?>
         <a href="add_to_existing_order.php?order_id=<?php echo $order_id; ?>" class="btn btn-add">
             <i class="fa-solid fa-plus"></i> Add More Items
@@ -543,11 +540,11 @@ $_SESSION['cart'] = [];
         <a href="receipt_paylater.php?order_id=<?php echo $order_id; ?>" target="_blank" class="btn btn-print">
             <i class="fa-solid fa-file-pdf"></i> Print Receipt
         </a>
+        <a href="find_order.php?tab=paylater" class="btn btn-primary">
+            <i class="fa-solid fa-list"></i> Pay Later Queue
+        </a>
         <a href="menu.php" class="btn btn-secondary">
             <i class="fa-solid fa-arrow-left"></i> Back to Menu
-        </a>
-        <a href="find_order.php?tab=paylater" class="btn btn-secondary">
-            <i class="fa-solid fa-list"></i> Pay Later Queue
         </a>
     </div>
 </div>
