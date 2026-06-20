@@ -1,5 +1,10 @@
 <?php
-require 'admin_only.php';
+require 'auth.php'; // starts session, loads config ($conn), re-syncs $_SESSION['role']
+// Cashiers (staff) handle pay-later orders (add-to-order + settle) — allow them alongside admin/manager
+if (!in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'staff'])) {
+    header("Location: dashboard.php?denied=1");
+    exit;
+}
 
 $order_id = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
 if ($order_id <= 0) { header("Location: menu.php"); exit; }
