@@ -120,6 +120,8 @@ $_SESSION['cart'] = [];
         .emblem > i {
             font-size: 26px;
             color: var(--purple);
+            transform-origin: 52% 78%;
+            animation: mugBob 3.2s ease-in-out 0.7s infinite;
         }
         .emblem .check {
             position: absolute;
@@ -132,10 +134,20 @@ $_SESSION['cart'] = [];
             font-size: 11px;
             border: 3px solid var(--bg-card);
             box-shadow: var(--shadow-purple);
+            animation: checkPop 0.5s var(--ease) 0.55s both;
         }
         @keyframes emblemIn {
             from { opacity: 0; transform: scale(0.6); }
             to   { opacity: 1; transform: scale(1); }
+        }
+        @keyframes mugBob {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50%      { transform: translateY(-2.5px) rotate(-6deg); }
+        }
+        @keyframes checkPop {
+            0%   { transform: scale(0); opacity: 0; }
+            60%  { transform: scale(1.25); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
         }
 
         /* ── Title ── */
