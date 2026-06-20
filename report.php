@@ -2544,6 +2544,9 @@ function exportCSV() {
     rows.push(['Profit Margin', '<?= number_format($margin, 1) ?>%']);
     rows.push(['Avg per Order', '$<?= fmtMoney($avgOrder) ?>']);
     rows.push(['Refunds', '$<?= fmtMoney($totalRefunded) ?>']);
+    rows.push(['Net Revenue', '$<?= fmtMoney($netRevenue) ?>']);
+    rows.push(['Remakes', <?= (int)$remakeCount ?>]);
+    rows.push(['Peak Hour', <?= json_encode((string)$peakHour) ?>]);
 
     const csv  = rows.map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
