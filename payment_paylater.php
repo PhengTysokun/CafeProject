@@ -312,10 +312,10 @@ $_SESSION['cart'] = [];
         }
         .btn-add:hover {
             transform: translateY(-2px);
-            background: rgba(209,144,75,0.18);
+            background: linear-gradient(135deg, var(--orange), var(--orange-dark));
             border-color: var(--orange);
-            color: var(--orange);
-            text-shadow: 0 0 12px rgba(232,184,122,0.85), 0 0 5px rgba(209,144,75,0.6);
+            color: #fff;
+            text-shadow: 0 0 8px rgba(255,255,255,0.45);
         }
 
         .btn-print {
