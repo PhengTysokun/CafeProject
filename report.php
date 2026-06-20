@@ -1286,6 +1286,16 @@ select option {
 .goal-bar-fill  { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); border-radius:99px; transition:width .6s ease; }
 .goal-label     { font-size:11px; color:var(--text-muted); }
 
+/* ── REDUCED MOTION ── */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
 /* ── PRINT ── */
 @media print {
     body { padding:20px; background:#fff !important; color:#000 !important; }
@@ -1559,7 +1569,7 @@ select option {
                 <div class="chart-title">
                     <i class="fa-solid fa-tags"></i> Category Sales
                 </div>
-                <canvas id="categoryChart"></canvas>
+                <canvas id="categoryChart" role="img" aria-label="Quantity sold per product category for this period"></canvas>
             </div>
 
             <!-- RIGHT: Top Products (LINE CHART) -->
@@ -1567,7 +1577,7 @@ select option {
                 <div class="chart-title">
                     <i class="fa-solid fa-trophy"></i> Top Products
                 </div>
-                <canvas id="productChart"></canvas>
+                <canvas id="productChart" role="img" aria-label="Top-performing products by revenue for this period"></canvas>
             </div>
         </div>
     <?php else: ?>
@@ -1589,7 +1599,7 @@ select option {
         <p class="section-desc">Revenue and order count per day — spot your busiest days and slow periods across the selected range.</p>
     </div>
     <div class="chart-wrap" style="height:280px;">
-        <canvas id="dailyTrendChart"></canvas>
+        <canvas id="dailyTrendChart" role="img" aria-label="Daily sales trend across the selected period"></canvas>
     </div>
 </div>
 <?php endif; ?>
@@ -1610,7 +1620,7 @@ select option {
     <div class="hourly-grid" style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:stretch;">
         <!-- Main hourly timeline -->
         <div class="chart-wrap" style="height:280px;aspect-ratio:unset;min-height:unset;">
-            <canvas id="hourlyChart"></canvas>
+            <canvas id="hourlyChart" role="img" aria-label="Sales broken down by hour of the day"></canvas>
         </div>
         <!-- Top revenue hours (right panel) -->
         <div class="chart-wrap" style="height:280px;aspect-ratio:unset;min-height:unset;display:flex;flex-direction:column;">
@@ -1618,7 +1628,7 @@ select option {
                 <i class="fa-solid fa-ranking-star" style="color:var(--accent-2);"></i>
                 Top Revenue Hours
             </div>
-            <canvas id="topHoursChart" style="flex:1;"></canvas>
+            <canvas id="topHoursChart" style="flex:1;" role="img" aria-label="Busiest hours ranked by sales"></canvas>
         </div>
     </div>
 </div>
@@ -1636,7 +1646,7 @@ select option {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center;">
         <div class="chart-wrap" style="height:240px;">
-            <canvas id="paymentChart"></canvas>
+            <canvas id="paymentChart" role="img" aria-label="Sales split by payment method"></canvas>
         </div>
         <div>
             <?php foreach ($paymentMethods as $pm): ?>
@@ -1721,7 +1731,7 @@ select option {
             <div class="chart-title">
                 <i class="fa-solid fa-chart-area"></i> Refunds Over Time
             </div>
-            <canvas id="refundChart"></canvas>
+            <canvas id="refundChart" role="img" aria-label="Refunds over the selected period"></canvas>
         </div>
     </div>
 </div>
