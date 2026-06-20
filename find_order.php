@@ -148,24 +148,37 @@ while ($r = mysqli_fetch_assoc($count_result)) {
     if ($r['status'] === 'Paid' && $r['is_open'] == 1) $tab_counts['paid_open'] += $r['cnt'];
 }
 
+// ── Shared empty-state markup (used by both AJAX and full render) ──
+$noResultsHtml = '<div class="no-results">'
+    . '<i class="fa-solid fa-check-circle" style="color:var(--success);"></i>'
+    . '<h3>No orders found</h3>'
+    . '<p>' . (!empty($search_value) ? 'Try a different search term.' : 'All orders are settled.') . '</p>'
+    . '</div>';
+
 // ── AJAX: rendered card list + pagination meta for the current page ──
 if (isset($_GET['action']) && $_GET['action'] === 'list') {
     header('Content-Type: application/json');
-    ob_start();
-    foreach ($orders as $order) include '_order_card.php';
-    $html = ob_get_clean();
+    if ($orders) {
+        ob_start();
+        foreach ($orders as $order) include '_order_card.php';
+        $html = ob_get_clean();
+    } else {
+        $html = $noResultsHtml;
+    }
 
     $sig = '';
     foreach ($orders as $o) $sig .= $o['order_id'] . ':' . $o['status'] . '|';
 
     echo json_encode([
-        'html'       => $html,
-        'page'       => $page,
-        'perPage'    => $perPage,
-        'total'      => $total,
-        'totalPages' => $totalPages,
-        'sig'        => md5($sig),
-        'tabCounts'  => $tab_counts,
+        'html'        => $html,
+        'page'        => $page,
+        'perPage'     => $perPage,
+        'total'       => $total,
+        'totalPages'  => $totalPages,
+        'pageCount'   => count($orders),
+        'totalUnpaid' => number_format($total_unpaid, 2),
+        'sig'         => md5($sig),
+        'tabCounts'   => $tab_counts,
     ]);
     exit;
 }
@@ -534,28 +547,28 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
         <a href="?tab=all<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn <?= $filter_tab === 'all' ? 'active' : '' ?>">
             <i class="fa-solid fa-layer-group"></i> All Active
-            <span class="tab-count"><?= $tab_counts['all'] ?></span>
+            <span class="tab-count" data-tab="all"><?= $tab_counts['all'] ?></span>
         </a>
         <a href="?tab=preparing<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn <?= $filter_tab === 'preparing' ? 'active' : '' ?>">
             <i class="fa-solid fa-fire"></i> Preparing
-            <span class="tab-count"><?= $tab_counts['preparing'] ?></span>
+            <span class="tab-count" data-tab="preparing"><?= $tab_counts['preparing'] ?></span>
         </a>
         <a href="?tab=pending<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn <?= $filter_tab === 'pending' ? 'active' : '' ?>">
             <i class="fa-solid fa-clock"></i> Pending Payment
-            <span class="tab-count"><?= $tab_counts['pending'] ?></span>
+            <span class="tab-count" data-tab="pending"><?= $tab_counts['pending'] ?></span>
         </a>
         <a href="?tab=paid_open<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn tab-addable <?= $filter_tab === 'paid_open' ? 'active' : '' ?>">
             <i class="fa-solid fa-circle-plus"></i> Paid + Open
-            <span class="tab-count"><?= $tab_counts['paid_open'] ?></span>
+            <span class="tab-count" data-tab="paid_open"><?= $tab_counts['paid_open'] ?></span>
         </a>
         <?php endif; ?>
         <a href="?tab=paylater<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn tab-paylater <?= $filter_tab === 'paylater' ? 'active' : '' ?>">
             <i class="fa-solid fa-wallet"></i> Pay Later
-            <span class="tab-count"><?= $tab_counts['paylater'] ?></span>
+            <span class="tab-count" data-tab="paylater"><?= $tab_counts['paylater'] ?></span>
         </a>
     </div>
 
@@ -573,8 +586,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
     </div>
     <?php endif; ?>
 
-    <?php if (count($orders) > 0): ?>
-
     <!-- Results Header -->
     <div class="results-header">
         <h2 id="resultsTitle">
@@ -589,9 +600,13 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
         </div>
     </div>
 
-    <!-- Order Cards -->
+    <!-- Order Cards (container always present so silent refresh can repopulate) -->
     <div id="orderList">
-    <?php foreach ($orders as $order) include '_order_card.php'; ?>
+    <?php if (count($orders) > 0): ?>
+        <?php foreach ($orders as $order) include '_order_card.php'; ?>
+    <?php else: ?>
+        <?= $noResultsHtml ?>
+    <?php endif; ?>
     </div>
     <div id="pagination" class="pagination-bar"></div>
 
@@ -600,14 +615,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
         <h3>No matching orders</h3>
         <p>Try a different search term.</p>
     </div>
-
-    <?php else: ?>
-    <div class="no-results">
-        <i class="fa-solid fa-check-circle" style="color:var(--success);"></i>
-        <h3>No orders found</h3>
-        <p><?= !empty($search_value) ? 'Try a different search term.' : 'All orders are settled.' ?></p>
-    </div>
-    <?php endif; ?>
 
 
 </div><!-- end page-wrapper -->
@@ -872,6 +879,21 @@ async function loadPage(n, opts = {}) {
     lastSig = data.sig;
     renderPagination(data.page, data.totalPages);
     bindCardHandlers();
+    updateMeta(data);
+}
+
+// Keep the results header and tab pills in sync after an AJAX swap.
+function updateMeta(data) {
+    const vc = document.getElementById('visibleCount');
+    if (vc && typeof data.pageCount !== 'undefined') vc.textContent = data.pageCount + ' orders';
+    const ta = document.querySelector('.total-amount');
+    if (ta && typeof data.totalUnpaid !== 'undefined') ta.textContent = '$' + data.totalUnpaid;
+    if (data.tabCounts) {
+        document.querySelectorAll('.tab-count[data-tab]').forEach(function(span) {
+            const k = span.dataset.tab;
+            if (typeof data.tabCounts[k] !== 'undefined') span.textContent = data.tabCounts[k];
+        });
+    }
 }
 
 function renderPagination(page, totalPages) {
