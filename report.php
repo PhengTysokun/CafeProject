@@ -553,6 +553,10 @@ if ($mode === 'daily') {
     --text-light: #f5f5f5;
     --refund-color: #9b59b6;
     --refund-light: #bb8fce;
+    --pos: #63f1a0;
+    --neg: #ff6b6b;
+    --warn: #f1c40f;
+    --amber: #f0b45a;
     
     /* ── Shadow System ── */
     --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
@@ -581,6 +585,10 @@ if ($mode === 'daily') {
     --gold:         #a0702a;
     --refund-color: #8e44ad;
     --refund-light: #9b59b6;
+    --pos: #1a9d5a;
+    --neg: #d63031;
+    --warn: #c08a00;
+    --amber: #b8761e;
     --shadow-sm:    0 2px 8px  rgba(0,0,0,0.06);
     --shadow-md:    0 4px 20px rgba(0,0,0,0.08);
     --shadow-lg:    0 8px 40px rgba(0,0,0,0.10);
@@ -974,13 +982,13 @@ select option {
 
 .badge.good {
     background: rgba(15, 58, 31, 0.6);
-    color: #63f1a0;
+    color: var(--pos);
     border: 1px solid rgba(99, 241, 160, 0.2);
 }
 
 .badge.warn {
     background: rgba(58, 42, 16, 0.6);
-    color: #f0b45a;
+    color: var(--amber);
     border: 1px solid rgba(240, 180, 90, 0.2);
 }
 
@@ -1245,21 +1253,21 @@ select option {
 }
 .insight-chip:hover { border-color:var(--border-hover); }
 .insight-chip > i { font-size:18px; color:var(--accent-2); flex-shrink:0; }
-.insight-chip.ic-good > i { color:#63f1a0; }
-.insight-chip.ic-warn > i { color:#f0b45a; }
+.insight-chip.ic-good > i { color:var(--pos); }
+.insight-chip.ic-warn > i { color:var(--amber); }
 .insight-chip.ic-alert > i { color:var(--refund-color); }
 .ic-label { font-size:10px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
 .ic-val { font-size:13px; font-weight:600; color:var(--text); margin-top:2px; }
 [data-theme="light"] .insight-chip { background:rgba(0,0,0,.025); }
 
 .report-summary { font-size:14px; line-height:1.8; color:var(--text); margin:10px 0 0; padding:14px 18px; background:rgba(255,255,255,.03); border-left:3px solid var(--accent-2); border-radius:0 8px 8px 0; }
-.report-summary strong.good { color:#63f1a0; }
+.report-summary strong.good { color:var(--pos); }
 .report-summary strong.ok   { color:var(--accent-2); }
-.report-summary strong.warn { color:#f0b45a; }
+.report-summary strong.warn { color:var(--amber); }
 
 /* ── Live indicator ── */
 .live-bar { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-muted); margin:10px 0 16px; padding:6px 14px; background:rgba(99,241,160,.06); border:1px solid rgba(99,241,160,.15); border-radius:50px; width:fit-content; }
-.live-dot { width:7px; height:7px; border-radius:50%; background:#63f1a0; flex-shrink:0; }
+.live-dot { width:7px; height:7px; border-radius:50%; background:var(--pos); flex-shrink:0; }
 .live-dot.pulsing { animation:livePulse 1.8s ease-in-out infinite; }
 @keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.75)} }
 @keyframes kpiFlash { 0%{background:rgba(99,241,160,.18)} 100%{background:transparent} }
@@ -1268,8 +1276,8 @@ select option {
 /* ── Delta badges ── */
 .kpi-delta { font-size:11px; margin-top:4px; line-height:1.3; }
 .delta { font-weight:700; font-size:11px; padding:2px 6px; border-radius:20px; }
-.delta.up      { color:#63f1a0; background:rgba(99,241,160,.12); }
-.delta.down    { color:#ff6b6b; background:rgba(255,107,107,.12); }
+.delta.up      { color:var(--pos); background:rgba(99,241,160,.12); }
+.delta.down    { color:var(--neg); background:rgba(255,107,107,.12); }
 .delta.neutral { color:var(--text-muted); background:rgba(255,255,255,.05); }
 
 /* ── Daily goal progress bar ── */
@@ -1423,24 +1431,24 @@ select option {
         </div>
 
         <!-- ── REMAKE KPI ── -->
-        <div class="kpi" style="border-top: 3px solid #f1c40f;">
-            <div class="kpi-icon" style="color:#f1c40f;">
+        <div class="kpi" style="border-top: 3px solid var(--warn);">
+            <div class="kpi-icon" style="color:var(--warn);">
                 <i class="fa-solid fa-repeat"></i>
             </div>
             <span>Remakes</span>
-            <h3 class="num" style="color:#f1c40f;"><?= $remakeCount ?></h3>
+            <h3 class="num" style="color:var(--warn);"><?= $remakeCount ?></h3>
             <div class="small">
                 <span class="badge warn"><i class="fa-solid fa-repeat"></i> drinks remade</span>
             </div>
         </div>
 
         <!-- ── NET REVENUE KPI ── -->
-        <div class="kpi" style="border-top: 3px solid #63f1a0;">
+        <div class="kpi" style="border-top: 3px solid var(--pos);">
             <div class="kpi-icon">
                 <i class="fa-solid fa-sack-dollar"></i>
             </div>
             <span>Take Home</span>
-            <h3 class="num" id="kv-takehome" style="color:#63f1a0;">$<?= fmtMoney($netRevenue) ?></h3>
+            <h3 class="num" id="kv-takehome" style="color:var(--pos);">$<?= fmtMoney($netRevenue) ?></h3>
             <div class="small">Sales minus refunds</div>
         </div>
 
@@ -1674,7 +1682,7 @@ select option {
                     $cogs = (float)$pd['cogs'];
                     $prof = $rev - $cogs;
                     $mgn  = $rev > 0 ? ($prof / $rev * 100) : 0;
-                    $mgClass = $mgn >= 50 ? 'color:#63f1a0' : ($mgn >= 25 ? 'color:var(--accent-2)' : 'color:#f0b45a');
+                    $mgClass = $mgn >= 50 ? 'color:var(--pos)' : ($mgn >= 25 ? 'color:var(--accent-2)' : 'color:var(--amber)');
                 ?>
                 <tr>
                     <td style="color:var(--text-muted);font-weight:600;"><?= $rank++ ?></td>
@@ -1682,7 +1690,7 @@ select option {
                     <td style="text-align:right;"><?= (int)$pd['qty'] ?></td>
                     <td style="text-align:right;color:var(--accent-2);font-weight:600;">$<?= fmtMoney($rev) ?></td>
                     <td style="text-align:right;color:var(--text-muted);">$<?= fmtMoney($cogs) ?></td>
-                    <td style="text-align:right;font-weight:700;<?= $prof>=0?'color:#63f1a0':'color:#ff6b6b' ?>">
+                    <td style="text-align:right;font-weight:700;<?= $prof>=0?'color:var(--pos)':'color:var(--neg)' ?>">
                         <?= $prof >= 0 ? '+' : '' ?>$<?= fmtMoney($prof) ?>
                     </td>
                     <td style="text-align:right;font-weight:700;<?= $mgClass ?>">
@@ -1767,8 +1775,8 @@ select option {
 <?php if ($remakeCount > 0): ?>
 <div class="report-section">
     <div class="section-hdr">
-        <i class="fa-solid fa-repeat" style="color:#f1c40f;"></i>
-        <span class="section-hdr-title" style="color:#f1c40f;">Remade Orders</span>
+        <i class="fa-solid fa-repeat" style="color:var(--warn);"></i>
+        <span class="section-hdr-title" style="color:var(--warn);">Remade Orders</span>
         <span class="section-hdr-badge"><?= $remakeCount ?> remake<?= $remakeCount !== 1 ? 's' : '' ?></span>
     </div>
     <p class="section-desc">Drinks that were remade due to quality issues — useful for spotting recurring problems with specific drinks or baristas.</p>
