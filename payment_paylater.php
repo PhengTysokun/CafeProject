@@ -31,7 +31,7 @@ $_SESSION['cart'] = [];
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>(function(){if(localStorage.getItem('theme')==='dark'){document.documentElement.setAttribute('data-theme','dark');}})();</script>
     <title>Pay Later | Bird's Nest Coffee</title>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         /* ── RESET & ROOT ── */
@@ -57,9 +57,9 @@ $_SESSION['cart'] = [];
             --shadow-purple: 0 8px 28px rgba(123,60,152,0.30);
             --ease: cubic-bezier(0.22,1,0.36,1);
             --radius: 20px;
-            --font-display: 'Fraunces', Georgia, serif;
-            --font-ui: 'Space Grotesk', 'Segoe UI', sans-serif;
-            --font-mono: 'Space Mono', ui-monospace, monospace;
+            --font-display: 'Poppins', sans-serif;
+            --font-ui: 'Poppins', sans-serif;
+            --font-mono: 'Poppins', sans-serif;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -142,10 +142,9 @@ $_SESSION['cart'] = [];
         .tab-title {
             text-align: center;
             font-family: var(--font-display);
-            font-optical-sizing: auto;
-            font-size: 30px;
-            font-weight: 600;
-            letter-spacing: -0.3px;
+            font-size: 25px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
             color: var(--text-primary);
         }
         .tab-sub {
