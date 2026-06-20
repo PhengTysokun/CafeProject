@@ -23,6 +23,18 @@ elseif ($diff < 86400)         $timeAgo = floor($diff/3600) . 'h ' . floor(($dif
 else                           $timeAgo = floor($diff/86400) . 'd ago';
 
 $isOverdue = ($order['payment_method'] === 'paylater' && $diff > 1800); // 30 min unpaid
+
+// Human-readable overdue span: minutes under an hour, then hours, then days.
+$overdueMins = floor($diff / 60);
+if ($overdueMins < 60) {
+    $overdueLabel = $overdueMins . '+ min';
+} elseif ($overdueMins < 1440) {
+    $h = floor($overdueMins / 60);
+    $overdueLabel = $h . '+ ' . ($h === 1 ? 'hour' : 'hours');
+} else {
+    $d = floor($overdueMins / 1440);
+    $overdueLabel = $d . '+ ' . ($d === 1 ? 'day' : 'days');
+}
 ?>
 <div class="order-card <?= $cardClass ?> <?= $isOverdue ? 'overdue' : '' ?>"
      data-name="<?= strtolower(htmlspecialchars($order['customer_name'])) ?>"
@@ -133,7 +145,7 @@ $isOverdue = ($order['payment_method'] === 'paylater' && $diff > 1800); // 30 mi
         </div>
         <?php if ($isOverdue): ?>
         <div class="overdue-warning">
-            <i class="fa-solid fa-triangle-exclamation"></i> Unpaid for <?= floor($diff/60) ?>+ min — follow up with customer
+            <i class="fa-solid fa-triangle-exclamation"></i> Unpaid for <?= $overdueLabel ?> — follow up with customer
         </div>
         <?php endif; ?>
     </div>
