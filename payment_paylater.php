@@ -51,6 +51,7 @@ $_SESSION['cart'] = [];
             --purple-dark: #7d3c98;
             --purple-light: #b07cc6;
             --danger: #c0392b;
+            --danger-glow: rgba(192,57,43,0.45);
             --shadow-md: 0 10px 40px rgba(90,60,20,0.12);
             --shadow-lg: 0 18px 60px rgba(90,60,20,0.18);
             --shadow-purple: 0 8px 28px rgba(123,60,152,0.30);
@@ -280,7 +281,7 @@ $_SESSION['cart'] = [];
             font-weight: 600;
             font-size: 13.5px;
             cursor: pointer;
-            transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), background 0.18s, border-color 0.18s, color 0.18s;
+            transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), background 0.18s, border-color 0.18s, color 0.18s, text-shadow 0.18s;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -303,14 +304,26 @@ $_SESSION['cart'] = [];
             color: var(--orange-dark);
             border-color: rgba(209,144,75,0.30);
         }
-        .btn-add:hover { transform: translateY(-2px); background: rgba(209,144,75,0.18); border-color: var(--orange); }
+        .btn-add:hover {
+            transform: translateY(-2px);
+            background: rgba(209,144,75,0.18);
+            border-color: var(--orange);
+            color: var(--orange);
+            text-shadow: 0 0 12px rgba(232,184,122,0.85), 0 0 5px rgba(209,144,75,0.6);
+        }
 
         .btn-print {
             background: transparent;
             color: var(--text-secondary);
             border-color: var(--border);
         }
-        .btn-print:hover { transform: translateY(-2px); border-color: var(--border-hover); color: var(--text-primary); }
+        .btn-print:hover {
+            transform: translateY(-2px);
+            background: rgba(192,57,43,0.10);
+            border-color: var(--danger);
+            color: var(--danger);
+            box-shadow: 0 8px 24px var(--danger-glow);
+        }
 
         .btn-secondary {
             background: transparent;
@@ -344,6 +357,8 @@ $_SESSION['cart'] = [];
             --text-secondary: #b5b5b5;
             --text-muted: #777;
             --purple-light: #c79ad8;
+            --danger: #ff6b5e;
+            --danger-glow: rgba(255,107,94,0.30);
             --shadow-md: 0 10px 40px rgba(0,0,0,0.6);
             --shadow-lg: 0 18px 60px rgba(0,0,0,0.7);
         }
