@@ -667,6 +667,9 @@ body {
     color: var(--text);
     padding: 40px;
     line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 /* ── Custom Scrollbar ── */
@@ -953,17 +956,23 @@ select option {
     font-size: 18px;
 }
 
-.kpi span {
+.kpi > span {
     color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
 }
 
 .kpi h3 {
-    margin: 4px 0 0;
+    margin: 6px 0 0;
     color: var(--accent-2);
-    font-size: 26px;
+    font-size: 27px;
     font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
 }
 
 .small {
@@ -1106,6 +1115,7 @@ select option {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border);
     color: var(--text);
+    font-variant-numeric: tabular-nums;
 }
 
 .refund-table tr:hover td {
@@ -1274,7 +1284,7 @@ select option {
 .kpi-flash { animation:kpiFlash .7s ease-out forwards; }
 
 /* ── Delta badges ── */
-.kpi-delta { font-size:11px; margin-top:4px; line-height:1.3; }
+.kpi-delta { font-size:11px; margin-top:4px; line-height:1.3; font-variant-numeric:tabular-nums; }
 .delta { font-weight:700; font-size:11px; padding:2px 6px; border-radius:20px; }
 .delta.up      { color:var(--pos); background:rgba(99,241,160,.12); }
 .delta.down    { color:var(--neg); background:rgba(255,107,107,.12); }
@@ -1284,7 +1294,7 @@ select option {
 .goal-bar-wrap { margin-top:8px; }
 .goal-bar-track { height:5px; background:rgba(255,255,255,.08); border-radius:99px; overflow:hidden; margin-bottom:4px; }
 .goal-bar-fill  { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); border-radius:99px; transition:width .6s ease; }
-.goal-label     { font-size:11px; color:var(--text-muted); }
+.goal-label     { font-size:11px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
 
 /* ── REDUCED MOTION ── */
 @media (prefers-reduced-motion: reduce) {
