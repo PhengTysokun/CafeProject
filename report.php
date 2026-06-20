@@ -75,8 +75,8 @@ if ($mode === 'monthly') {
     $label = (new DateTime($date))->format("d M Y");
 }
 
-// ── Daily sales target (edit this number to set your goal) ──
-$dailyTarget = 500.00;
+// ── Daily sales target (configurable in Settings → Sales Target) ──
+$dailyTarget = DAILY_SALES_TARGET;
 
 // ── Is this period "live" (includes today)? ──
 $_today = getBusinessDateToday();
