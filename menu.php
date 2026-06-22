@@ -471,6 +471,24 @@ while ($row = mysqli_fetch_assoc($result)) {
     [data-theme="dark"] .cp-discount-toggle { border-color: #363636; }
     [data-theme="dark"] #cpDiscountForm { background: rgba(209,144,75,.06); border-color: rgba(209,144,75,.25); }
 
+    /* ── Payment modal ── */
+    .cp-paymodal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(6px); z-index: 10000; align-items: center; justify-content: center; padding: 20px; }
+    .cp-paymodal.active { display: flex; }
+    .cp-paymodal-card { background: var(--bg-card,#fff); border: 1px solid var(--border,#e0d4c4); border-radius: 16px; width: 100%; max-width: 420px; padding: 22px 22px 18px; box-shadow: 0 12px 48px rgba(90,60,20,.18); position: relative; animation: cpPmIn .22s ease both; }
+    @keyframes cpPmIn { from { opacity: 0; transform: translateY(16px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .cp-paymodal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .cp-paymodal-head h3 { font-size: 16px; font-weight: 700; color: var(--text,#1a1410); margin: 0; }
+    .cp-paymodal-close { background: none; border: none; font-size: 20px; color: var(--text-muted,#9a8070); cursor: pointer; line-height: 1; }
+    .cp-pm-breakdown { background: var(--bg,#f4efe9); border: 1px solid var(--border,#e0d4c4); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+    .cp-pm-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-sec,#5a4a3a); padding: 2px 0; }
+    .cp-pm-row.total { border-top: 1px solid var(--border,#e0d4c4); margin-top: 6px; padding-top: 8px; font-size: 20px; font-weight: 700; color: var(--text,#1a1410); }
+    .cp-pm-row.total span:last-child { color: #d1904b; }
+    .cp-pm-confirm { width: 100%; margin-top: 14px; padding: 13px; border: none; border-radius: 11px; background: #d1904b; color: #fff; font-size: 15px; font-weight: 700; font-family: 'Poppins',sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .cp-pm-confirm:hover { filter: brightness(1.07); }
+    [data-theme="dark"] .cp-paymodal-card { background: #161616; border-color: #252525; }
+    [data-theme="dark"] .cp-pm-breakdown { background: #1a1a1a; border-color: #252525; }
+    [data-theme="dark"] .cp-pm-row.total { border-color: #252525; }
+
     /* ── Chat toggle in header ── */
     #chatToggle {
       position: static;
@@ -1022,6 +1040,25 @@ while ($row = mysqli_fetch_assoc($result)) {
         </button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ── PAYMENT MODAL ── -->
+<div id="cpPayModal" class="cp-paymodal">
+  <div class="cp-paymodal-card" id="cpPayModalCard">
+    <div class="cp-paymodal-head">
+      <h3><i class="fa-solid fa-credit-card" style="color:#d1904b;"></i> Payment</h3>
+      <button type="button" class="cp-paymodal-close" id="cpPayModalClose" onclick="cpClosePayModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="cp-pm-breakdown">
+      <div class="cp-pm-row"><span>Subtotal</span><span id="cpPmSubtotal">$0.00</span></div>
+      <div class="cp-pm-row"><span>Tax (<?= (int)TAX_RATE ?>%)</span><span id="cpPmTax">$0.00</span></div>
+      <div class="cp-pm-row total"><span>Total</span><span id="cpPmTotal">$0.00</span></div>
+    </div>
+    <div id="cpPayModalBody"><!-- Task 2 moves the payment block here --></div>
+    <button type="button" class="cp-pm-confirm" id="cpConfirmPayBtn">
+      <i class="fa-solid fa-check"></i> <span>Confirm Payment</span>
+    </button>
   </div>
 </div>
 
