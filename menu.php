@@ -927,7 +927,7 @@ while ($row = mysqli_fetch_assoc($result)) {
         <input type="hidden" name="add_to_order_id" value="<?= $add_to_order_mode ?>">
         <?php endif; ?>
         <div id="cpPaymentInputs"></div>
-        <button type="submit" class="cp-confirm-btn<?= $add_to_order_mode ? ' paylater' : '' ?>" id="cpConfirmBtn">
+        <button type="button" class="cp-confirm-btn<?= $add_to_order_mode ? ' paylater' : '' ?>" id="cpConfirmBtn" onclick="cpOnConfirmOrderClick()">
           <i class="fa-solid fa-<?= $add_to_order_mode ? 'cart-plus' : 'credit-card' ?>" id="cpConfirmIcon"></i>
           <span id="cpConfirmText"><?= $add_to_order_mode ? 'Add to Order #'.$add_to_order_mode : 'Confirm Order' ?></span>
         </button>
@@ -1550,6 +1550,29 @@ function cpUpdateConfirmBtn(selected) {
   }
 }
 
+// ── PAYMENT MODAL OPEN/CLOSE ──
+function cpOpenPayModal() {
+  var total = cpGetCartTotal();
+  if (total <= 0) return; // empty cart guard
+  var sub = total / (1 + CP_TAX_RATE / 100);
+  var tax = total - sub;
+  document.getElementById('cpPmSubtotal').textContent = '$' + sub.toFixed(2);
+  document.getElementById('cpPmTax').textContent = '$' + tax.toFixed(2);
+  document.getElementById('cpPmTotal').textContent = '$' + total.toFixed(2);
+  document.getElementById('cpPayModal').classList.add('active');
+}
+function cpClosePayModal() {
+  document.getElementById('cpPayModal').classList.remove('active');
+}
+function cpOnConfirmOrderClick() {
+  if (typeof ADD_TO_ORDER_MODE !== 'undefined' && ADD_TO_ORDER_MODE) {
+    // add-to-order has no payment step — submit directly
+    document.getElementById('cpCheckoutForm').requestSubmit();
+    return;
+  }
+  cpOpenPayModal();
+}
+
 // ── SPLIT PAYMENT ──
 function cpInputToUsd(inp) {
   var val = Math.max(0, parseFloat(inp.value) || 0);
@@ -1748,6 +1771,27 @@ document.addEventListener('DOMContentLoaded', function() {
       form.submit();
     });
   }
+
+  // Confirm Payment button (inside modal) triggers the form submit handler above
+  var confirmPayBtn = document.getElementById('cpConfirmPayBtn');
+  if (confirmPayBtn) {
+    confirmPayBtn.addEventListener('click', function() {
+      document.getElementById('cpCheckoutForm').requestSubmit();
+    });
+  }
+
+  // Payment modal: backdrop + Esc close
+  var payModal = document.getElementById('cpPayModal');
+  if (payModal) {
+    payModal.addEventListener('click', function(e) {
+      if (e.target === this) cpClosePayModal();
+    });
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.getElementById('cpPayModal').classList.contains('active')) {
+      cpClosePayModal();
+    }
+  });
 
   // Keyboard shortcuts
   document.addEventListener('keydown', function(e) {
