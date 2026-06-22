@@ -1797,6 +1797,10 @@ document.addEventListener('DOMContentLoaded', function() {
   document.addEventListener('keydown', function(e) {
     var tag = document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (typeof ADD_TO_ORDER_MODE !== 'undefined' && ADD_TO_ORDER_MODE) {
+      if (e.key.toLowerCase() === 'enter') { e.preventDefault(); cpOnConfirmOrderClick(); }
+      return;
+    }
     var modalOpen = document.getElementById('cpPayModal').classList.contains('active');
     var key = e.key.toLowerCase();
     if (['b','c','p','r'].includes(key)) {
@@ -1808,7 +1812,10 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
       if (modalOpen) document.getElementById('cpConfirmPayBtn').click();
       else cpOpenPayModal();
-    } else if (key === 'escape') { closeModal(); }
+    } else if (key === 'escape') {
+      if (document.getElementById('cpPayModal').classList.contains('active')) return;
+      closeModal();
+    }
   });
 
   // Sort on change
