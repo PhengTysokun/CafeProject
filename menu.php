@@ -1797,16 +1797,18 @@ document.addEventListener('DOMContentLoaded', function() {
   document.addEventListener('keydown', function(e) {
     var tag = document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    var modalOpen = document.getElementById('cpPayModal').classList.contains('active');
     var key = e.key.toLowerCase();
-    if (key === 'b') { e.preventDefault(); cpClickPayMethod('bakong'); }
-    else if (key === 'c') { e.preventDefault(); cpClickPayMethod('cash'); }
-    else if (key === 'p') { e.preventDefault(); cpClickPayMethod('paylater'); }
-    else if (key === 'r') { e.preventDefault(); cpClickPayMethod('riel'); }
-    else if (key === 'enter') {
-      var form = document.getElementById('cpCheckoutForm');
-      if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-    }
-    else if (key === 'escape') { closeModal(); }
+    if (['b','c','p','r'].includes(key)) {
+      e.preventDefault();
+      if (!modalOpen) cpOpenPayModal();
+      var map = { b:'bakong', c:'cash', p:'paylater', r:'riel' };
+      cpClickPayMethod(map[key]);
+    } else if (key === 'enter') {
+      e.preventDefault();
+      if (modalOpen) document.getElementById('cpConfirmPayBtn').click();
+      else cpOpenPayModal();
+    } else if (key === 'escape') { closeModal(); }
   });
 
   // Sort on change
