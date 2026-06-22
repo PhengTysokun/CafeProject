@@ -152,6 +152,22 @@ if ($manual === 1) {
 
 // ── Normal Bakong API check ──
 try {
+    // Guard: catch an expired/invalid token up front so we report it clearly
+    // instead of silently spinning on "Waiting for payment..." forever.
+    try {
+        $tokenExp = \KHQR\Helpers\Utils::getExpirationDateFromJwtPayload($config['token']);
+    } catch (Throwable $e) {
+        $tokenExp = null; // malformed/placeholder token — let the API call surface it
+    }
+    if ($tokenExp !== null && $tokenExp < time()) {
+        echo json_encode([
+            'paid' => false,
+            'error' => 'token_expired',
+            'message' => 'Bakong token expired — payments cannot be verified until it is renewed.'
+        ]);
+        exit;
+    }
+
     $bakong = new BakongKHQR($config['token']);
     $response = $bakong->checkTransactionByMD5($order['bakong_md5']);
 
@@ -257,6 +273,13 @@ try {
 
     echo json_encode(['paid' => false]);
 } catch (Throwable $e) {
-    echo json_encode(['paid' => false]);
+    // API rejected the request (bad/expired token, auth or network issue) —
+    // surface that it failed, but keep the raw detail server-side only.
+    error_log('check_payment.php Bakong verify failed (order ' . $order_id . '): ' . $e->getMessage());
+    echo json_encode([
+        'paid' => false,
+        'error' => 'api_error',
+        'message' => 'Could not verify payment with Bakong. Please try again or use another option.'
+    ]);
 }
 ?>
