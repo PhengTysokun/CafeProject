@@ -873,50 +873,6 @@ while ($row = mysqli_fetch_assoc($result)) {
         </div>
 
         <?php if (!$add_to_order_mode): ?>
-        <!-- Payment methods -->
-        <div class="cp-section">
-          <div class="cp-section-label"><i class="fa-solid fa-credit-card"></i> Payment</div>
-          <div class="cp-pay-methods" id="cpPayMethods">
-            <div class="cp-pay-method" onclick="cpTogglePayment(this)">
-              <input type="checkbox" value="bakong"> <span>&#x1F4F1; Bakong</span>
-            </div>
-            <div class="cp-pay-method" onclick="cpTogglePayment(this)">
-              <input type="checkbox" value="cash"> <span>&#x1F4B5; Cash</span>
-            </div>
-            <div class="cp-pay-method" onclick="cpTogglePayment(this)">
-              <input type="checkbox" value="paylater"> <span>&#x23F0; Later</span>
-            </div>
-            <div class="cp-pay-method" onclick="cpTogglePayment(this)">
-              <input type="checkbox" value="riel"> <span>&#x1F1F0;&#x1F1ED; Riel &#x17DB;</span>
-            </div>
-          </div>
-          <div class="cp-split-inputs" id="cpSplitInputs"><div id="cpSplitRows"></div></div>
-        </div>
-
-        <!-- Riel calculator -->
-        <div class="cp-change-calc" id="cpRielCalc">
-          <label><i class="fa-solid fa-coins" style="color:#e74c3c;margin-right:4px;"></i> Amount in Riel (KHR)</label>
-          <input type="number" id="cpRielReceived" step="1" min="0" placeholder="0" oninput="cpCalcRielChange()" onfocus="this.select()">
-          <div class="cp-change-row">
-            <span class="change-label">USD Equivalent</span>
-            <span class="change-amount" id="cpRielUsdEquiv">$0.00</span>
-          </div>
-          <div class="cp-change-row" id="cpRielChangeRow" style="display:none;">
-            <span class="change-label">Change (KHR)</span>
-            <span class="change-amount" id="cpRielChangeKhr">&#x17DB;0</span>
-          </div>
-        </div>
-
-        <!-- Change calculator -->
-        <div class="cp-change-calc" id="cpChangeCalc">
-          <label><i class="fa-solid fa-money-bill-wave" style="color:#55e087;margin-right:4px;"></i> Amount Received</label>
-          <input type="number" id="cpCashReceived" step="0.01" min="0" placeholder="0.00" oninput="cpCalcChange()" onfocus="this.select()">
-          <div class="cp-change-row">
-            <span class="change-label">Change to give back</span>
-            <span class="change-amount" id="cpChangeAmount">$0.00</span>
-          </div>
-        </div>
-
         <!-- Order type -->
         <div class="cp-section">
           <div class="cp-section-label"><i class="fa-solid fa-mug-hot"></i> Order Type</div>
@@ -1055,7 +1011,47 @@ while ($row = mysqli_fetch_assoc($result)) {
       <div class="cp-pm-row"><span>Tax (<?= (int)TAX_RATE ?>%)</span><span id="cpPmTax">$0.00</span></div>
       <div class="cp-pm-row total"><span>Total</span><span id="cpPmTotal">$0.00</span></div>
     </div>
-    <div id="cpPayModalBody"><!-- Task 2 moves the payment block here --></div>
+    <div id="cpPayModalBody">
+      <?php if (!$add_to_order_mode): ?>
+      <div class="cp-pay-methods" id="cpPayMethods">
+        <div class="cp-pay-method" onclick="cpTogglePayment(this)">
+          <input type="checkbox" value="bakong"> <span>&#x1F4F1; Bakong</span>
+        </div>
+        <div class="cp-pay-method" onclick="cpTogglePayment(this)">
+          <input type="checkbox" value="cash"> <span>&#x1F4B5; Cash</span>
+        </div>
+        <div class="cp-pay-method" onclick="cpTogglePayment(this)">
+          <input type="checkbox" value="paylater"> <span>&#x23F0; Later</span>
+        </div>
+        <div class="cp-pay-method" onclick="cpTogglePayment(this)">
+          <input type="checkbox" value="riel"> <span>&#x1F1F0;&#x1F1ED; Riel &#x17DB;</span>
+        </div>
+      </div>
+      <div class="cp-split-inputs" id="cpSplitInputs"><div id="cpSplitRows"></div></div>
+
+      <div class="cp-change-calc" id="cpRielCalc">
+        <label><i class="fa-solid fa-coins" style="color:#e74c3c;margin-right:4px;"></i> Amount in Riel (KHR)</label>
+        <input type="number" id="cpRielReceived" step="1" min="0" placeholder="0" oninput="cpCalcRielChange()" onfocus="this.select()">
+        <div class="cp-change-row">
+          <span class="change-label">USD Equivalent</span>
+          <span class="change-amount" id="cpRielUsdEquiv">$0.00</span>
+        </div>
+        <div class="cp-change-row" id="cpRielChangeRow" style="display:none;">
+          <span class="change-label">Change (KHR)</span>
+          <span class="change-amount" id="cpRielChangeKhr">&#x17DB;0</span>
+        </div>
+      </div>
+
+      <div class="cp-change-calc" id="cpChangeCalc">
+        <label><i class="fa-solid fa-money-bill-wave" style="color:#55e087;margin-right:4px;"></i> Amount Received</label>
+        <input type="number" id="cpCashReceived" step="0.01" min="0" placeholder="0.00" oninput="cpCalcChange()" onfocus="this.select()">
+        <div class="cp-change-row">
+          <span class="change-label">Change to give back</span>
+          <span class="change-amount" id="cpChangeAmount">$0.00</span>
+        </div>
+      </div>
+      <?php endif; ?>
+    </div>
     <button type="button" class="cp-pm-confirm" id="cpConfirmPayBtn">
       <i class="fa-solid fa-check"></i> <span>Confirm Payment</span>
     </button>
@@ -1319,40 +1315,8 @@ function renderCartPanel(data) {
   var prevCustomerName = (document.getElementById('cpCustomerName')   || {}).value || '';
   var prevTableNumber  = (document.getElementById('cpTableNumber')    || {}).value || '';
 
-  // Payment / order-type sections only shown for fresh orders
-  var prevSelected = [];
+  // Order type section only shown for fresh orders (payment block moved to modal)
   if (!ADD_TO_ORDER_MODE) {
-    document.querySelectorAll('.cp-pay-method input[type="checkbox"]:checked').forEach(function(cb) { prevSelected.push(cb.value); });
-    itemsHtml += '<div class="cp-section">' +
-      '<div class="cp-section-label"><i class="fa-solid fa-credit-card"></i> Payment</div>' +
-      '<div class="cp-pay-methods" id="cpPayMethods">' +
-      ['bakong','cash','paylater','riel'].map(function(m) {
-        var labels = { bakong:'&#x1F4F1; Bakong', cash:'&#x1F4B5; Cash', paylater:'&#x23F0; Later', riel:'&#x1F1F0;&#x1F1ED; Riel &#x17DB;' };
-        var sel = prevSelected.includes(m) ? ' selected' : '';
-        var chk = prevSelected.includes(m) ? ' checked' : '';
-        return '<div class="cp-pay-method' + sel + '" onclick="cpTogglePayment(this)">' +
-          '<input type="checkbox" value="' + m + '"' + chk + '> <span>' + labels[m] + '</span></div>';
-      }).join('') +
-      '</div>' +
-      '<div class="cp-split-inputs" id="cpSplitInputs"><div id="cpSplitRows"></div></div>' +
-    '</div>';
-
-    // Riel calc
-    itemsHtml += '<div class="cp-change-calc" id="cpRielCalc">' +
-      '<label><i class="fa-solid fa-coins" style="color:#e74c3c;margin-right:4px;"></i> Amount in Riel (KHR)</label>' +
-      '<input type="number" id="cpRielReceived" step="1" min="0" placeholder="0" oninput="cpCalcRielChange()" onfocus="this.select()">' +
-      '<div class="cp-change-row"><span class="change-label">USD Equivalent</span><span class="change-amount" id="cpRielUsdEquiv">$0.00</span></div>' +
-      '<div class="cp-change-row" id="cpRielChangeRow" style="display:none;"><span class="change-label">Change (KHR)</span><span class="change-amount" id="cpRielChangeKhr">&#x17DB;0</span></div>' +
-    '</div>';
-
-    // Change calc
-    itemsHtml += '<div class="cp-change-calc" id="cpChangeCalc">' +
-      '<label><i class="fa-solid fa-money-bill-wave" style="color:#55e087;margin-right:4px;"></i> Amount Received</label>' +
-      '<input type="number" id="cpCashReceived" step="0.01" min="0" placeholder="0.00" oninput="cpCalcChange()" onfocus="this.select()">' +
-      '<div class="cp-change-row"><span class="change-label">Change to give back</span><span class="change-amount" id="cpChangeAmount">$0.00</span></div>' +
-    '</div>';
-
-    // Order type
     itemsHtml += '<div class="cp-section">' +
       '<div class="cp-section-label"><i class="fa-solid fa-mug-hot"></i> Order Type</div>' +
       '<div class="cp-drink-type">' +
@@ -1383,17 +1347,6 @@ function renderCartPanel(data) {
   if (totalEl) totalEl.textContent = '$' + data.total;
 
   if (!ADD_TO_ORDER_MODE) {
-    // Restore payment selection visual + re-trigger split/change calc
-    cpUpdateSplitInputs();
-    cpUpdateConfirmBtn(prevSelected);
-    if (prevSelected.includes('cash')) {
-      var cc = document.getElementById('cpChangeCalc');
-      if (cc) cc.classList.add('visible');
-    }
-    if (prevSelected.length === 1 && prevSelected.includes('riel')) {
-      var rc = document.getElementById('cpRielCalc');
-      if (rc) rc.classList.add('visible');
-    }
     // Restore drink type button visuals
     cpSetDrinkType(prevDrinkType);
   }
