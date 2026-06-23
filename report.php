@@ -75,8 +75,8 @@ if ($mode === 'monthly') {
     $label = (new DateTime($date))->format("d M Y");
 }
 
-// ── Daily sales target (edit this number to set your goal) ──
-$dailyTarget = 500.00;
+// ── Daily sales target (configurable in Settings → Sales Target) ──
+$dailyTarget = DAILY_SALES_TARGET;
 
 // ── Is this period "live" (includes today)? ──
 $_today = getBusinessDateToday();
@@ -553,6 +553,10 @@ if ($mode === 'daily') {
     --text-light: #f5f5f5;
     --refund-color: #9b59b6;
     --refund-light: #bb8fce;
+    --pos: #63f1a0;
+    --neg: #ff6b6b;
+    --warn: #f1c40f;
+    --amber: #f0b45a;
     
     /* ── Shadow System ── */
     --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
@@ -581,6 +585,10 @@ if ($mode === 'daily') {
     --gold:         #a0702a;
     --refund-color: #8e44ad;
     --refund-light: #9b59b6;
+    --pos: #1a9d5a;
+    --neg: #d63031;
+    --warn: #c08a00;
+    --amber: #b8761e;
     --shadow-sm:    0 2px 8px  rgba(0,0,0,0.06);
     --shadow-md:    0 4px 20px rgba(0,0,0,0.08);
     --shadow-lg:    0 8px 40px rgba(0,0,0,0.10);
@@ -659,6 +667,9 @@ body {
     color: var(--text);
     padding: 40px;
     line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 /* ── Custom Scrollbar ── */
@@ -945,17 +956,23 @@ select option {
     font-size: 18px;
 }
 
-.kpi span {
+.kpi > span {
     color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
 }
 
 .kpi h3 {
-    margin: 4px 0 0;
+    margin: 6px 0 0;
     color: var(--accent-2);
-    font-size: 26px;
+    font-size: 27px;
     font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
 }
 
 .small {
@@ -974,13 +991,13 @@ select option {
 
 .badge.good {
     background: rgba(15, 58, 31, 0.6);
-    color: #63f1a0;
+    color: var(--pos);
     border: 1px solid rgba(99, 241, 160, 0.2);
 }
 
 .badge.warn {
     background: rgba(58, 42, 16, 0.6);
-    color: #f0b45a;
+    color: var(--amber);
     border: 1px solid rgba(240, 180, 90, 0.2);
 }
 
@@ -1098,6 +1115,7 @@ select option {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border);
     color: var(--text);
+    font-variant-numeric: tabular-nums;
 }
 
 .refund-table tr:hover td {
@@ -1245,38 +1263,48 @@ select option {
 }
 .insight-chip:hover { border-color:var(--border-hover); }
 .insight-chip > i { font-size:18px; color:var(--accent-2); flex-shrink:0; }
-.insight-chip.ic-good > i { color:#63f1a0; }
-.insight-chip.ic-warn > i { color:#f0b45a; }
+.insight-chip.ic-good > i { color:var(--pos); }
+.insight-chip.ic-warn > i { color:var(--amber); }
 .insight-chip.ic-alert > i { color:var(--refund-color); }
 .ic-label { font-size:10px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
 .ic-val { font-size:13px; font-weight:600; color:var(--text); margin-top:2px; }
 [data-theme="light"] .insight-chip { background:rgba(0,0,0,.025); }
 
 .report-summary { font-size:14px; line-height:1.8; color:var(--text); margin:10px 0 0; padding:14px 18px; background:rgba(255,255,255,.03); border-left:3px solid var(--accent-2); border-radius:0 8px 8px 0; }
-.report-summary strong.good { color:#63f1a0; }
+.report-summary strong.good { color:var(--pos); }
 .report-summary strong.ok   { color:var(--accent-2); }
-.report-summary strong.warn { color:#f0b45a; }
+.report-summary strong.warn { color:var(--amber); }
 
 /* ── Live indicator ── */
 .live-bar { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-muted); margin:10px 0 16px; padding:6px 14px; background:rgba(99,241,160,.06); border:1px solid rgba(99,241,160,.15); border-radius:50px; width:fit-content; }
-.live-dot { width:7px; height:7px; border-radius:50%; background:#63f1a0; flex-shrink:0; }
+.live-dot { width:7px; height:7px; border-radius:50%; background:var(--pos); flex-shrink:0; }
 .live-dot.pulsing { animation:livePulse 1.8s ease-in-out infinite; }
 @keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.75)} }
 @keyframes kpiFlash { 0%{background:rgba(99,241,160,.18)} 100%{background:transparent} }
 .kpi-flash { animation:kpiFlash .7s ease-out forwards; }
 
 /* ── Delta badges ── */
-.kpi-delta { font-size:11px; margin-top:4px; line-height:1.3; }
+.kpi-delta { font-size:11px; margin-top:4px; line-height:1.3; font-variant-numeric:tabular-nums; }
 .delta { font-weight:700; font-size:11px; padding:2px 6px; border-radius:20px; }
-.delta.up      { color:#63f1a0; background:rgba(99,241,160,.12); }
-.delta.down    { color:#ff6b6b; background:rgba(255,107,107,.12); }
+.delta.up      { color:var(--pos); background:rgba(99,241,160,.12); }
+.delta.down    { color:var(--neg); background:rgba(255,107,107,.12); }
 .delta.neutral { color:var(--text-muted); background:rgba(255,255,255,.05); }
 
 /* ── Daily goal progress bar ── */
 .goal-bar-wrap { margin-top:8px; }
 .goal-bar-track { height:5px; background:rgba(255,255,255,.08); border-radius:99px; overflow:hidden; margin-bottom:4px; }
 .goal-bar-fill  { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); border-radius:99px; transition:width .6s ease; }
-.goal-label     { font-size:11px; color:var(--text-muted); }
+.goal-label     { font-size:11px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+
+/* ── REDUCED MOTION ── */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
 
 /* ── PRINT ── */
 @media print {
@@ -1423,24 +1451,24 @@ select option {
         </div>
 
         <!-- ── REMAKE KPI ── -->
-        <div class="kpi" style="border-top: 3px solid #f1c40f;">
-            <div class="kpi-icon" style="color:#f1c40f;">
+        <div class="kpi" style="border-top: 3px solid var(--warn);">
+            <div class="kpi-icon" style="color:var(--warn);">
                 <i class="fa-solid fa-repeat"></i>
             </div>
             <span>Remakes</span>
-            <h3 class="num" style="color:#f1c40f;"><?= $remakeCount ?></h3>
+            <h3 class="num" style="color:var(--warn);"><?= $remakeCount ?></h3>
             <div class="small">
                 <span class="badge warn"><i class="fa-solid fa-repeat"></i> drinks remade</span>
             </div>
         </div>
 
         <!-- ── NET REVENUE KPI ── -->
-        <div class="kpi" style="border-top: 3px solid #63f1a0;">
+        <div class="kpi" style="border-top: 3px solid var(--pos);">
             <div class="kpi-icon">
                 <i class="fa-solid fa-sack-dollar"></i>
             </div>
             <span>Take Home</span>
-            <h3 class="num" id="kv-takehome" style="color:#63f1a0;">$<?= fmtMoney($netRevenue) ?></h3>
+            <h3 class="num" id="kv-takehome" style="color:var(--pos);">$<?= fmtMoney($netRevenue) ?></h3>
             <div class="small">Sales minus refunds</div>
         </div>
 
@@ -1551,7 +1579,7 @@ select option {
                 <div class="chart-title">
                     <i class="fa-solid fa-tags"></i> Category Sales
                 </div>
-                <canvas id="categoryChart"></canvas>
+                <canvas id="categoryChart" role="img" aria-label="Quantity sold per product category for this period"></canvas>
             </div>
 
             <!-- RIGHT: Top Products (LINE CHART) -->
@@ -1559,7 +1587,7 @@ select option {
                 <div class="chart-title">
                     <i class="fa-solid fa-trophy"></i> Top Products
                 </div>
-                <canvas id="productChart"></canvas>
+                <canvas id="productChart" role="img" aria-label="Top-performing products by revenue for this period"></canvas>
             </div>
         </div>
     <?php else: ?>
@@ -1581,7 +1609,7 @@ select option {
         <p class="section-desc">Revenue and order count per day — spot your busiest days and slow periods across the selected range.</p>
     </div>
     <div class="chart-wrap" style="height:280px;">
-        <canvas id="dailyTrendChart"></canvas>
+        <canvas id="dailyTrendChart" role="img" aria-label="Daily sales trend across the selected period"></canvas>
     </div>
 </div>
 <?php endif; ?>
@@ -1602,7 +1630,7 @@ select option {
     <div class="hourly-grid" style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:stretch;">
         <!-- Main hourly timeline -->
         <div class="chart-wrap" style="height:280px;aspect-ratio:unset;min-height:unset;">
-            <canvas id="hourlyChart"></canvas>
+            <canvas id="hourlyChart" role="img" aria-label="Sales broken down by hour of the day"></canvas>
         </div>
         <!-- Top revenue hours (right panel) -->
         <div class="chart-wrap" style="height:280px;aspect-ratio:unset;min-height:unset;display:flex;flex-direction:column;">
@@ -1610,7 +1638,7 @@ select option {
                 <i class="fa-solid fa-ranking-star" style="color:var(--accent-2);"></i>
                 Top Revenue Hours
             </div>
-            <canvas id="topHoursChart" style="flex:1;"></canvas>
+            <canvas id="topHoursChart" style="flex:1;" role="img" aria-label="Busiest hours ranked by sales"></canvas>
         </div>
     </div>
 </div>
@@ -1628,7 +1656,7 @@ select option {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center;">
         <div class="chart-wrap" style="height:240px;">
-            <canvas id="paymentChart"></canvas>
+            <canvas id="paymentChart" role="img" aria-label="Sales split by payment method"></canvas>
         </div>
         <div>
             <?php foreach ($paymentMethods as $pm): ?>
@@ -1674,7 +1702,7 @@ select option {
                     $cogs = (float)$pd['cogs'];
                     $prof = $rev - $cogs;
                     $mgn  = $rev > 0 ? ($prof / $rev * 100) : 0;
-                    $mgClass = $mgn >= 50 ? 'color:#63f1a0' : ($mgn >= 25 ? 'color:var(--accent-2)' : 'color:#f0b45a');
+                    $mgClass = $mgn >= 50 ? 'color:var(--pos)' : ($mgn >= 25 ? 'color:var(--accent-2)' : 'color:var(--amber)');
                 ?>
                 <tr>
                     <td style="color:var(--text-muted);font-weight:600;"><?= $rank++ ?></td>
@@ -1682,7 +1710,7 @@ select option {
                     <td style="text-align:right;"><?= (int)$pd['qty'] ?></td>
                     <td style="text-align:right;color:var(--accent-2);font-weight:600;">$<?= fmtMoney($rev) ?></td>
                     <td style="text-align:right;color:var(--text-muted);">$<?= fmtMoney($cogs) ?></td>
-                    <td style="text-align:right;font-weight:700;<?= $prof>=0?'color:#63f1a0':'color:#ff6b6b' ?>">
+                    <td style="text-align:right;font-weight:700;<?= $prof>=0?'color:var(--pos)':'color:var(--neg)' ?>">
                         <?= $prof >= 0 ? '+' : '' ?>$<?= fmtMoney($prof) ?>
                     </td>
                     <td style="text-align:right;font-weight:700;<?= $mgClass ?>">
@@ -1713,7 +1741,7 @@ select option {
             <div class="chart-title">
                 <i class="fa-solid fa-chart-area"></i> Refunds Over Time
             </div>
-            <canvas id="refundChart"></canvas>
+            <canvas id="refundChart" role="img" aria-label="Refunds over the selected period"></canvas>
         </div>
     </div>
 </div>
@@ -1767,8 +1795,8 @@ select option {
 <?php if ($remakeCount > 0): ?>
 <div class="report-section">
     <div class="section-hdr">
-        <i class="fa-solid fa-repeat" style="color:#f1c40f;"></i>
-        <span class="section-hdr-title" style="color:#f1c40f;">Remade Orders</span>
+        <i class="fa-solid fa-repeat" style="color:var(--warn);"></i>
+        <span class="section-hdr-title" style="color:var(--warn);">Remade Orders</span>
         <span class="section-hdr-badge"><?= $remakeCount ?> remake<?= $remakeCount !== 1 ? 's' : '' ?></span>
     </div>
     <p class="section-desc">Drinks that were remade due to quality issues — useful for spotting recurring problems with specific drinks or baristas.</p>
@@ -2536,6 +2564,9 @@ function exportCSV() {
     rows.push(['Profit Margin', '<?= number_format($margin, 1) ?>%']);
     rows.push(['Avg per Order', '$<?= fmtMoney($avgOrder) ?>']);
     rows.push(['Refunds', '$<?= fmtMoney($totalRefunded) ?>']);
+    rows.push(['Net Revenue', '$<?= fmtMoney($netRevenue) ?>']);
+    rows.push(['Remakes', <?= (int)$remakeCount ?>]);
+    rows.push(['Peak Hour', <?= json_encode((string)$peakHour) ?>]);
 
     const csv  = rows.map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });

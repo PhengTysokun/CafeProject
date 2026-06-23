@@ -1,0 +1,152 @@
+<?php
+/**
+ * Renders one order card. Expects $order (associative row from the orders query) in scope.
+ * Included by find_order.php (initial render) and the action=list AJAX endpoint.
+ */
+$isPaidOpen = ($order['status'] === 'Paid' && $order['is_open'] == 1);
+$isPayLater = ($order['payment_method'] === 'paylater');
+$canAdd     = ($order['is_open'] == 1 && (in_array($order['status'], ['Preparing', 'Paid']) || ($isPayLater && $order['status'] === 'Completed')));
+$cardClass  = $isPaidOpen ? 'is-paid-open' : ($canAdd ? 'can-add' : '');
+$statusClass = strtolower($order['status']);
+$tz   = new DateTimeZone('Asia/Phnom_Penh');
+$now  = new DateTime('now', $tz);
+$then = new DateTime($order['order_date'], $tz);
+$diff = $now->getTimestamp() - $then->getTimestamp();
+if ($diff < 0) {
+    $absDiff = abs($diff);
+    if ($absDiff < 3600)       $timeAgo = 'in ' . floor($absDiff/60) . 'm';
+    elseif ($absDiff < 86400)  $timeAgo = 'in ' . floor($absDiff/3600) . 'h';
+    else                       $timeAgo = 'in ' . floor($absDiff/86400) . 'd';
+} elseif ($diff < 60)          $timeAgo = $diff . 's ago';
+elseif ($diff < 3600)          $timeAgo = floor($diff/60) . 'm ago';
+elseif ($diff < 86400)         $timeAgo = floor($diff/3600) . 'h ' . floor(($diff%3600)/60) . 'm ago';
+else                           $timeAgo = floor($diff/86400) . 'd ago';
+
+$isOverdue = ($order['payment_method'] === 'paylater' && $diff > 1800); // 30 min unpaid
+
+// Human-readable overdue span: minutes under an hour, then hours, then days.
+$overdueMins = floor($diff / 60);
+if ($overdueMins < 60) {
+    $overdueLabel = $overdueMins . '+ min';
+} elseif ($overdueMins < 1440) {
+    $h = floor($overdueMins / 60);
+    $overdueLabel = $h . '+ ' . ($h === 1 ? 'hour' : 'hours');
+} else {
+    $d = floor($overdueMins / 1440);
+    $overdueLabel = $d . '+ ' . ($d === 1 ? 'day' : 'days');
+}
+?>
+<div class="order-card <?= $cardClass ?> <?= $isOverdue ? 'overdue' : '' ?>"
+     data-name="<?= strtolower(htmlspecialchars($order['customer_name'])) ?>"
+     data-token="<?= $order['token_number'] ?>"
+     data-amount="<?= $order['total'] ?>"
+     data-order="<?= $order['daily_order_no'] ?>">
+
+    <div class="card-top">
+        <!-- Left: main info -->
+        <div class="card-main-info">
+
+            <div class="info-group">
+                <span class="info-label">Order</span>
+                <span class="info-value">#<?= (int)$order['daily_order_no'] ?></span>
+            </div>
+
+            <div class="info-group">
+                <span class="info-label">Customer</span>
+                <span class="info-value small"><?= htmlspecialchars($order['customer_name']) ?></span>
+            </div>
+
+            <div class="info-group">
+                <span class="info-label">Total</span>
+                <span class="info-value total">$<?= number_format($order['total'], 2) ?></span>
+            </div>
+
+            <div class="info-group">
+                <span class="info-label">Status</span>
+                <span>
+                    <span class="status-badge <?= $statusClass ?>">
+                        <?php
+                        $icons = ['Preparing'=>'fa-fire','PendingPayment'=>'fa-clock','Paid'=>'fa-check-circle','Refunded'=>'fa-rotate-left'];
+                        $icon = $icons[$order['status']] ?? 'fa-circle';
+                        $labels = ['PendingPayment'=>'Pending Payment','Preparing'=>'Preparing','Paid'=>'Paid','Refunded'=>'Refunded'];
+                        $label = $labels[$order['status']] ?? $order['status'];
+                        ?>
+                        <i class="fa-solid <?= $icon ?>"></i>
+                        <?= htmlspecialchars($label) ?>
+                    </span>
+                    <?php if ($canAdd): ?>
+                    <span class="open-badge"><i class="fa-solid fa-circle-plus"></i> Can Add Items</span>
+                    <?php endif; ?>
+                </span>
+            </div>
+        </div>
+
+        <!-- Right: actions -->
+        <div class="actions">
+            <?php if ($canAdd): ?>
+            <a href="add_to_existing_order.php?order_id=<?= $order['order_id'] ?>" class="btn btn-add">
+                <i class="fa-solid fa-plus"></i> Add Items
+            </a>
+            <?php endif; ?>
+            <?php $isPL = ($order['payment_method'] === 'paylater' && $order['status'] === 'Preparing'); ?>
+            <?php if ($isPL): ?>
+            <a href="edit_order_items.php?order_id=<?= $order['order_id'] ?>" class="btn btn-edit" title="Edit items on this order">
+                <i class="fa-solid fa-pen-to-square"></i> Edit
+            </a>
+            <?php endif; ?>
+            <a href="admin_pay_cash.php?order_id=<?= $order['order_id'] ?>"
+               class="btn btn-pay-cash"
+               <?= $isPL ? 'data-lp-order="'.$order['order_id'].'" data-lp-dest="admin_pay_cash.php?order_id='.$order['order_id'].'" onclick="return interceptPayLater(event,this)"' : '' ?>>
+                <i class="fa-solid fa-money-bill-wave"></i> Cash
+            </a>
+            <a href="admin_pay_bakong.php?order_id=<?= $order['order_id'] ?>"
+               class="btn btn-pay-bakong"
+               <?= $isPL ? 'data-lp-order="'.$order['order_id'].'" data-lp-dest="admin_pay_bakong.php?order_id='.$order['order_id'].'" onclick="return interceptPayLater(event,this)"' : '' ?>>
+                <i class="fa-solid fa-qrcode"></i> Bakong
+            </a>
+            <a href="receipt_paylater.php?order_id=<?= $order['order_id'] ?>" target="_blank" class="btn btn-receipt">
+                <i class="fa-solid fa-file-pdf"></i>
+            </a>
+            <?php if (!$is_cashier): ?>
+            <a href="view_order.php?order_id=<?= $order['order_id'] ?>" class="btn btn-view">
+                <i class="fa-solid fa-eye"></i>
+            </a>
+            <?php if ($canAdd): ?>
+            <button class="btn btn-close" onclick="closeOrder(<?= $order['order_id'] ?>, this)" title="Mark as closed (no more additions)">
+                <i class="fa-solid fa-lock"></i>
+            </button>
+            <?php endif; ?>
+            <button class="btn btn-cancel-order" onclick="cancelOrderFromFind(<?= $order['order_id'] ?>, this)" title="Cancel this order">
+                <i class="fa-solid fa-ban"></i>
+            </button>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="card-bottom">
+        <div class="card-meta">
+            <span><i class="fa-solid fa-clock"></i> <?= $timeAgo ?> &nbsp;·&nbsp; <?= date("d M, g:i A", strtotime($order['order_date'])) ?></span>
+            <span><i class="fa-solid fa-credit-card"></i> <?= htmlspecialchars(ucfirst($order['payment_method'])) ?></span>
+            <span class="table-edit-wrap" data-order="<?= $order['order_id'] ?>">
+                <i class="fa-solid fa-ticket" style="color:var(--accent);"></i>
+                <span class="table-label" style="color:var(--accent);"><?= !empty($order['table_number']) ? 'Stand ' . htmlspecialchars($order['table_number']) : 'No stand' ?></span>
+                <button class="table-edit-btn" title="Change stand"><i class="fa-solid fa-pen-to-square"></i></button>
+                <span class="table-input-wrap" style="display:none;">
+                    <input class="table-input" type="text" value="<?= htmlspecialchars($order['table_number'] ?? '') ?>" placeholder="e.g. 7" maxlength="10">
+                    <button class="table-save-btn">Save</button>
+                    <button class="table-cancel-btn">✕</button>
+                </span>
+            </span>
+            <?php if ($order['is_open'] == 1): ?>
+            <span style="color:var(--accent);"><i class="fa-solid fa-door-open"></i> Order is open</span>
+            <?php else: ?>
+            <span style="color:var(--text-muted);"><i class="fa-solid fa-door-closed"></i> Order closed</span>
+            <?php endif; ?>
+        </div>
+        <?php if ($isOverdue): ?>
+        <div class="overdue-warning">
+            <i class="fa-solid fa-triangle-exclamation"></i> Unpaid for <?= $overdueLabel ?> — follow up with customer
+        </div>
+        <?php endif; ?>
+    </div>
+</div>

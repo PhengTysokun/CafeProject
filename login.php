@@ -512,7 +512,6 @@ html, body {
         </form>
 
         <div class="card-foot">
-            <a href="index.php" class="foot-a"><i class="fa-solid fa-chevron-left"></i> Back</a>
             <a href="forgot_password.php" class="foot-a accent"><i class="fa-solid fa-key"></i> Forgot password?</a>
         </div>
     </div>

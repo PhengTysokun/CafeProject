@@ -1,5 +1,10 @@
 <?php
-require 'admin_only.php';
+require 'auth.php'; // starts session, loads config ($conn), re-syncs $_SESSION['role']
+// Cashiers (staff) handle pay-later orders (add-to-order + settle) — allow them alongside admin/manager
+if (!in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'staff'])) {
+    header("Location: dashboard.php?denied=1");
+    exit;
+}
 
 $order_id = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
 if ($order_id <= 0) { header("Location: menu.php"); exit; }
@@ -26,33 +31,35 @@ $_SESSION['cart'] = [];
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>(function(){if(localStorage.getItem('theme')==='dark'){document.documentElement.setAttribute('data-theme','dark');}})();</script>
     <title>Pay Later | Bird's Nest Coffee</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         /* ── RESET & ROOT ── */
         :root {
-            --bg-body: #f2ede8;
+            --bg-body: #efe8df;
             --bg-card: #fffdf9;
-            --bg-card-hover: #fdf7f0;
-            --border: #e0d5c8;
-            --border-hover: #c9b89f;
+            --surface: #f7f1e8;
+            --border: #e6dccd;
+            --border-hover: #d4c4ac;
             --orange: #d1904b;
             --orange-dark: #a0702a;
-            --orange-light: #e8b87a;
             --text-primary: #1a1410;
             --text-secondary: #5a4a3a;
             --text-muted: #9a8070;
             --text-inverse: #ffffff;
             --purple: #9b59b6;
-            --purple-dark: #8e44ad;
-            --purple-light: #bb8fce;
-            --shadow-sm: 0 2px 10px rgba(90,60,20,0.07);
-            --shadow-md: 0 6px 28px rgba(90,60,20,0.11);
-            --shadow-lg: 0 12px 48px rgba(90,60,20,0.16);
-            --shadow-purple: 0 4px 16px rgba(155,89,182,0.22);
-            --shadow-purple-md: 0 8px 32px rgba(155,89,182,0.28);
-            --transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
-            --radius: 16px;
+            --purple-dark: #7d3c98;
+            --purple-light: #b07cc6;
+            --danger: #c0392b;
+            --danger-glow: rgba(192,57,43,0.45);
+            --shadow-md: 0 10px 40px rgba(90,60,20,0.12);
+            --shadow-lg: 0 18px 60px rgba(90,60,20,0.18);
+            --shadow-purple: 0 8px 28px rgba(123,60,152,0.30);
+            --ease: cubic-bezier(0.22,1,0.36,1);
+            --radius: 20px;
+            --font-display: 'Poppins', sans-serif;
+            --font-ui: 'Poppins', sans-serif;
+            --font-mono: 'Poppins', sans-serif;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -60,475 +67,385 @@ $_SESSION['cart'] = [];
         body {
             background: var(--bg-body);
             color: var(--text-primary);
-            font-family: 'Poppins', sans-serif;
+            font-family: var(--font-ui);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 24px;
             background-image:
-                radial-gradient(ellipse at 20% 10%, rgba(155,89,182,0.06) 0%, transparent 60%),
-                radial-gradient(ellipse at 80% 90%, rgba(155,89,182,0.04) 0%, transparent 60%);
+                radial-gradient(ellipse at 18% 0%, rgba(155,89,182,0.07) 0%, transparent 55%),
+                radial-gradient(ellipse at 82% 100%, rgba(209,144,75,0.06) 0%, transparent 55%);
         }
 
-        /* ── Card Container ── */
-        .payment-card {
+        /* ── Tab Slip Card ── */
+        .tab-card {
+            position: relative;
             background: var(--bg-card);
             border-radius: var(--radius);
-            padding: 32px 36px;
-            max-width: 480px;
+            padding: 30px 32px 30px;
+            max-width: 420px;
             width: 100%;
             border: 1px solid var(--border);
             box-shadow: var(--shadow-md);
-            position: relative;
-            overflow: hidden;
-            animation: cardFadeIn 0.7s ease both;
-            transition: var(--transition);
+            animation: cardIn 0.6s var(--ease) both;
         }
 
-        .payment-card:hover {
-            border-color: var(--border-hover);
-            box-shadow: var(--shadow-lg);
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateY(22px) scale(0.98); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
         }
 
-        @keyframes cardFadeIn {
-            from { opacity: 0; transform: translateY(30px) scale(0.95); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-
-        .payment-card::before {
+        /* top accent — static, single hairline */
+        .tab-card::before {
             content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
+            top: 0; left: 24px; right: 24px;
             height: 3px;
-            background: linear-gradient(90deg, var(--purple), var(--purple-light), var(--orange));
-            background-size: 200% 100%;
-            animation: shimmer 3s ease-in-out infinite;
+            border-radius: 0 0 3px 3px;
+            background: linear-gradient(90deg, var(--purple), var(--purple-light) 60%, var(--orange));
         }
 
-        @keyframes shimmer {
-            0%, 100% { background-position: 0% 0%; }
-            50% { background-position: 100% 0%; }
+        /* ── Emblem (single, merged cup + check) ── */
+        .emblem {
+            position: relative;
+            width: 60px; height: 60px;
+            margin: 6px auto 14px;
+            border-radius: 18px;
+            background: linear-gradient(150deg, rgba(155,89,182,0.16), rgba(155,89,182,0.06));
+            border: 1px solid rgba(155,89,182,0.20);
+            display: flex; align-items: center; justify-content: center;
+            animation: emblemIn 0.6s var(--ease) 0.08s both;
         }
-
-        /* ── Header ── */
-        .header {
-            text-align: center;
-            margin-bottom: 16px;
-            animation: fadeInUp 0.7s ease 0.1s both;
-        }
-
-        .header .icon-wrapper {
-            width: 56px;
-            height: 56px;
-            border-radius: 50%;
-            background: rgba(155,89,182,0.12);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 10px;
-            border: 1px solid rgba(155,89,182,0.15);
-            transition: var(--transition);
-        }
-
-        .header .icon-wrapper i {
-            font-size: 28px;
-            color: var(--purple-light);
-        }
-
-        .header h1 {
-            font-size: 24px;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-bottom: 2px;
-            letter-spacing: -0.5px;
-        }
-
-        .header h1 span {
-            background: linear-gradient(135deg, var(--purple-light), var(--purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .header p {
-            color: var(--text-secondary);
-            font-size: 13px;
-        }
-
-        /* ── Success Check ── */
-        .success-check {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 14px;
-            animation: fadeInUp 0.7s ease 0.2s both;
-        }
-
-        .success-check .circle {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            background: rgba(155,89,182,0.10);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 2px solid var(--purple);
-            animation: pulseCheck 2s ease-in-out infinite;
-        }
-
-        @keyframes pulseCheck {
-            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(155,89,182,0.2); }
-            50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(155,89,182,0.1); }
-        }
-
-        .success-check .circle i {
-            font-size: 22px;
+        .emblem > i {
+            font-size: 26px;
             color: var(--purple);
+            transform-origin: 52% 78%;
+            animation: mugBob 3.2s ease-in-out 0.7s infinite;
+        }
+        .emblem .check {
+            position: absolute;
+            right: -7px; bottom: -7px;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            background: var(--purple);
+            color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px;
+            border: 3px solid var(--bg-card);
+            box-shadow: var(--shadow-purple);
+            animation: checkPop 0.5s var(--ease) 0.55s both;
+        }
+        @keyframes emblemIn {
+            from { opacity: 0; transform: scale(0.6); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        @keyframes mugBob {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50%      { transform: translateY(-2.5px) rotate(-6deg); }
+        }
+        @keyframes checkPop {
+            0%   { transform: scale(0); opacity: 0; }
+            60%  { transform: scale(1.25); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
         }
 
-        /* ── Info Grid ── */
-        .info-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            background: rgba(255,255,255,0.03);
-            border-radius: 12px;
-            padding: 14px 18px;
-            margin-bottom: 10px;
-            border: 1px solid var(--border);
-            animation: fadeInUp 0.7s ease 0.3s both;
-            transition: var(--transition);
-        }
-
-        .info-grid:hover {
-            border-color: var(--border-hover);
-        }
-
-        .info-item {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .info-item .label {
-            font-size: 10px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 600;
-        }
-
-        .info-item .value {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-top: 2px;
-        }
-
-        .info-item .value.purple {
-            color: var(--purple-light);
-        }
-
-        .info-item .value.highlight {
-            color: var(--orange);
-        }
-
-        /* ── Token Row ── */
-        .token-row {
-            grid-column: 1 / -1;
-            display: flex;
-            flex-direction: column;
-            border-top: 1px solid var(--border);
-            padding-top: 6px;
-            margin-top: 2px;
-        }
-
-        .token-row .label {
-            font-size: 10px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 600;
-        }
-
-        .token-row .value {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--purple-light);
-            margin-top: 2px;
-        }
-
-        /* ── Total Row ── */
-        .total-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 18px;
-            background: rgba(255,255,255,0.03);
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            margin-bottom: 14px;
-            animation: fadeInUp 0.7s ease 0.4s both;
-            transition: var(--transition);
-        }
-
-        .total-row:hover {
-            border-color: var(--border-hover);
-            background: rgba(255,255,255,0.05);
-        }
-
-        .total-row .label {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .total-row .amount {
-            font-size: 20px;
+        /* ── Title ── */
+        .tab-title {
+            text-align: center;
+            font-family: var(--font-display);
+            font-size: 25px;
             font-weight: 700;
-            color: var(--purple-light);
+            letter-spacing: -0.5px;
+            color: var(--text-primary);
+        }
+        .tab-sub {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 12.5px;
+            line-height: 1.45;
+            margin: 4px auto 20px;
+            max-width: 30ch;
         }
 
-        /* ── Status Badge ── */
+        /* shared fade for staged content */
+        .reveal { animation: fadeUp 0.6s var(--ease) both; }
+        .reveal.d1 { animation-delay: 0.12s; }
+        .reveal.d2 { animation-delay: 0.18s; }
+        .reveal.d3 { animation-delay: 0.24s; }
+        .reveal.d4 { animation-delay: 0.30s; }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Meta row (order / customer) ── */
+        .meta-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .meta {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 11px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+        .meta-label {
+            font-size: 9.5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+        .meta-val {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .mono { font-family: var(--font-mono); letter-spacing: -0.5px; }
+        .meta-val.accent { color: var(--orange); }
+
+        /* ── Amount due — the hero ── */
+        .due {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 18px;
+            margin-bottom: 14px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(155,89,182,0.10), rgba(155,89,182,0.04));
+            border: 1px solid rgba(155,89,182,0.22);
+        }
+        .due-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        .due-amount {
+            font-size: 30px;
+            font-weight: 700;
+            color: var(--purple);
+            line-height: 1;
+        }
+
+        /* ── Status badge ── */
         .status-row {
             display: flex;
             justify-content: center;
-            margin-bottom: 14px;
-            animation: fadeInUp 0.7s ease 0.5s both;
+            margin-bottom: 6px;
         }
-
-        .status-row .badge {
+        .badge {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 6px 18px;
+            gap: 7px;
+            padding: 6px 16px;
             border-radius: 50px;
-            background: rgba(155,89,182,0.08);
-            color: var(--purple-light);
-            border: 1px solid rgba(155,89,182,0.15);
-            font-size: 12px;
-            font-weight: 500;
-            transition: var(--transition);
+            background: rgba(209,144,75,0.12);
+            color: var(--orange-dark);
+            border: 1px solid rgba(209,144,75,0.25);
+            font-size: 11.5px;
+            font-weight: 600;
+        }
+        .badge i {
+            font-size: 11px;
+            animation: hourglassTurn 2.6s ease-in-out infinite;
+        }
+        @keyframes hourglassTurn {
+            0%, 55%   { transform: rotate(0deg); }
+            70%, 100% { transform: rotate(180deg); }
         }
 
-        .status-row .badge:hover {
-            background: rgba(155,89,182,0.15);
-            border-color: var(--purple);
+        /* ── Receipt tear (signature) ── */
+        .tear {
+            position: relative;
+            height: 22px;
+            margin: 4px -32px 14px;
         }
-
-        .status-row .badge i {
-            font-size: 12px;
+        .tear::before {
+            content: '';
+            position: absolute;
+            top: 50%; left: 26px; right: 26px;
+            border-top: 2px dashed var(--border-hover);
         }
+        .tear .notch {
+            position: absolute;
+            top: 50%;
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: var(--bg-body);
+            border: 1px solid var(--border);
+            transform: translateY(-50%);
+        }
+        .tear .notch.left  { left: -11px; }
+        .tear .notch.right { right: -11px; }
 
         /* ── Actions ── */
         .actions {
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            animation: fadeInUp 0.7s ease 0.6s both;
+            gap: 8px;
         }
-
         .btn {
-            padding: 10px;
-            border-radius: 10px;
-            border: none;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid transparent;
             font-weight: 600;
-            font-size: 13px;
+            font-size: 13.5px;
             cursor: pointer;
-            transition: var(--transition);
+            transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), background 0.18s, border-color 0.18s, color 0.18s, text-shadow 0.18s;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 8px;
             text-decoration: none;
-            font-family: 'Poppins', sans-serif;
-            text-align: center;
+            font-family: var(--font-ui);
+            letter-spacing: 0.2px;
         }
-
-        .btn:hover {
-            transform: translateY(-2px);
-        }
+        .btn:active { transform: translateY(0) scale(0.99); }
+        .btn:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
 
         .btn-primary {
             background: linear-gradient(135deg, var(--purple), var(--purple-dark));
             color: var(--text-inverse);
+            box-shadow: var(--shadow-purple);
         }
-
-        .btn-primary:hover {
-            box-shadow: var(--shadow-purple-md);
-            filter: brightness(1.1);
-        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 34px rgba(123,60,152,0.40); }
 
         .btn-add {
-            background: var(--orange);
-            color: var(--text-inverse);
+            background: rgba(209,144,75,0.12);
+            color: var(--orange-dark);
+            border-color: rgba(209,144,75,0.30);
         }
-
         .btn-add:hover {
-            box-shadow: var(--shadow-orange-md);
-            filter: brightness(1.1);
+            transform: translateY(-2px);
+            background: linear-gradient(135deg, var(--orange), var(--orange-dark));
+            border-color: var(--orange);
+            color: #fff;
+            text-shadow: 0 0 8px rgba(255,255,255,0.45);
         }
 
         .btn-print {
-            background: #c0392b;
-            color: var(--text-inverse);
+            background: transparent;
+            color: var(--text-secondary);
+            border-color: var(--border);
         }
-
         .btn-print:hover {
-            box-shadow: 0 4px 20px rgba(192,57,43,0.3);
-            filter: brightness(1.1);
+            transform: translateY(-2px);
+            background: rgba(192,57,43,0.10);
+            border-color: var(--danger);
+            color: var(--danger);
+            box-shadow: 0 8px 24px var(--danger-glow);
         }
 
         .btn-secondary {
             background: transparent;
-            color: var(--text-secondary);
-            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-color: transparent;
+            font-size: 12.5px;
+            padding: 8px;
         }
-
-        .btn-secondary:hover {
-            border-color: var(--purple);
-            color: var(--text-primary);
-        }
-
-        /* ── Animations ── */
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(15px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        .btn-secondary:hover { color: var(--text-primary); }
 
         /* ── Responsive ── */
-        @media (max-width: 600px) {
-            .payment-card {
-                padding: 24px 18px;
-                max-width: 100%;
-            }
-            
-            .info-grid {
-                padding: 12px 14px;
-            }
-            
-            .header h1 {
-                font-size: 20px;
-            }
-            
-            .total-row .amount {
-                font-size: 18px;
-            }
-            
-            .btn {
-                padding: 9px;
-                font-size: 12px;
-            }
+        @media (max-width: 440px) {
+            .tab-card { padding: 24px 20px; }
+            .tear { margin-left: -20px; margin-right: -20px; }
+            .due-amount { font-size: 26px; }
+            .tab-title { font-size: 22px; }
         }
 
-        @media (max-width: 400px) {
-            .payment-card {
-                padding: 16px 12px;
-            }
-            
-            .header .icon-wrapper {
-                width: 44px;
-                height: 44px;
-            }
-            
-            .header .icon-wrapper i {
-                font-size: 20px;
-            }
-            
-            .success-check .circle {
-                width: 40px;
-                height: 40px;
-            }
-            
-            .success-check .circle i {
-                font-size: 18px;
-            }
-            
-            .info-item .value {
-                font-size: 14px;
-            }
-            
-            .total-row .amount {
-                font-size: 16px;
-            }
+        @media (prefers-reduced-motion: reduce) {
+            *, .tab-card, .emblem, .reveal { animation: none !important; transition: none !important; }
         }
 
         /* ── DARK THEME ── */
         [data-theme="dark"] {
             --bg-body: #0c0c0c;
             --bg-card: #161616;
-            --bg-card-hover: #1e1e1e;
-            --border: #252525;
-            --border-hover: #333;
+            --surface: #1c1c1c;
+            --border: #262626;
+            --border-hover: #3a3a3a;
             --text-primary: #f0f0f0;
-            --text-secondary: #aaa;
-            --text-muted: #666;
-            --shadow-sm: 0 2px 10px rgba(0,0,0,0.5);
-            --shadow-md: 0 6px 28px rgba(0,0,0,0.6);
-            --shadow-lg: 0 12px 48px rgba(0,0,0,0.7);
+            --text-secondary: #b5b5b5;
+            --text-muted: #777;
+            --purple-light: #c79ad8;
+            --danger: #ff6b5e;
+            --danger-glow: rgba(255,107,94,0.30);
+            --shadow-md: 0 10px 40px rgba(0,0,0,0.6);
+            --shadow-lg: 0 18px 60px rgba(0,0,0,0.7);
         }
-        [data-theme="dark"] body { background-image: none; }
-        [data-theme="dark"] .info-grid,
-        [data-theme="dark"] .amount-breakdown,
-        [data-theme="dark"] .info-box { background: rgba(255,255,255,0.02); }
+        [data-theme="dark"] body { background-image:
+            radial-gradient(ellipse at 18% 0%, rgba(155,89,182,0.10) 0%, transparent 55%),
+            radial-gradient(ellipse at 82% 100%, rgba(209,144,75,0.06) 0%, transparent 55%); }
+        [data-theme="dark"] .due-amount { color: var(--purple-light); }
+        [data-theme="dark"] .emblem > i { color: var(--purple-light); }
+        [data-theme="dark"] .tear .notch { background: var(--bg-body); }
     </style>
 </head>
 <body>
 
-<div class="payment-card">
-    <!-- Header -->
-    <div class="header">
-        <div class="icon-wrapper">
-            <i class="fa-solid fa-clock"></i>
-        </div>
-        <h1><span>Pay Later</span></h1>
-        <p>Your order has been recorded and will be prepared</p>
+<div class="tab-card">
+
+    <!-- Emblem -->
+    <div class="emblem">
+        <i class="fa-solid fa-mug-hot"></i>
+        <span class="check"><i class="fa-solid fa-check"></i></span>
     </div>
 
-    <!-- Success Check -->
-    <div class="success-check">
-        <div class="circle">
-            <i class="fa-solid fa-check"></i>
-        </div>
-    </div>
+    <h1 class="tab-title">Tab opened</h1>
+    <p class="tab-sub">Order recorded. Collect payment when the customer is ready.</p>
 
-    <!-- Info Grid -->
-    <div class="info-grid">
-        <div class="info-item">
-            <span class="label">Order #</span>
-            <span class="value highlight">#<?php echo (int)$order['daily_order_no']; ?></span>
+    <!-- Order / Customer -->
+    <div class="meta-row reveal d1">
+        <div class="meta">
+            <span class="meta-label">Order</span>
+            <span class="meta-val mono accent">#<?php echo (int)$order['daily_order_no']; ?></span>
         </div>
-        <div class="info-item" style="align-items: flex-end;">
-            <span class="label">Customer</span>
-            <span class="value" style="text-align: right;"><?php echo htmlspecialchars($order['customer_name']); ?></span>
+        <div class="meta">
+            <span class="meta-label">Customer</span>
+            <span class="meta-val"><?php echo htmlspecialchars($order['customer_name']); ?></span>
         </div>
         <?php if (!empty($order['table_number'])): ?>
-        <div class="info-item">
-            <span class="label">Table</span>
-            <span class="value highlight">#<?php echo htmlspecialchars($order['table_number']); ?></span>
+        <div class="meta">
+            <span class="meta-label">Stand</span>
+            <span class="meta-val mono accent"><?php echo htmlspecialchars($order['table_number']); ?></span>
         </div>
         <?php endif; ?>
     </div>
 
-    <!-- Total Row -->
-    <div class="total-row">
-        <span class="label">Total Amount</span>
-        <span class="amount">$<?php echo number_format((float)$order['total'], 2); ?></span>
+    <!-- Amount due (hero) -->
+    <div class="due reveal d2">
+        <span class="due-label">Amount due</span>
+        <span class="due-amount mono">$<?php echo number_format((float)$order['total'], 2); ?></span>
     </div>
 
-    <!-- Status Badge -->
-    <div class="status-row">
-        <div class="badge">
-            <i class="fa-solid fa-hourglass-half"></i>
-            Preparing
-        </div>
+    <!-- Status -->
+    <div class="status-row reveal d3">
+        <span class="badge"><i class="fa-solid fa-hourglass-half"></i> Preparing</span>
+    </div>
+
+    <!-- Receipt tear -->
+    <div class="tear">
+        <span class="notch left"></span>
+        <span class="notch right"></span>
     </div>
 
     <!-- Actions -->
-    <div class="actions">
-        <a href="view_order.php" class="btn btn-primary">
-            <i class="fa-solid fa-receipt"></i> View Orders
+    <div class="actions reveal d4">
+        <a href="find_order.php?tab=paylater" class="btn btn-primary">
+            <i class="fa-solid fa-list"></i> Pay Later Queue
         </a>
         <?php if ($order['is_open'] == 1): ?>
         <a href="add_to_existing_order.php?order_id=<?php echo $order_id; ?>" class="btn btn-add">
@@ -540,9 +457,6 @@ $_SESSION['cart'] = [];
         </a>
         <a href="menu.php" class="btn btn-secondary">
             <i class="fa-solid fa-arrow-left"></i> Back to Menu
-        </a>
-        <a href="find_order.php?tab=paylater" class="btn btn-secondary">
-            <i class="fa-solid fa-list"></i> Pay Later Queue
         </a>
     </div>
 </div>

@@ -32,6 +32,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'tax' => [
             'tax_rate' => (string)max(0, min(100, round((float)($_POST['tax_rate'] ?? 10), 2))),
         ],
+        'target' => [
+            'daily_sales_target' => (string)max(0, round((float)($_POST['daily_sales_target'] ?? 500), 2)),
+        ],
         default => [],
     };
 
@@ -77,6 +80,7 @@ $bx_start_date   = $s['buy_x_start_date'] ?? '';
 $bx_end_date     = $s['buy_x_end_date']   ?? '';
 $khr_rate        = (int)($s['khr_exchange_rate']   ?? 4100);
 $tax_rate        = (float)($s['tax_rate']          ?? 10);
+$daily_target    = (float)($s['daily_sales_target'] ?? 500);
 
 $_today      = date('Y-m-d');
 $hh_expired  = $hh_end_date !== '' && $_today > $hh_end_date;
@@ -546,6 +550,7 @@ body::after {
             'free_drink' => 'Free Drink Promotion',
             'currency'   => 'Currency Settings',
             'tax'        => 'Tax Settings',
+            'target'     => 'Sales Target',
             default      => 'Settings',
         };
     ?>
@@ -805,6 +810,46 @@ body::after {
                 <div class="form-actions-info">
                     <i class="fa-solid fa-circle-info"></i>
                     Saves Tax Rate only
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <a href="dashboard.php" class="btn btn-cancel">
+                        <i class="fa-solid fa-xmark"></i> Dashboard
+                    </a>
+                    <button type="submit" class="btn btn-save" style="padding:10px 22px;font-size:13px;">
+                        <i class="fa-solid fa-floppy-disk"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <!-- ── DAILY SALES TARGET ── -->
+    <form method="POST">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon"><i class="fa-solid fa-bullseye"></i></div>
+                <div>
+                    <div class="card-title">Sales Target</div>
+                    <div class="card-sub">Daily revenue goal shown on the Report goal-progress bar</div>
+                </div>
+            </div>
+
+            <div class="card-inner">
+                <div class="fields-grid single">
+                    <div class="field">
+                        <label><i class="fa-solid fa-dollar-sign"></i> Daily Sales Target ($)</label>
+                        <input type="number" name="daily_sales_target" id="dailyTarget"
+                               value="<?= $daily_target ?>" min="0" step="0.01">
+                        <span class="field-hint">The Report's progress bar fills toward this amount each day.</span>
+                    </div>
+                </div>
+            </div>
+
+            <input type="hidden" name="_section" value="target">
+            <div class="form-actions">
+                <div class="form-actions-info">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Saves Sales Target only
                 </div>
                 <div style="display:flex;gap:10px;">
                     <a href="dashboard.php" class="btn btn-cancel">

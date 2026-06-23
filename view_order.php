@@ -1268,7 +1268,7 @@ if ($action === ""):
         <i class="fa-solid fa-circle-user"></i> Profile
     </a>
     <?php endif; ?>
-    <a href="logout.php" class="back" style="position:static;background:rgba(255,95,95,.08);border-color:rgba(255,95,95,.25);color:#ff6b6b;" title="Logout">
+    <a href="shift_report.php" class="back" style="position:static;background:rgba(255,95,95,.08);border-color:rgba(255,95,95,.25);color:#ff6b6b;" title="View shift report &amp; log out">
         <i class="fa-solid fa-right-from-bracket"></i> Logout
     </a>
 </div>

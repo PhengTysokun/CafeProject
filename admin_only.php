@@ -25,7 +25,7 @@ $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
 if (!$user || !in_array($user['role'], ['admin', 'manager'])) {
-    header("Location: index.php");
+    header("Location: dashboard.php?denied=1");
     exit;
 }
 ?>

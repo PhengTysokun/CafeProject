@@ -26,7 +26,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'poll') {
         (status NOT IN ('Completed','Cancelled','Refunded') AND status != 'Paid')
         OR (status = 'Paid' AND is_open = 1)
         OR (payment_method = 'paylater' AND status = 'Completed')
-    )";
+    )
+    AND ( business_date = CURDATE() OR payment_method = 'paylater' )";
     if ($poll_tab === 'paylater') {
         $poll_sql .= " AND payment_method = 'paylater' AND status IN ('Preparing','PendingPayment','Completed')";
     } elseif ($poll_tab === 'preparing') {
@@ -54,6 +55,9 @@ if ($is_cashier) {
     $filter_tab = 'paylater';
 }
 
+$perPage = 10;
+$page    = max(1, (int)($_GET['page'] ?? 1));
+
 // ── Main query: unpaid OR paid-but-open orders ──
 $sql = "
 SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number, table_number
@@ -63,6 +67,7 @@ WHERE (
     OR (status = 'Paid' AND is_open = 1)
     OR (payment_method = 'paylater' AND status = 'Completed')
 )
+AND ( business_date = CURDATE() OR payment_method = 'paylater' )
 ";
 
 if (!empty($search_value)) {
@@ -87,7 +92,26 @@ if ($filter_tab === 'preparing') {
     $sql .= " AND payment_method = 'paylater' AND status IN ('Preparing', 'PendingPayment', 'Completed')";
 }
 
-$sql .= " ORDER BY order_date DESC";
+// Total matching rows (same filters, for pagination)
+$count_main_sql = preg_replace(
+    '/^\s*SELECT .*?FROM orders/s',
+    'SELECT COUNT(*) AS c FROM orders',
+    $sql,
+    1
+);
+$total      = (int)(mysqli_fetch_assoc(mysqli_query($conn, $count_main_sql))['c'] ?? 0);
+$sum_main_sql = preg_replace(
+    '/^\s*SELECT .*?FROM orders/s',
+    'SELECT COALESCE(SUM(total),0) AS s FROM orders',
+    $sql,
+    1
+);
+$total_unpaid = (float)(mysqli_fetch_assoc(mysqli_query($conn, $sum_main_sql))['s'] ?? 0);
+$totalPages = max(1, (int)ceil($total / $perPage));
+if ($page > $totalPages) $page = $totalPages;
+$offset = ($page - 1) * $perPage;
+
+$sql .= " ORDER BY order_date DESC LIMIT $perPage OFFSET $offset";
 $result = mysqli_query($conn, $sql);
 $orders = [];
 while ($row = mysqli_fetch_assoc($result)) {
@@ -103,6 +127,7 @@ WHERE (
     OR (status = 'Paid' AND is_open = 1)
     OR (payment_method = 'paylater' AND status = 'Completed')
 )
+AND ( business_date = CURDATE() OR payment_method = 'paylater' )
 GROUP BY status, is_open, payment_method
 ";
 $count_result = mysqli_query($conn, $count_sql);
@@ -123,7 +148,40 @@ while ($r = mysqli_fetch_assoc($count_result)) {
     if ($r['status'] === 'Paid' && $r['is_open'] == 1) $tab_counts['paid_open'] += $r['cnt'];
 }
 
-$total_unpaid = array_sum(array_column($orders, 'total'));
+// ── Shared empty-state markup (used by both AJAX and full render) ──
+$noResultsHtml = '<div class="no-results">'
+    . '<i class="fa-solid fa-check-circle" style="color:var(--success);"></i>'
+    . '<h3>No orders found</h3>'
+    . '<p>' . (!empty($search_value) ? 'Try a different search term.' : 'All orders are settled.') . '</p>'
+    . '</div>';
+
+// ── AJAX: rendered card list + pagination meta for the current page ──
+if (isset($_GET['action']) && $_GET['action'] === 'list') {
+    header('Content-Type: application/json');
+    if ($orders) {
+        ob_start();
+        foreach ($orders as $order) include '_order_card.php';
+        $html = ob_get_clean();
+    } else {
+        $html = $noResultsHtml;
+    }
+
+    $sig = '';
+    foreach ($orders as $o) $sig .= $o['order_id'] . ':' . $o['status'] . '|';
+
+    echo json_encode([
+        'html'        => $html,
+        'page'        => $page,
+        'perPage'     => $perPage,
+        'total'       => $total,
+        'totalPages'  => $totalPages,
+        'pageCount'   => count($orders),
+        'totalUnpaid' => number_format($total_unpaid, 2),
+        'sig'         => md5($sig),
+        'tabCounts'   => $tab_counts,
+    ]);
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -284,6 +342,15 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
         .results-header .meta { display: flex; gap: 10px; align-items: center; }
         .count-badge { background: var(--purple); color: #fff; padding: 3px 14px; border-radius: 50px; font-size: 12px; font-weight: 700; }
         .total-amount { color: var(--accent); font-weight: 700; font-size: 14px; }
+
+        /* Pagination bar */
+        .pagination-bar{display:flex;justify-content:center;align-items:center;gap:6px;margin:22px 0 8px;flex-wrap:wrap;}
+        .pagination-bar button{min-width:38px;height:38px;padding:0 10px;border-radius:10px;border:1px solid var(--border);
+          background:var(--bg-card);color:var(--text);font-family:inherit;font-size:14px;cursor:pointer;transition:all .15s;}
+        .pagination-bar button:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+        .pagination-bar button.active{background:var(--accent);border-color:var(--accent);color:#1a1a1a;font-weight:600;}
+        .pagination-bar button:disabled{opacity:.4;cursor:default;}
+        .pagination-bar .ellipsis{color:var(--text-muted);padding:0 4px;}
 
         /* Order card */
         .order-card {
@@ -480,28 +547,28 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
         <a href="?tab=all<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn <?= $filter_tab === 'all' ? 'active' : '' ?>">
             <i class="fa-solid fa-layer-group"></i> All Active
-            <span class="tab-count"><?= $tab_counts['all'] ?></span>
+            <span class="tab-count" data-tab="all"><?= $tab_counts['all'] ?></span>
         </a>
         <a href="?tab=preparing<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn <?= $filter_tab === 'preparing' ? 'active' : '' ?>">
             <i class="fa-solid fa-fire"></i> Preparing
-            <span class="tab-count"><?= $tab_counts['preparing'] ?></span>
+            <span class="tab-count" data-tab="preparing"><?= $tab_counts['preparing'] ?></span>
         </a>
         <a href="?tab=pending<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn <?= $filter_tab === 'pending' ? 'active' : '' ?>">
             <i class="fa-solid fa-clock"></i> Pending Payment
-            <span class="tab-count"><?= $tab_counts['pending'] ?></span>
+            <span class="tab-count" data-tab="pending"><?= $tab_counts['pending'] ?></span>
         </a>
         <a href="?tab=paid_open<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn tab-addable <?= $filter_tab === 'paid_open' ? 'active' : '' ?>">
             <i class="fa-solid fa-circle-plus"></i> Paid + Open
-            <span class="tab-count"><?= $tab_counts['paid_open'] ?></span>
+            <span class="tab-count" data-tab="paid_open"><?= $tab_counts['paid_open'] ?></span>
         </a>
         <?php endif; ?>
         <a href="?tab=paylater<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn tab-paylater <?= $filter_tab === 'paylater' ? 'active' : '' ?>">
             <i class="fa-solid fa-wallet"></i> Pay Later
-            <span class="tab-count"><?= $tab_counts['paylater'] ?></span>
+            <span class="tab-count" data-tab="paylater"><?= $tab_counts['paylater'] ?></span>
         </a>
     </div>
 
@@ -519,8 +586,6 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
     </div>
     <?php endif; ?>
 
-    <?php if (count($orders) > 0): ?>
-
     <!-- Results Header -->
     <div class="results-header">
         <h2 id="resultsTitle">
@@ -535,160 +600,21 @@ $total_unpaid = array_sum(array_column($orders, 'total'));
         </div>
     </div>
 
-    <!-- Order Cards -->
+    <!-- Order Cards (container always present so silent refresh can repopulate) -->
     <div id="orderList">
-    <?php foreach ($orders as $order):
-        $isPaidOpen = ($order['status'] === 'Paid' && $order['is_open'] == 1);
-        $isPayLater = ($order['payment_method'] === 'paylater');
-        $canAdd     = ($order['is_open'] == 1 && (in_array($order['status'], ['Preparing', 'Paid']) || ($isPayLater && $order['status'] === 'Completed')));
-        $cardClass  = $isPaidOpen ? 'is-paid-open' : ($canAdd ? 'can-add' : '');
-        $statusClass = strtolower($order['status']);
-        $tz   = new DateTimeZone('Asia/Phnom_Penh');
-        $now  = new DateTime('now', $tz);
-        $then = new DateTime($order['order_date'], $tz);
-        $diff = $now->getTimestamp() - $then->getTimestamp();
-        if ($diff < 0) {
-            $absDiff = abs($diff);
-            if ($absDiff < 3600)       $timeAgo = 'in ' . floor($absDiff/60) . 'm';
-            elseif ($absDiff < 86400)  $timeAgo = 'in ' . floor($absDiff/3600) . 'h';
-            else                       $timeAgo = 'in ' . floor($absDiff/86400) . 'd';
-        } elseif ($diff < 60)          $timeAgo = $diff . 's ago';
-        elseif ($diff < 3600)          $timeAgo = floor($diff/60) . 'm ago';
-        elseif ($diff < 86400)         $timeAgo = floor($diff/3600) . 'h ' . floor(($diff%3600)/60) . 'm ago';
-        else                           $timeAgo = floor($diff/86400) . 'd ago';
-
-        $isOverdue = ($order['payment_method'] === 'paylater' && $diff > 1800); // 30 min unpaid
-    ?>
-    <div class="order-card <?= $cardClass ?> <?= $isOverdue ? 'overdue' : '' ?>" 
-         data-name="<?= strtolower(htmlspecialchars($order['customer_name'])) ?>"
-         data-token="<?= $order['token_number'] ?>"
-         data-amount="<?= $order['total'] ?>"
-         data-order="<?= $order['daily_order_no'] ?>">
-
-        <div class="card-top">
-            <!-- Left: main info -->
-            <div class="card-main-info">
-
-                <div class="info-group">
-                    <span class="info-label">Order</span>
-                    <span class="info-value">#<?= (int)$order['daily_order_no'] ?></span>
-                </div>
-
-                <div class="info-group">
-                    <span class="info-label">Customer</span>
-                    <span class="info-value small"><?= htmlspecialchars($order['customer_name']) ?></span>
-                </div>
-
-                <div class="info-group">
-                    <span class="info-label">Total</span>
-                    <span class="info-value total">$<?= number_format($order['total'], 2) ?></span>
-                </div>
-
-                <div class="info-group">
-                    <span class="info-label">Status</span>
-                    <span>
-                        <span class="status-badge <?= $statusClass ?>">
-                            <?php
-                            $icons = ['Preparing'=>'fa-fire','PendingPayment'=>'fa-clock','Paid'=>'fa-check-circle','Refunded'=>'fa-rotate-left'];
-                            $icon = $icons[$order['status']] ?? 'fa-circle';
-                            $labels = ['PendingPayment'=>'Pending Payment','Preparing'=>'Preparing','Paid'=>'Paid','Refunded'=>'Refunded'];
-                            $label = $labels[$order['status']] ?? $order['status'];
-                            ?>
-                            <i class="fa-solid <?= $icon ?>"></i>
-                            <?= htmlspecialchars($label) ?>
-                        </span>
-                        <?php if ($canAdd): ?>
-                        <span class="open-badge"><i class="fa-solid fa-circle-plus"></i> Can Add Items</span>
-                        <?php endif; ?>
-                    </span>
-                </div>
-            </div>
-
-            <!-- Right: actions -->
-            <div class="actions">
-                <?php if ($canAdd): ?>
-                <a href="add_to_existing_order.php?order_id=<?= $order['order_id'] ?>" class="btn btn-add">
-                    <i class="fa-solid fa-plus"></i> Add Items
-                </a>
-                <?php endif; ?>
-                <?php $isPL = ($order['payment_method'] === 'paylater' && $order['status'] === 'Preparing'); ?>
-                <?php if ($isPL): ?>
-                <a href="edit_order_items.php?order_id=<?= $order['order_id'] ?>" class="btn btn-edit" title="Edit items on this order">
-                    <i class="fa-solid fa-pen-to-square"></i> Edit
-                </a>
-                <?php endif; ?>
-                <a href="admin_pay_cash.php?order_id=<?= $order['order_id'] ?>"
-                   class="btn btn-pay-cash"
-                   <?= $isPL ? 'data-lp-order="'.$order['order_id'].'" data-lp-dest="admin_pay_cash.php?order_id='.$order['order_id'].'" onclick="return interceptPayLater(event,this)"' : '' ?>>
-                    <i class="fa-solid fa-money-bill-wave"></i> Cash
-                </a>
-                <a href="admin_pay_bakong.php?order_id=<?= $order['order_id'] ?>"
-                   class="btn btn-pay-bakong"
-                   <?= $isPL ? 'data-lp-order="'.$order['order_id'].'" data-lp-dest="admin_pay_bakong.php?order_id='.$order['order_id'].'" onclick="return interceptPayLater(event,this)"' : '' ?>>
-                    <i class="fa-solid fa-qrcode"></i> Bakong
-                </a>
-                <a href="receipt_paylater.php?order_id=<?= $order['order_id'] ?>" target="_blank" class="btn btn-receipt">
-                    <i class="fa-solid fa-file-pdf"></i>
-                </a>
-                <?php if (!$is_cashier): ?>
-                <a href="view_order.php?order_id=<?= $order['order_id'] ?>" class="btn btn-view">
-                    <i class="fa-solid fa-eye"></i>
-                </a>
-                <?php if ($canAdd): ?>
-                <button class="btn btn-close" onclick="closeOrder(<?= $order['order_id'] ?>, this)" title="Mark as closed (no more additions)">
-                    <i class="fa-solid fa-lock"></i>
-                </button>
-                <?php endif; ?>
-                <button class="btn btn-cancel-order" onclick="cancelOrderFromFind(<?= $order['order_id'] ?>, this)" title="Cancel this order">
-                    <i class="fa-solid fa-ban"></i>
-                </button>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <div class="card-bottom">
-            <div class="card-meta">
-                <span><i class="fa-solid fa-clock"></i> <?= $timeAgo ?> &nbsp;·&nbsp; <?= date("d M, g:i A", strtotime($order['order_date'])) ?></span>
-                <span><i class="fa-solid fa-credit-card"></i> <?= htmlspecialchars(ucfirst($order['payment_method'])) ?></span>
-                <span class="table-edit-wrap" data-order="<?= $order['order_id'] ?>">
-                    <i class="fa-solid fa-ticket" style="color:var(--accent);"></i>
-                    <span class="table-label" style="color:var(--accent);"><?= !empty($order['table_number']) ? 'Stand ' . htmlspecialchars($order['table_number']) : 'No stand' ?></span>
-                    <button class="table-edit-btn" title="Change stand"><i class="fa-solid fa-pen-to-square"></i></button>
-                    <span class="table-input-wrap" style="display:none;">
-                        <input class="table-input" type="text" value="<?= htmlspecialchars($order['table_number'] ?? '') ?>" placeholder="e.g. 7" maxlength="10">
-                        <button class="table-save-btn">Save</button>
-                        <button class="table-cancel-btn">✕</button>
-                    </span>
-                </span>
-                <?php if ($order['is_open'] == 1): ?>
-                <span style="color:var(--accent);"><i class="fa-solid fa-door-open"></i> Order is open</span>
-                <?php else: ?>
-                <span style="color:var(--text-muted);"><i class="fa-solid fa-door-closed"></i> Order closed</span>
-                <?php endif; ?>
-            </div>
-            <?php if ($isOverdue): ?>
-            <div class="overdue-warning">
-                <i class="fa-solid fa-triangle-exclamation"></i> Unpaid for <?= floor($diff/60) ?>+ min — follow up with customer
-            </div>
-            <?php endif; ?>
-        </div>
+    <?php if (count($orders) > 0): ?>
+        <?php foreach ($orders as $order) include '_order_card.php'; ?>
+    <?php else: ?>
+        <?= $noResultsHtml ?>
+    <?php endif; ?>
     </div>
-    <?php endforeach; ?>
-    </div>
+    <div id="pagination" class="pagination-bar"></div>
 
     <div id="noFilterResults" style="display:none;" class="no-results">
         <i class="fa-solid fa-filter" style="color:var(--text-muted);"></i>
         <h3>No matching orders</h3>
         <p>Try a different search term.</p>
     </div>
-
-    <?php else: ?>
-    <div class="no-results">
-        <i class="fa-solid fa-check-circle" style="color:var(--success);"></i>
-        <h3>No orders found</h3>
-        <p><?= !empty($search_value) ? 'Try a different search term.' : 'All orders are settled.' ?></p>
-    </div>
-    <?php endif; ?>
 
 
 </div><!-- end page-wrapper -->
@@ -856,80 +782,144 @@ function closeOrder(orderId, btn) {
     });
 }
 </script>
-<script src="animations.js"></script>
+<script src="animations.js?v=<?= @filemtime('animations.js') ?>"></script>
 <script>
 // Shared flag — polling skips reload while any table edit is open
 let tableEditOpen = false;
 
-(function() {
-    <?php
-    $sig_parts = '';
-    foreach ($orders as $o) $sig_parts .= $o['order_id'] . ':' . $o['status'] . '|';
-    ?>
-    const currentSig = <?= json_encode(md5($sig_parts)) ?>;
-    const tab = <?= json_encode($filter_tab) ?>;
-
-    setInterval(async function() {
-        if (tableEditOpen) return; // don't reload while user is typing
-        try {
-            const res = await fetch('find_order.php?action=poll&tab=' + encodeURIComponent(tab));
-            const data = await res.json();
-            if (data.sig !== currentSig) {
-                location.reload();
-            }
-        } catch(e) {}
-    }, 5000);
-})();
+setInterval(function() {
+    if (tableEditOpen) return;            // don't disturb an open edit
+    if (document.getElementById('lpModal').style.display === 'flex') return; // skip while loyalty modal open
+    loadPage(currentPage, { silent: true });
+}, 5000);
 
 // ── Inline table number edit ──
-document.querySelectorAll('.table-edit-wrap').forEach(function(wrap) {
-    const orderId    = wrap.dataset.order;
-    const labelEl    = wrap.querySelector('.table-label');
-    const editBtn    = wrap.querySelector('.table-edit-btn');
-    const inputWrap  = wrap.querySelector('.table-input-wrap');
-    const input      = wrap.querySelector('.table-input');
-    const saveBtn    = wrap.querySelector('.table-save-btn');
-    const cancelBtn  = wrap.querySelector('.table-cancel-btn');
+function bindCardHandlers() {
+    document.querySelectorAll('.table-edit-wrap').forEach(function(wrap) {
+        if (wrap.dataset.bound === '1') return; // idempotent
+        wrap.dataset.bound = '1';
+        const orderId    = wrap.dataset.order;
+        const labelEl    = wrap.querySelector('.table-label');
+        const editBtn    = wrap.querySelector('.table-edit-btn');
+        const inputWrap  = wrap.querySelector('.table-input-wrap');
+        const input      = wrap.querySelector('.table-input');
+        const saveBtn    = wrap.querySelector('.table-save-btn');
+        const cancelBtn  = wrap.querySelector('.table-cancel-btn');
 
-    editBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        tableEditOpen = true;
-        editBtn.style.display = 'none';
-        labelEl.style.display = 'none';
-        inputWrap.style.display = 'inline-flex';
-        input.focus();
-        input.select();
-    });
+        editBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            tableEditOpen = true;
+            editBtn.style.display = 'none';
+            labelEl.style.display = 'none';
+            inputWrap.style.display = 'inline-flex';
+            input.focus();
+            input.select();
+        });
 
-    cancelBtn.addEventListener('click', function() {
-        tableEditOpen = false;
-        inputWrap.style.display = 'none';
-        editBtn.style.display = '';
-        labelEl.style.display = '';
-    });
+        cancelBtn.addEventListener('click', function() {
+            tableEditOpen = false;
+            inputWrap.style.display = 'none';
+            editBtn.style.display = '';
+            labelEl.style.display = '';
+        });
 
-    saveBtn.addEventListener('click', async function() {
-        const val = input.value.trim();
-        const body = new URLSearchParams({ order_id: orderId, table_number: val });
-        try {
-            const res = await fetch('update_table.php', { method: 'POST', body });
-            const data = await res.json();
-            if (data.ok) {
-                tableEditOpen = false;
-                labelEl.textContent = val ? 'Table ' + val : 'No table';
-                input.value = val;
-                inputWrap.style.display = 'none';
-                editBtn.style.display = '';
-                labelEl.style.display = '';
-            }
-        } catch(e) {}
-    });
+        saveBtn.addEventListener('click', async function() {
+            const val = input.value.trim();
+            const body = new URLSearchParams({ order_id: orderId, table_number: val });
+            try {
+                const res = await fetch('update_table.php', { method: 'POST', body });
+                const data = await res.json();
+                if (data.ok) {
+                    tableEditOpen = false;
+                    labelEl.textContent = val ? 'Table ' + val : 'No table';
+                    input.value = val;
+                    inputWrap.style.display = 'none';
+                    editBtn.style.display = '';
+                    labelEl.style.display = '';
+                }
+            } catch(e) {}
+        });
 
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') saveBtn.click();
-        if (e.key === 'Escape') cancelBtn.click();
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') saveBtn.click();
+            if (e.key === 'Escape') cancelBtn.click();
+        });
     });
-});
+}
+bindCardHandlers();
+
+// ── AJAX pagination ──
+let currentPage = <?= (int)$page ?>;
+let lastSig = null;
+
+function currentQuery() {
+    const p = new URLSearchParams(location.search);
+    return {
+        tab: p.get('tab') || <?= json_encode($filter_tab) ?>,
+        search_type: p.get('search_type') || '',
+        search_value: p.get('search_value') || ''
+    };
+}
+
+async function loadPage(n, opts = {}) {
+    const q = currentQuery();
+    const url = 'find_order.php?action=list&tab=' + encodeURIComponent(q.tab)
+              + '&search_type=' + encodeURIComponent(q.search_type)
+              + '&search_value=' + encodeURIComponent(q.search_value)
+              + '&page=' + n;
+    let data;
+    try { data = await (await fetch(url)).json(); }
+    catch (e) { return; }
+
+    if (opts.silent && data.sig === lastSig) { currentPage = data.page; return; }
+
+    const list = document.getElementById('orderList');
+    if (list) list.innerHTML = data.html;
+    currentPage = data.page;
+    lastSig = data.sig;
+    renderPagination(data.page, data.totalPages);
+    bindCardHandlers();
+    updateMeta(data);
+}
+
+// Keep the results header and tab pills in sync after an AJAX swap.
+function updateMeta(data) {
+    const vc = document.getElementById('visibleCount');
+    if (vc && typeof data.pageCount !== 'undefined') vc.textContent = data.pageCount + ' orders';
+    const ta = document.querySelector('.total-amount');
+    if (ta && typeof data.totalUnpaid !== 'undefined') ta.textContent = '$' + data.totalUnpaid;
+    if (data.tabCounts) {
+        document.querySelectorAll('.tab-count[data-tab]').forEach(function(span) {
+            const k = span.dataset.tab;
+            if (typeof data.tabCounts[k] !== 'undefined') span.textContent = data.tabCounts[k];
+        });
+    }
+}
+
+function renderPagination(page, totalPages) {
+    const bar = document.getElementById('pagination');
+    if (!bar) return;
+    if (totalPages <= 1) { bar.innerHTML = ''; return; }
+    const btn = (label, target, {active = false, disabled = false} = {}) =>
+        `<button ${disabled ? 'disabled' : ''} class="${active ? 'active' : ''}" data-pg="${target}">${label}</button>`;
+    let html = '';
+    html += btn('&laquo;', 1, {disabled: page === 1});
+    html += btn('&lsaquo;', page - 1, {disabled: page === 1});
+    const win = [];
+    for (let i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) win.push(i);
+    if (win[0] > 1) { html += btn('1', 1); if (win[0] > 2) html += '<span class="ellipsis">…</span>'; }
+    win.forEach(i => html += btn(i, i, {active: i === page}));
+    const last = win[win.length - 1];
+    if (last < totalPages) { if (last < totalPages - 1) html += '<span class="ellipsis">…</span>'; html += btn(totalPages, totalPages); }
+    html += btn('&rsaquo;', page + 1, {disabled: page === totalPages});
+    html += btn('&raquo;', totalPages, {disabled: page === totalPages});
+    bar.innerHTML = html;
+    bar.querySelectorAll('button[data-pg]').forEach(b =>
+        b.addEventListener('click', () => loadPage(parseInt(b.dataset.pg, 10))));
+}
+
+renderPagination(currentPage, <?= (int)$totalPages ?>);
+lastSig = <?= json_encode(md5(implode('|', array_map(fn($o) => $o['order_id'].':'.$o['status'], $orders)))) ?>;
 </script>
 </body>
 </html>

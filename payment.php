@@ -900,11 +900,40 @@ function showPaymentSuccess() {
     }, 800);
 }
 
+// ── Show a verification error (e.g. expired token) instead of spinning forever ──
+let errorShown = false;
+function showVerifyError(msg) {
+    const indicator = document.getElementById('statusIndicator');
+    indicator.className = 'status-indicator';
+    indicator.style.color = '#e74c3c';
+    indicator.style.background = 'rgba(231,76,60,0.08)';
+    indicator.style.borderColor = 'rgba(231,76,60,0.25)';
+    // Build with textContent (not innerHTML) so the message can't inject markup.
+    indicator.textContent = '';
+    const icon = document.createElement('i');
+    icon.className = 'fa-solid fa-triangle-exclamation';
+    const span = document.createElement('span');
+    span.textContent = msg;
+    indicator.append(icon, span);
+    if (!errorShown) {
+        errorShown = true;
+        // Auto-check can't confirm this payment — reveal fallback actions immediately.
+        const hint = document.getElementById('fallbackHint');
+        if (hint) hint.textContent = 'Automatic check unavailable — use an option below.';
+        document.getElementById('actionsDiv').style.display = 'flex';
+    }
+}
+
 async function checkPayment() {
     try {
         const res = await fetch('check_payment.php?order_id=' + orderId, { cache: 'no-store' });
         const data = await res.json();
-        if (data.paid) showPaymentSuccess();
+        if (data.paid) { showPaymentSuccess(); return; }
+        if (data.error) {
+            showVerifyError(data.message || 'Payment verification unavailable.');
+            // Server-side errors (expired token, auth) are persistent — stop polling.
+            clearInterval(checkInterval);
+        }
     } catch (e) {
         console.error('Payment check error:', e);
     }

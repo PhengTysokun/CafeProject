@@ -1393,7 +1393,5 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeEditMeta(); closeDeleteModal(); closeBulkReassign(); } });
 </script>
-
-</script>
 </body>
 </html>

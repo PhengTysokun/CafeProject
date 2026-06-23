@@ -49,6 +49,12 @@
     // ── Main entrance logic ───────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function () {
 
+        // Skip entrance animations on a data-poll reload (avoid annoying re-fade)
+        if (sessionStorage.getItem('skipEntranceAnim')) {
+            sessionStorage.removeItem('skipEntranceAnim');
+            return;
+        }
+
         // 1. Topbar / header — slides down immediately
         a(document.querySelector('.topbar, .top'), 'entSlideDown', 0, 0.38);
 

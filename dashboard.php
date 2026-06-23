@@ -780,7 +780,7 @@ body.no-sidebar{--sidebar-w:0px;}
 .tbl-empty span{font-size:13px;color:var(--text-muted);}
 
 /* ── QUICK ACCESS GRID (non-admin dashboard) ── */
-.qa-grid{display:flex;flex-direction:column;gap:32px;max-width:1000px;width:100%;margin:0 auto;}
+.qa-grid{display:flex;flex-direction:column;gap:30px;max-width:1280px;width:100%;margin:0 auto;}
 .qa-group{display:flex;flex-direction:column;gap:16px;}
 .qa-group-label{
     font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
@@ -788,18 +788,28 @@ body.no-sidebar{--sidebar-w:0px;}
     padding-bottom:8px;border-bottom:1px solid var(--border);
 }
 .qa-group-label i{color:var(--accent);font-size:13px;}
-.qa-tiles{display:flex;flex-wrap:wrap;justify-content:center;gap:20px;}
+.qa-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:18px;}
 .qa-tile{
     position:relative;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:16px;padding:42px 38px;
+    gap:18px;padding:34px 24px;
     background:var(--surface);border:1px solid var(--border);
-    border-radius:var(--r);color:var(--text);text-decoration:none;
-    font-size:16px;font-weight:600;min-width:180px;min-height:150px;
-    transition:background .2s,border-color .2s,transform .15s;
+    border-radius:calc(var(--r) + 4px);color:var(--text);text-decoration:none;
+    font-size:16px;font-weight:600;min-height:158px;
+    box-shadow:0 1px 2px rgba(0,0,0,.18);
+    transition:background .2s var(--ease),border-color .2s var(--ease),transform .12s var(--ease),box-shadow .2s var(--ease);
+    -webkit-tap-highlight-color:transparent;
 }
-.qa-tile:hover{background:var(--surface-2);border-color:var(--amber-glow);transform:translateY(-2px);}
-.qa-tile i{font-size:44px;color:var(--accent);}
+.qa-tile:hover{background:var(--surface-2);border-color:var(--border-hi);transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.32);}
+.qa-tile:active{transform:scale(.97);filter:brightness(1.08);}
+.qa-tile i{
+    font-size:34px;color:var(--accent);
+    width:78px;height:78px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:20px;background:var(--amber-glow);
+    transition:transform .2s var(--spring);
+}
+.qa-tile:hover i{transform:scale(1.06);}
 .qa-tile-badge{
     position:absolute;top:14px;right:14px;
     background:var(--purple);color:#fff;
@@ -811,18 +821,20 @@ body.no-sidebar{--sidebar-w:0px;}
 }
 
 .qa-hero-btn{
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    align-self:center;gap:16px;padding:42px 38px;
+    display:flex;flex-direction:row;align-items:center;justify-content:center;
+    gap:20px;padding:28px 40px;width:100%;
     background:linear-gradient(135deg,var(--amber-light) 0%,var(--amber) 100%);
     color:#000;text-decoration:none;
     border:1px solid rgba(255,255,255,.22);
-    border-radius:calc(var(--r) + 8px);font-size:16px;font-weight:700;letter-spacing:.015em;
-    min-width:180px;min-height:150px;
+    border-radius:calc(var(--r) + 8px);font-size:22px;font-weight:800;letter-spacing:.015em;
+    min-height:104px;
     position:relative;overflow:hidden;
     box-shadow:0 6px 28px var(--amber-glow);
-    transition:transform .25s var(--ease),box-shadow .3s var(--ease);
+    transition:transform .25s var(--ease),box-shadow .3s var(--ease),filter .15s var(--ease);
     animation:heroGlow 2.8s ease-in-out infinite;
+    -webkit-tap-highlight-color:transparent;
 }
+.qa-hero-btn:active{transform:scale(.99);filter:brightness(1.05);animation-play-state:paused;}
 .qa-hero-btn::after{
     content:'';position:absolute;inset:0;
     background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.45) 50%,transparent 65%);
@@ -830,12 +842,70 @@ body.no-sidebar{--sidebar-w:0px;}
     transition:background-position .8s ease;pointer-events:none;
 }
 .qa-hero-btn:hover::after{background-position:-60% 0;}
-.qa-hero-btn i{font-size:44px;color:#000;display:inline-block;transition:transform .5s cubic-bezier(.34,1.56,.64,1);}
+.qa-hero-btn i{font-size:30px;color:#000;width:58px;height:58px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(0,0,0,.10);transition:transform .5s cubic-bezier(.34,1.56,.64,1);}
 .qa-hero-btn:hover i{transform:rotate(180deg) scale(1.18);}
 .qa-hero-btn:hover{transform:translateY(-3px) scale(1.02);box-shadow:0 14px 42px var(--amber-glow);animation-play-state:paused;}
 @keyframes heroGlow{
     0%,100%{box-shadow:0 6px 28px var(--amber-glow),0 0 0 0 rgba(209,144,75,.35);}
     50%{box-shadow:0 6px 28px var(--amber-glow),0 0 0 14px rgba(209,144,75,0);}
+}
+
+/* ── REDESIGN: compact pro layout (cashier / inventory only) ── */
+.qx-grid{display:flex;flex-direction:column;gap:22px;max-width:1180px;width:100%;margin:0 auto;}
+
+.qx-hero{
+    display:flex;align-items:center;justify-content:center;gap:14px;
+    width:100%;min-height:60px;padding:16px 26px;
+    background:linear-gradient(135deg,var(--amber-light) 0%,var(--amber) 100%);
+    color:#000;text-decoration:none;
+    border:1px solid rgba(255,255,255,.18);
+    border-radius:var(--r);
+    font-size:16px;font-weight:700;letter-spacing:.01em;
+    box-shadow:0 2px 12px rgba(209,144,75,.18);
+    transition:transform .15s var(--ease),box-shadow .2s var(--ease),filter .15s var(--ease);
+    -webkit-tap-highlight-color:transparent;
+}
+.qx-hero:hover{transform:translateY(-1px);box-shadow:0 6px 20px var(--amber-glow);}
+.qx-hero:active{transform:scale(.99);filter:brightness(1.05);}
+.qx-hero i{font-size:17px;width:34px;height:34px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(0,0,0,.10);}
+
+.qx-group{display:flex;flex-direction:column;gap:12px;}
+.qx-group-label{
+    font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+    color:var(--text-muted);display:flex;align-items:center;gap:7px;
+    padding-bottom:8px;border-bottom:1px solid var(--border);
+}
+.qx-group-label i{color:var(--accent);font-size:13px;}
+
+.qx-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;}
+.qx-tile{
+    position:relative;
+    display:flex;align-items:center;gap:14px;
+    padding:18px 20px;min-height:96px;
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--r);color:var(--text);text-decoration:none;
+    box-shadow:0 1px 2px rgba(0,0,0,.18);
+    transition:background .2s var(--ease),border-color .2s var(--ease),transform .12s var(--ease),box-shadow .2s var(--ease);
+    -webkit-tap-highlight-color:transparent;
+}
+.qx-tile:hover{background:var(--surface-2);border-color:var(--border-hi);transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.28);}
+.qx-tile:active{transform:scale(.98);filter:brightness(1.06);}
+.qx-tile i{
+    font-size:22px;color:var(--accent);
+    width:48px;height:48px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:13px;background:var(--amber-dim);
+    transition:transform .2s var(--spring);
+}
+.qx-tile:hover i{transform:scale(1.06);}
+.qx-tile span{font-size:15px;font-weight:600;}
+.qx-tile-badge{
+    position:absolute;top:12px;right:12px;
+    background:var(--purple);color:#fff;
+    font-size:11px;font-weight:700;
+    min-width:22px;height:22px;padding:0 6px;border-radius:50px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.3);
 }
 
 /* ── TOAST ── */
@@ -895,6 +965,14 @@ body.no-sidebar{--sidebar-w:0px;}
     .main{margin-left:0;padding:68px 16px 32px;max-width:100vw;}
     .dash-header h1{font-size:19px;}
     .kpi-value{font-size:28px;}
+    .qa-tiles{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;}
+    .qa-tile{min-height:138px;padding:26px 16px;}
+    .qa-tile i{width:64px;height:64px;font-size:28px;}
+    .qa-hero-btn{font-size:19px;padding:24px 26px;min-height:90px;}
+    .qx-tiles{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+    .qx-tile{min-height:84px;padding:14px 16px;gap:12px;}
+    .qx-tile i{width:42px;height:42px;font-size:20px;}
+    .qx-hero{font-size:15px;min-height:54px;padding:14px 20px;}
 }
 </style>
 </head>
@@ -1446,6 +1524,10 @@ body.no-sidebar{--sidebar-w:0px;}
     $_role  = $_SESSION['role'] ?? '';
     $_focus = null;
 
+    // Compact redesign (cashier + inventory). Barista & others keep the legacy .qa-* layout.
+    $_redesign = in_array($_role, ['staff', 'inventory_clerk'], true);
+    $G = $_redesign ? 'qx' : 'qa';
+
     $_focus_barista = [
         'icon'  => 'fa-fire-burner',
         'count' => (int)$preparing_count,
@@ -1505,30 +1587,30 @@ body.no-sidebar{--sidebar-w:0px;}
     <?php endif; ?>
 
     <!-- QUICK ACCESS GRID -->
-    <div class="qa-grid fu" style="animation-delay:.1s">
+    <div class="<?= $_redesign ? 'qx-grid' : 'qa-grid' ?> fu" style="animation-delay:.1s">
         <?php if (can('find_orders')): ?>
-        <a href="menu.php" class="qa-hero-btn">
+        <a href="menu.php" class="<?= $_redesign ? 'qx-hero' : 'qa-hero-btn' ?>">
             <i class="fa-solid fa-plus"></i>
             <span>Take New Order</span>
         </a>
         <?php endif; ?>
 
         <?php if (can('view_orders') || can('find_orders')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-receipt"></i> Orders</div>
-            <div class="qa-tiles">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-receipt"></i> Orders</div>
+            <div class="<?= $G ?>-tiles">
                 <?php if (can('view_orders')): ?>
-                <a href="view_order.php" class="qa-tile">
+                <a href="view_order.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-receipt"></i>
                     <span>Orders</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('find_orders')): ?>
-                <a href="find_order.php" class="qa-tile">
+                <a href="find_order.php" class="<?= $G ?>-tile">
                     <?php if ($_SESSION['role'] === 'staff' && $paylater_count > 0): ?>
-                    <span class="qa-tile-badge" style="background:var(--purple);"><?= $paylater_count ?></span>
+                    <span class="<?= $G ?>-tile-badge" style="background:var(--purple);"><?= $paylater_count ?></span>
                     <?php elseif ($unpaid_count > 0): ?>
-                    <span class="qa-tile-badge"><?= $unpaid_count ?></span>
+                    <span class="<?= $G ?>-tile-badge"><?= $unpaid_count ?></span>
                     <?php endif; ?>
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <span>Find Order</span>
@@ -1539,25 +1621,25 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('products') || can('ingredients') || can('recipes')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-boxes-stacked"></i> Inventory</div>
-            <div class="qa-tiles">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-boxes-stacked"></i> Inventory</div>
+            <div class="<?= $G ?>-tiles">
                 <?php if (can('products')): ?>
-                <a href="products.php" class="qa-tile">
+                <a href="products.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-cube"></i>
                     <span>Products</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('ingredients')): ?>
-                <a href="ingredients.php" class="qa-tile">
+                <a href="ingredients.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-flask"></i>
                     <span>Ingredients</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('recipes')): ?>
-                <a href="recipes_view.php" class="qa-tile">
+                <a href="recipes_view.php" class="<?= $G ?>-tile">
                     <?php if ($low_recipe_count > 0): ?>
-                    <span class="qa-tile-badge" title="<?= $low_recipe_count ?> recipe<?= $low_recipe_count == 1 ? '' : 's' ?> low on ingredients"><?= $low_recipe_count ?></span>
+                    <span class="<?= $G ?>-tile-badge" title="<?= $low_recipe_count ?> recipe<?= $low_recipe_count == 1 ? '' : 's' ?> low on ingredients"><?= $low_recipe_count ?></span>
                     <?php endif; ?>
                     <i class="fa-solid fa-utensils"></i>
                     <span>Drink Recipe</span>
@@ -1568,17 +1650,17 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('suppliers') || can('purchase_orders')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-truck-ramp-box"></i> Procurement</div>
-            <div class="qa-tiles">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-truck-ramp-box"></i> Procurement</div>
+            <div class="<?= $G ?>-tiles">
                 <?php if (can('suppliers')): ?>
-                <a href="suppliers.php" class="qa-tile">
+                <a href="suppliers.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-truck-ramp-box"></i>
                     <span>Suppliers</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('purchase_orders')): ?>
-                <a href="purchase_orders.php" class="qa-tile">
+                <a href="purchase_orders.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-file-invoice"></i>
                     <span>Purchase Orders</span>
                 </a>
@@ -1588,10 +1670,10 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('loyalty')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-star"></i> Loyalty</div>
-            <div class="qa-tiles">
-                <a href="loyalty_dashboard.php" class="qa-tile">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-star"></i> Loyalty</div>
+            <div class="<?= $G ?>-tiles">
+                <a href="loyalty_dashboard.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-star"></i>
                     <span>Loyalty</span>
                 </a>
@@ -1600,23 +1682,23 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('employees') || can('attendance') || can('announcements')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-users"></i> Staff</div>
-            <div class="qa-tiles">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-users"></i> Staff</div>
+            <div class="<?= $G ?>-tiles">
                 <?php if (can('employees')): ?>
-                <a href="employees.php" class="qa-tile">
+                <a href="employees.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-user-tie"></i>
                     <span>Employees</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('attendance')): ?>
-                <a href="attendance.php" class="qa-tile">
+                <a href="attendance.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-fingerprint"></i>
                     <span>Attendance</span>
                 </a>
                 <?php endif; ?>
                 <?php if (can('announcements')): ?>
-                <a href="announcements.php" class="qa-tile" style="position:relative">
+                <a href="announcements.php" class="<?= $G ?>-tile" style="position:relative">
                     <i class="fa-solid fa-bullhorn"></i>
                     <span>Announcements</span>
                     <?php if ($_unread_ann > 0): ?>
@@ -1629,10 +1711,10 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('report')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-chart-simple"></i> Analytics</div>
-            <div class="qa-tiles">
-                <a href="report.php" class="qa-tile">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-chart-simple"></i> Analytics</div>
+            <div class="<?= $G ?>-tiles">
+                <a href="report.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-chart-simple"></i>
                     <span>Daily Report</span>
                 </a>
@@ -1641,10 +1723,10 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <?php if (can('my_profile')): ?>
-        <div class="qa-group">
-            <div class="qa-group-label"><i class="fa-solid fa-circle-user"></i> Account</div>
-            <div class="qa-tiles">
-                <a href="profile.php" class="qa-tile">
+        <div class="<?= $G ?>-group">
+            <div class="<?= $G ?>-group-label"><i class="fa-solid fa-circle-user"></i> Account</div>
+            <div class="<?= $G ?>-tiles">
+                <a href="profile.php" class="<?= $G ?>-tile">
                     <i class="fa-solid fa-circle-user"></i>
                     <span>My Profile</span>
                 </a>
