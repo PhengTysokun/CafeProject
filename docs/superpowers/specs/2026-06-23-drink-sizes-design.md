@@ -45,6 +45,10 @@ Let drinks be sold in multiple sizes (Small / Medium / Large) with **per-size pr
 ### Migrations
 - Add via the existing `config.php` + `schema_migrations` pattern (idempotent migration keys), e.g. `drink_sizes_v1` (alters + new table). Runs on next page load.
 
+### Ordering rule
+- **Every** place that lists sizes — admin S/M/L rows, the menu/order size selector, and any size display — sorts by `product_sizes.sort_order ASC`. Never hardcode S→M→L ordering; the column is the single source of truth (keeps the door open for an inserted size later).
+- Prefill multipliers (S 0.8 / M 1.0 / L 1.3) are **editable starting defaults**, not enforced; admin can tune per product (e.g. 0.7 where Small is genuinely half a Large).
+
 ## Runtime Flow
 
 ### `add_to_cart.php`
