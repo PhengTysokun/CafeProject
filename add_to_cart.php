@@ -31,6 +31,7 @@ $qty = max(1, min(99, (int)($_POST['qty'] ?? 1)));
 $sweetness = trim((string)($_POST['sweetness'] ?? ''));
 $ice       = trim((string)($_POST['ice']       ?? ''));
 $milk      = trim((string)($_POST['milk']      ?? ''));
+$size_code = trim((string)($_POST['size'] ?? ''));
 
 // Validate options against allowed values
 $valid_sweetness = ['0%', '25%', '50%', '75%', '100%', ''];
@@ -48,7 +49,7 @@ if ($milk !== '' && !in_array($milk, $valid_milk)) {
 }
 
 // Fetch product
-$stmt = $conn->prepare("SELECT product_id, name, price, image FROM products WHERE product_id = ?");
+$stmt = $conn->prepare("SELECT product_id, name, price, image, has_sizes FROM products WHERE product_id = ?");
 $stmt->bind_param("i", $product_id);
 $stmt->execute();
 $res = $stmt->get_result();
@@ -58,6 +59,34 @@ if (!$res || $res->num_rows === 0) {
 }
 
 $p = $res->fetch_assoc();
+
+// ── Resolve size (per-size absolute price; defensive fallback to base) ──
+$line_price   = (float)$p['price'];   // products.price == Medium / base
+$size_label   = '';
+$size_factor  = 1.0;
+$resolved_code = '';
+
+if ((int)$p['has_sizes'] === 1) {
+    $rows = [];
+    $sz = $conn->prepare("SELECT size_code, label, price, size_factor FROM product_sizes WHERE product_id = ?");
+    $sz->bind_param("i", $product_id);
+    $sz->execute();
+    $rs = $sz->get_result();
+    while ($r = $rs->fetch_assoc()) { $rows[$r['size_code']] = $r; }
+
+    if (!empty($rows)) {
+        // size_code is required for a sized product
+        if ($size_code === '' || !isset($rows[$size_code])) {
+            json_out(false, 'Please choose a size', 0, null, 400);
+        }
+        $chosen        = $rows[$size_code];
+        $line_price    = (float)$chosen['price'];
+        $size_label    = (string)$chosen['label'];
+        $size_factor   = (float)$chosen['size_factor'];
+        $resolved_code = $size_code;
+    }
+    // has_sizes=1 but zero rows → fall through as unsized (base price, factor 1.0)
+}
 
 if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
@@ -70,6 +99,7 @@ $found = false;
 foreach ($_SESSION['cart'] as &$item) {
     if (
         $item['product_id'] == $product_id &&
+        ($item['size_code'] ?? '') == $resolved_code &&
         $item['sweetness']  == $sweetness  &&
         $item['ice']        == $ice        &&
         $item['milk']       == $milk
@@ -85,8 +115,11 @@ if (!$found) {
     $_SESSION['cart'][] = [
         'product_id'   => $p['product_id'],
         'product_name' => $p['name'],
-        'price'        => (float)$p['price'],
+        'price'        => $line_price,
         'image'        => $p['image'],
+        'size_code'    => $resolved_code,
+        'size_label'   => $size_label,
+        'size_factor'  => $size_factor,
         'sweetness'    => $sweetness,
         'ice'          => $ice,
         'milk'         => $milk,
