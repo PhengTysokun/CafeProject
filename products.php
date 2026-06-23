@@ -5,6 +5,49 @@ if (!can('products')) { header("Location: dashboard.php?denied=1"); exit; }
 $_can_manage_products = in_array($_SESSION['role'] ?? '', ['admin', 'manager']);
 $_flash_welcome = !empty($_SESSION['flash_welcome']); unset($_SESSION['flash_welcome']);
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
+}
+
+// Bulk action: enable sizes for every product in a category + seed default S/M/L rows
+if (($_POST['action'] ?? '') === 'bulk_enable_sizes' && hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+    $cat = trim((string)($_POST['category'] ?? ''));
+    if ($cat !== '') {
+        $catEsc = $conn->real_escape_string($cat);
+        $conn->query("UPDATE products SET has_sizes=1 WHERE category='$catEsc'");
+
+        // seed default rows for products in that category that have none yet
+        $seed = $conn->query("SELECT p.product_id, p.price FROM products p
+            LEFT JOIN product_sizes ps ON ps.product_id=p.product_id
+            WHERE p.category='$catEsc' GROUP BY p.product_id, p.price HAVING COUNT(ps.size_id)=0");
+
+        // one single-row prepared insert, executed three times per product (S/M/L)
+        $ins = $conn->prepare("INSERT INTO product_sizes
+            (product_id,size_code,label,price,size_factor,sort_order) VALUES (?,?,?,?,?,?)");
+        while ($p = $seed->fetch_assoc()) {
+            $pid  = (int)$p['product_id'];
+            $base = (float)$p['price'];
+            $defaults = [
+                ['S','Small',  round($base*0.8,2), 0.80, 0],
+                ['M','Medium', $base,              1.00, 1],
+                ['L','Large',  round($base*1.2,2), 1.30, 2],
+            ];
+            foreach ($defaults as $d) {
+                $ins->bind_param("issddi", $pid, $d[0], $d[1], $d[2], $d[3], $d[4]);
+                $ins->execute();
+            }
+        }
+    }
+    header('Location: products.php'); exit;
+}
+
+// products flagged sized but with zero size rows
+$missing = [];
+$mr = $conn->query("SELECT p.product_id FROM products p
+    LEFT JOIN product_sizes ps ON ps.product_id=p.product_id
+    WHERE p.has_sizes=1 GROUP BY p.product_id HAVING COUNT(ps.size_id)=0");
+while ($row = $mr->fetch_assoc()) { $missing[(int)$row['product_id']] = true; }
+
 // Quick-view AJAX endpoint
 if (($_GET['action'] ?? '') === 'view') {
     header('Content-Type: application/json');
@@ -40,12 +83,16 @@ $availCount    = count(array_filter($products, fn($p) => ($p['is_available'] ?? 
 $unavailCount  = $totalProducts - $availCount;
 
 $catCounts = [];
+$realCategories = [];
 foreach ($products as $p) {
     $cat = $p['category'] ?: 'Uncategorized';
     $catCounts[$cat] = ($catCounts[$cat] ?? 0) + 1;
+    if ($p['category']) { $realCategories[$p['category']] = true; }
 }
 arsort($catCounts);
 $top   = array_key_first($catCounts) ?? '';
+$realCategories = array_keys($realCategories);
+sort($realCategories);
 
 $availPct = $totalProducts > 0 ? round($availCount / $totalProducts * 100) : 0;
 
@@ -460,6 +507,20 @@ body {
 .price-tab { /* extends .filter-tab */ }
 .price-tab.active { background: var(--info); color: #000; border-color: var(--info); }
 
+/* bulk enable-sizes row */
+.bulk-sizes-select {
+    padding: 5px 12px;
+    border-radius: 50px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-family: 'Poppins', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+}
+.bulk-sizes-submit { cursor: pointer; }
+.bulk-sizes-submit:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+
 /* ========== RESULTS ROW ========== */
 .results-row {
     display: flex;
@@ -724,6 +785,20 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
     margin-top: 8px;
     display: inline-block;
 }
+
+/* ── Badges (size status etc.) ── */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-left: 6px;
+}
+.badge-danger { background: rgba(255,107,107,0.1); color: var(--danger); border: 1px solid rgba(255,107,107,0.25); }
 
 /* ── Actions ── */
 .product-card .content .actions {
@@ -1399,6 +1474,25 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             </button>
             <button class="filter-tab badge-tab" data-badge="none">No Badge</button>
         </div>
+
+        <?php if ($_can_manage_products): ?>
+        <!-- Bulk enable sizes by category -->
+        <form class="filter-row" id="bulkSizesRow" method="POST" action="products.php">
+            <span class="filter-row-label"><i class="fa-solid fa-ruler-combined"></i> Sizes</span>
+            <input type="hidden" name="action" value="bulk_enable_sizes">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+            <select name="category" class="bulk-sizes-select" required>
+                <option value="">Choose category…</option>
+                <?php foreach ($realCategories as $cat): ?>
+                <option value="<?= htmlspecialchars($cat) ?>"><?= htmlspecialchars($cat) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button type="submit" class="filter-tab bulk-sizes-submit"
+                    onclick="return confirm('Enable sizes for every product in this category and seed default S/M/L prices for any product that has none yet?');">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Enable sizes
+            </button>
+        </form>
+        <?php endif; ?>
     </div>
 
     <!-- ── Results Row ── -->
@@ -1478,6 +1572,9 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                     <span class="price" data-pid="<?= $row['product_id'] ?>" title="Double-click to edit price">
                         $<?= number_format($row['price'], 2) ?>
                     </span>
+                    <?php if (!empty($missing[(int)$row['product_id']])): ?>
+                    <span class="badge badge-danger" title="has_sizes is on but no size prices set">missing size prices</span>
+                    <?php endif; ?>
 
                     <?php if ($_can_manage_products): ?>
                     <div class="actions">
