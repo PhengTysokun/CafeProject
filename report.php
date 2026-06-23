@@ -1856,6 +1856,7 @@ function toggleTheme() {
         if (text) text.textContent = 'Light';
         localStorage.setItem('theme', 'light');
     }
+    if (typeof rebuildAllCharts === 'function') rebuildAllCharts();
 }
 
 // ── Sync toggle button state on load ──
@@ -1890,6 +1891,17 @@ const tooltipDefaults = {
     padding: 12,
     cornerRadius: 10,
 };
+
+// ── Theme-aware chart tokens (re-read live so charts follow light/dark) ──
+function CT() {
+    const cs = getComputedStyle(document.documentElement);
+    const light = document.documentElement.getAttribute('data-theme') === 'light';
+    return {
+        text:    (cs.getPropertyValue('--text-muted') || '').trim() || '#aaa',
+        grid:    light ? 'rgba(17,24,39,0.08)' : 'rgba(255,255,255,0.06)',
+        surface: (cs.getPropertyValue('--bg-card') || '').trim() || '#121212'
+    };
+}
 
 // ── CATEGORY CHART ──
 const categoryLabels = <?= json_encode(array_keys($categorySales), JSON_UNESCAPED_UNICODE) ?>;
@@ -1952,7 +1964,7 @@ function buildCategoryChart() {
             scales: {
                 x: {
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         maxRotation: 30,
                         minRotation: 0,
@@ -1978,12 +1990,12 @@ function buildCategoryChart() {
                 y: {
                     beginAtZero: true,
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         precision: 0,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         maxTicksLimit: cfg.ticksY
                     },
-                    grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false }
+                    grid: { color: CT().grid, drawBorder: false }
                 }
             },
             animation: { duration: 800, easing: 'easeOutQuart' }
@@ -2050,7 +2062,7 @@ function buildProductChart() {
             scales: {
                 x: {
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         maxRotation: 30,
                         minRotation: 0,
@@ -2074,12 +2086,12 @@ function buildProductChart() {
                 y: {
                     beginAtZero: true,
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         precision: 0,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         maxTicksLimit: cfg.ticksY
                     },
-                    grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false }
+                    grid: { color: CT().grid, drawBorder: false }
                 }
             },
             animation: { duration: 1000, easing: 'easeOutQuart' }
@@ -2114,6 +2126,9 @@ function buildRefundChart() {
                     borderColor: '#9b59b6',
                     borderWidth: 1,
                     borderRadius: 6,
+                    categoryPercentage: 0.55,
+                    barPercentage: 0.8,
+                    maxBarThickness: 54,
                     yAxisID: 'y',
                     order: 2
                 },
@@ -2150,7 +2165,7 @@ function buildRefundChart() {
             plugins: {
                 legend: {
                     labels: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: 12 },
                         padding: 16
                     }
@@ -2179,7 +2194,7 @@ function buildRefundChart() {
             scales: {
                 x: {
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         maxRotation: 30,
                         minRotation: 0,
@@ -2193,16 +2208,16 @@ function buildRefundChart() {
                     position: 'left',
                     beginAtZero: true,
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         precision: 0,
                         maxTicksLimit: cfg.ticksY
                     },
-                    grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                    grid: { color: CT().grid, drawBorder: false },
                     title: {
                         display: true,
                         text: 'Number of Refunds',
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: 11 }
                     }
                 },
@@ -2212,7 +2227,7 @@ function buildRefundChart() {
                     position: 'right',
                     beginAtZero: true,
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         callback: function(value) {
                             return '$' + value.toFixed(2);
@@ -2223,7 +2238,7 @@ function buildRefundChart() {
                     title: {
                         display: true,
                         text: 'Refund Amount ($)',
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: 11 }
                     }
                 }
@@ -2286,7 +2301,7 @@ function buildHourlyChart() {
             responsive: true, maintainAspectRatio: false, clip: false,
             layout: { padding: { left: 8, right: 8, bottom: 8 } },
             plugins: {
-                legend: { labels: { color: '#aaa', font: { family: 'Poppins', size: 11 }, padding: 12 } },
+                legend: { labels: { color: CT().text, font: { family: 'Poppins', size: 11 }, padding: 12 } },
                 tooltip: {
                     ...tooltipDefaults,
                     callbacks: {
@@ -2299,7 +2314,7 @@ function buildHourlyChart() {
             scales: {
                 x: {
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         maxRotation: 0,
                         minRotation: 0,
@@ -2310,12 +2325,12 @@ function buildHourlyChart() {
                 },
                 y: {
                     position: 'left', beginAtZero: true,
-                    ticks: { color: '#aaa', font: { family: 'Poppins', size: cfg.fontSize }, callback: v => '$' + v.toFixed(0), maxTicksLimit: 5 },
-                    grid: { color: 'rgba(255,255,255,0.05)' }
+                    ticks: { color: CT().text, font: { family: 'Poppins', size: cfg.fontSize }, callback: v => '$' + v.toFixed(0), maxTicksLimit: 5 },
+                    grid: { color: CT().grid }
                 },
                 y1: {
                     position: 'right', beginAtZero: true,
-                    ticks: { color: '#aaa', font: { family: 'Poppins', size: cfg.fontSize }, precision: 0, maxTicksLimit: 5 },
+                    ticks: { color: CT().text, font: { family: 'Poppins', size: cfg.fontSize }, precision: 0, maxTicksLimit: 5 },
                     grid: { display: false }
                 }
             },
@@ -2388,12 +2403,12 @@ function buildTopHoursChart() {
                 x: {
                     beginAtZero: true,
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         callback: v => '$' + v.toFixed(0),
                         maxTicksLimit: 5
                     },
-                    grid: { color: 'rgba(255,255,255,0.05)' }
+                    grid: { color: CT().grid }
                 },
                 y: {
                     ticks: {
@@ -2461,7 +2476,7 @@ function buildDailyTrendChart() {
             responsive: true, maintainAspectRatio: false, clip: false,
             layout: { padding: { left: 8, right: 8, bottom: 8 } },
             plugins: {
-                legend: { labels: { color: '#aaa', font: { family: 'Poppins', size: 11 }, padding: 12 } },
+                legend: { labels: { color: CT().text, font: { family: 'Poppins', size: 11 }, padding: 12 } },
                 tooltip: {
                     ...tooltipDefaults,
                     callbacks: {
@@ -2474,7 +2489,7 @@ function buildDailyTrendChart() {
             scales: {
                 x: {
                     ticks: {
-                        color: '#aaa',
+                        color: CT().text,
                         font: { family: 'Poppins', size: cfg.fontSize },
                         maxRotation: 30,
                         minRotation: 0,
@@ -2485,12 +2500,12 @@ function buildDailyTrendChart() {
                 },
                 y: {
                     position: 'left', beginAtZero: true,
-                    ticks: { color: '#aaa', font: { family: 'Poppins', size: cfg.fontSize }, callback: v => '$' + v.toFixed(0), maxTicksLimit: 5 },
-                    grid: { color: 'rgba(255,255,255,0.05)' }
+                    ticks: { color: CT().text, font: { family: 'Poppins', size: cfg.fontSize }, callback: v => '$' + v.toFixed(0), maxTicksLimit: 5 },
+                    grid: { color: CT().grid }
                 },
                 y1: {
                     position: 'right', beginAtZero: true,
-                    ticks: { color: '#aaa', font: { family: 'Poppins', size: cfg.fontSize }, precision: 0, maxTicksLimit: 5 },
+                    ticks: { color: CT().text, font: { family: 'Poppins', size: cfg.fontSize }, precision: 0, maxTicksLimit: 5 },
                     grid: { display: false }
                 }
             },
@@ -2516,12 +2531,12 @@ function buildPaymentChart() {
         type: 'doughnut',
         data: {
             labels,
-            datasets: [{ data: revenues, backgroundColor: palette.slice(0, labels.length), borderWidth: 2, borderColor: '#121212', hoverOffset: 8 }]
+            datasets: [{ data: revenues, backgroundColor: palette.slice(0, labels.length), borderWidth: 2, borderColor: CT().surface, hoverOffset: 8 }]
         },
         options: {
             responsive: true, maintainAspectRatio: false, cutout: '62%',
             plugins: {
-                legend: { position: 'bottom', labels: { color: '#aaa', font: { family: 'Poppins', size: 12 }, padding: 14 } },
+                legend: { position: 'bottom', labels: { color: CT().text, font: { family: 'Poppins', size: 12 }, padding: 14 } },
                 tooltip: { ...tooltipDefaults, callbacks: { label: ctx => ' $' + ctx.raw.toFixed(2) } }
             },
             animation: { duration: 900, animateRotate: true, easing: 'easeOutQuart' }
@@ -2614,28 +2629,25 @@ function sortTable(colIdx, type) {
     });
 }
 
+// ── (Re)build every chart — reused by initial render, resize, and theme toggle ──
+function rebuildAllCharts() {
+    buildCategoryChart();
+    buildProductChart();
+    buildRefundChart();
+    buildHourlyChart();
+    buildTopHoursChart();
+    buildPaymentChart();
+    buildDailyTrendChart();
+}
+
 // ── Initial render ──
-buildCategoryChart();
-buildProductChart();
-buildRefundChart();
-buildHourlyChart();
-buildTopHoursChart();
-buildPaymentChart();
-buildDailyTrendChart();
+rebuildAllCharts();
 
 // ── Re-render on resize (debounced) ──
 let resizeTimer;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-        buildCategoryChart();
-        buildProductChart();
-        buildRefundChart();
-        buildHourlyChart();
-        buildTopHoursChart();
-        buildPaymentChart();
-        buildDailyTrendChart();
-    }, 250);
+    resizeTimer = setTimeout(rebuildAllCharts, 250);
 });
 
 // ── LIVE POLLING ──
