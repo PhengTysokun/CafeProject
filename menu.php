@@ -226,11 +226,7 @@ while ($row = mysqli_fetch_assoc($result)) {
     .menu-scroll::-webkit-scrollbar-track { background: transparent; }
     .menu-scroll::-webkit-scrollbar-thumb { background: rgba(209,144,75,.35); border-radius: 99px; }
     .menu-scroll::-webkit-scrollbar-thumb:hover { background: rgba(209,144,75,.65); }
-    #cpItems { scrollbar-width: thin; scrollbar-color: rgba(209,144,75,.35) transparent; }
-    #cpItems::-webkit-scrollbar { width: 3px; }
-    #cpItems::-webkit-scrollbar-track { background: transparent; }
-    #cpItems::-webkit-scrollbar-thumb { background: rgba(209,144,75,.35); border-radius: 99px; }
-    #cpItems::-webkit-scrollbar-thumb:hover { background: rgba(209,144,75,.65); }
+    #cpItems::-webkit-scrollbar { display: none; }
 
     .menu-main { padding: 0 20px; }
     .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
@@ -276,7 +272,7 @@ while ($row = mysqli_fetch_assoc($result)) {
 
     /* Cart body: items scroll, summary stays pinned above the footer */
     .cp-body { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-    #cpItems { flex: 0 1 auto; overflow-y: auto; min-height: 0; }
+    #cpItems { flex: 0 1 auto; overflow-x: hidden; overflow-y: auto; min-height: 0; scrollbar-width: none; }
     .cp-empty { flex: 1; }
 
     /* Empty state */
