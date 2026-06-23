@@ -21,7 +21,7 @@ $business_date = (int)$now->format("H") < 6
 if (isset($_GET['ajax'])) {
     $stmt = $conn->prepare("
         SELECT o.order_id, o.daily_order_no, o.customer_name, o.order_date,
-               oi.product_name, oi.quantity, oi.sweetness, oi.ice, oi.milk
+               oi.product_name, oi.quantity, oi.sweetness, oi.ice, oi.milk, oi.size_label
         FROM orders o
         LEFT JOIN order_items oi ON o.order_id = oi.order_id
         WHERE o.business_date = ? AND o.status = 'Preparing'
@@ -47,6 +47,7 @@ if (isset($_GET['ajax'])) {
             $orders[$oid]['items'][] = [
                 'name'      => $r['product_name'],
                 'qty'       => (int)$r['quantity'],
+                'size'      => $r['size_label']  ?? null,
                 'sweetness' => $r['sweetness'] ?? null,
                 'ice'       => $r['ice']       ?? null,
                 'milk'      => $r['milk']      ?? null,
@@ -266,6 +267,7 @@ function ago(dateStr) {
 
 function buildMods(item) {
     const mods = [];
+    if (item.size)      mods.push('Size: ' + item.size);
     if (item.sweetness) mods.push(item.sweetness);
     if (item.ice)       mods.push(item.ice + ' ice');
     if (item.milk)      mods.push(item.milk);

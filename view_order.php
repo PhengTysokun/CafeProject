@@ -1605,6 +1605,7 @@ function buildItems(items) {
     let html = '<div class="items-list">';
     items.forEach(i => {
         const chips = [];
+        if (i.size)      chips.push(`<span class="item-chip">📏 Size: ${escapeHtml(i.size)}</span>`);
         if (i.sweetness) chips.push(`<span class="item-chip">🍬 ${escapeHtml(i.sweetness)}</span>`);
         if (i.ice)       chips.push(`<span class="item-chip">🧊 ${escapeHtml(i.ice)}</span>`);
         if (i.milk)      chips.push(`<span class="item-chip">🥛 ${escapeHtml(i.milk)}</span>`);
@@ -2537,6 +2538,7 @@ if ($action === "fetch") {
             oi.sweetness,
             oi.ice,
             oi.milk,
+            oi.size_label,
             oi.quantity
         FROM orders o
         LEFT JOIN users u ON u.user_id = o.employee_id
@@ -2546,7 +2548,7 @@ if ($action === "fetch") {
         LEFT JOIN order_cancellations oc ON oc.order_id = o.order_id
         LEFT JOIN order_refunds orr ON orr.order_id = o.order_id
         WHERE o.business_date = ?
-        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.quantity
+        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.quantity
         ORDER BY 
             CASE o.status
                 WHEN 'PendingPayment' THEN 1
@@ -2597,6 +2599,7 @@ if ($action === "fetch") {
             $map[$id]["items"][] = [
                 "item_id"      => (int)$r["item_id"],
                 "product_name" => $r["product_name"],
+                "size"         => $r["size_label"],
                 "sweetness"    => $r["sweetness"],
                 "ice"          => $r["ice"],
                 "milk"         => $r["milk"],
