@@ -140,6 +140,19 @@ while ($row = mysqli_fetch_assoc($result)) {
     $flat_products[] = $row;
 }
 
+/* ── SIZES PER PRODUCT (for sized products: has_sizes=1) ── */
+$sizesByProduct = [];
+if (!empty($flat_products)) {
+    $sz_res = $conn->query("SELECT product_id, size_code, label, price FROM product_sizes ORDER BY product_id, sort_order ASC");
+    while ($sz_res && $sz_row = $sz_res->fetch_assoc()) {
+        $sizesByProduct[(int)$sz_row['product_id']][] = [
+            'code'  => $sz_row['size_code'],
+            'label' => $sz_row['label'],
+            'price' => (float)$sz_row['price'],
+        ];
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -628,6 +641,8 @@ while ($row = mysqli_fetch_assoc($result)) {
                  data-product-category="<?= e($t['category']) ?>"
                  data-product-desc="<?= e($t['description']) ?>"
                  data-product-badge="<?= e($t['badge_text'] ?? '') ?>"
+                 data-product-has-sizes="<?= (int)($t['has_sizes'] ?? 0) ?>"
+                 data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$t['product_id']] ?? []), ENT_QUOTES) ?>'
                  data-is-bestseller="<?= $t['name']===$bestSellerName?'1':'0' ?>"
                  role="button" tabindex="0">
               <div class="seller-img-wrap">
@@ -670,6 +685,8 @@ while ($row = mysqli_fetch_assoc($result)) {
                    data-product-category="<?= e($p['category']) ?>"
                    data-product-desc="<?= e($p['description']) ?>"
                    data-product-badge="<?= e($p['badge_text'] ?? '') ?>"
+                   data-product-has-sizes="<?= (int)($p['has_sizes'] ?? 0) ?>"
+                   data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
                    data-is-bestseller="<?= $p['name']===$bestSellerName?'1':'0' ?>"
                    role="button" tabindex="0">
                 <div class="card-img">
@@ -677,7 +694,11 @@ while ($row = mysqli_fetch_assoc($result)) {
                   <?php if (!empty($p['badge_text'])): ?><span class="product-badge"><?= e($p['badge_text']) ?></span><?php endif; ?>
                   <img src="<?= e($p['image']) ?>" loading="lazy" alt="<?= e($p['name']) ?>">
                   <div class="img-overlay"></div>
+                  <?php if ((int)($p['has_sizes'] ?? 0) === 1): ?>
+                  <button class="quick-add-btn" onclick="event.stopPropagation(); openModal(<?= (int)$p['product_id'] ?>, '<?= e($p['name']) ?>', <?= e($p['price']) ?>, '<?= e($p['image']) ?>', '<?= e($p['category']) ?>', '<?= e($p['description']) ?>', '<?= e($p['badge_text'] ?? '') ?>', true, <?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>)" title="Choose size"><i class="fa-solid fa-plus"></i></button>
+                  <?php else: ?>
                   <button class="quick-add-btn" onclick="event.stopPropagation(); quickAdd(<?= (int)$p['product_id'] ?>, <?= (float)$p['price'] ?>)" title="Quick add"><i class="fa-solid fa-plus"></i></button>
+                  <?php endif; ?>
                 </div>
                 <div class="card-info"><div class="card-name"><?= e($p['name']) ?></div><div class="card-desc"><?= e($p['description']) ?></div><div class="card-price">$<?= number_format($p['price'], 2) ?></div></div>
               </div>
@@ -715,6 +736,8 @@ while ($row = mysqli_fetch_assoc($result)) {
                    data-product-category="<?= e($p['category']) ?>"
                    data-product-desc="<?= e($p['description']) ?>"
                    data-product-badge="<?= e($p['badge_text'] ?? '') ?>"
+                   data-product-has-sizes="<?= (int)($p['has_sizes'] ?? 0) ?>"
+                   data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
                    data-is-bestseller="<?= $p['name']===$bestSellerName?'1':'0' ?>"
                    role="button" tabindex="0">
                 <div class="card-img">
@@ -722,7 +745,11 @@ while ($row = mysqli_fetch_assoc($result)) {
                   <?php if (!empty($p['badge_text'])): ?><span class="product-badge"><?= e($p['badge_text']) ?></span><?php endif; ?>
                   <img src="<?= e($p['image']) ?>" loading="lazy" alt="<?= e($p['name']) ?>">
                   <div class="img-overlay"></div>
+                  <?php if ((int)($p['has_sizes'] ?? 0) === 1): ?>
+                  <button class="quick-add-btn" onclick="event.stopPropagation(); openModal(<?= (int)$p['product_id'] ?>, '<?= e($p['name']) ?>', <?= e($p['price']) ?>, '<?= e($p['image']) ?>', '<?= e($p['category']) ?>', '<?= e($p['description']) ?>', '<?= e($p['badge_text'] ?? '') ?>', true, <?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>)" title="Choose size"><i class="fa-solid fa-plus"></i></button>
+                  <?php else: ?>
                   <button class="quick-add-btn" onclick="event.stopPropagation(); quickAdd(<?= (int)$p['product_id'] ?>, <?= (float)$p['price'] ?>)" title="Quick add"><i class="fa-solid fa-plus"></i></button>
+                  <?php endif; ?>
                 </div>
                 <div class="card-info"><div class="card-name"><?= e($p['name']) ?></div><div class="card-desc"><?= e($p['description']) ?></div><div class="card-price">$<?= number_format($p['price'], 2) ?></div></div>
               </div>
@@ -980,6 +1007,10 @@ while ($row = mysqli_fetch_assoc($result)) {
           <button type="button" onclick="changeQty(1)">+</button>
         </div>
       </div>
+      <div id="optSize" class="option-section" style="display:none">
+        <div class="option-label">Size</div>
+        <div class="pill-group" id="sizePills"></div>
+      </div>
       <div id="optSweetness" class="option-section">
         <div class="option-label">Sweetness</div>
         <div class="pill-group" id="sweetnessPills">
@@ -1166,7 +1197,7 @@ function escH(str) {
 // ── PRODUCT MODAL ──
 var product = {}, modalQty = 1, modalUnitPrice = 0;
 
-function openModal(id, name, price, img, cat, desc, badge) {
+function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes) {
   var p = Number(price) || 0;
   product = { id: id, name: name, price: p, cat: cat };
   modalQty = 1; modalUnitPrice = p;
@@ -1184,6 +1215,31 @@ function openModal(id, name, price, img, cat, desc, badge) {
   document.querySelectorAll('#sweetnessPills .option-pill').forEach(function(pill) { pill.classList.toggle('active', pill.dataset.value === '50%'); });
   document.querySelectorAll('#icePills .option-pill').forEach(function(pill)      { pill.classList.toggle('active', pill.dataset.value === 'Normal Ice'); });
   document.querySelectorAll('#milkPills .option-pill').forEach(function(pill)     { pill.classList.toggle('active', pill.dataset.value === 'Fresh Milk'); });
+
+  // ── Size pills (render in given order; default = Medium or first) ──
+  var sizeWrap = document.getElementById('optSize');
+  var pills = document.getElementById('sizePills');
+  pills.innerHTML = '';
+  if (hasSizes && Array.isArray(sizes) && sizes.length) {
+    sizes.forEach(function(s) {
+      var b = document.createElement('button');
+      b.className = 'option-pill';
+      b.dataset.group = 'size';
+      b.dataset.value = s.code;
+      b.dataset.price = s.price;
+      b.textContent = s.label + ' $' + Number(s.price).toFixed(2);
+      b.onclick = function(){ selectSize(b); };
+      pills.appendChild(b);
+    });
+    // default Medium if present else first
+    var def = pills.querySelector('[data-value="M"]') || pills.firstChild;
+    if (def) { def.classList.add('active'); modalUnitPrice = Number(def.dataset.price) || p; }
+    document.getElementById('modalPrice').textContent = '$' + modalUnitPrice.toFixed(2);
+    sizeWrap.style.display = 'block';
+  } else {
+    sizeWrap.style.display = 'none';
+  }
+
   updateModalTotal();
   document.getElementById('modal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
@@ -1195,6 +1251,14 @@ function updateModalTotal() { document.getElementById('modalTotalDisplay').textC
 function selectPill(pill) { pill.closest('.pill-group').querySelectorAll('.option-pill').forEach(function(p) { p.classList.remove('active'); }); pill.classList.add('active'); }
 function getPillValue(groupId) { var a = document.querySelector('#' + groupId + ' .option-pill.active'); return a ? a.dataset.value : ''; }
 
+function selectSize(pill) {
+  pill.closest('.pill-group').querySelectorAll('.option-pill').forEach(function(p){ p.classList.remove('active'); });
+  pill.classList.add('active');
+  modalUnitPrice = Number(pill.dataset.price) || modalUnitPrice;
+  document.getElementById('modalPrice').textContent = '$' + modalUnitPrice.toFixed(2);
+  updateModalTotal();
+}
+
 // ── ADD TO CART (from modal) ──
 function addToCart() {
   var btn = document.querySelector('.btn-add-to-cart');
@@ -1204,6 +1268,7 @@ function addToCart() {
   if (document.getElementById('optSweetness').style.display !== 'none') params.append('sweetness', getPillValue('sweetnessPills'));
   if (document.getElementById('optIce').style.display !== 'none')       params.append('ice',       getPillValue('icePills'));
   if (document.getElementById('optMilk').style.display !== 'none')      params.append('milk',      getPillValue('milkPills'));
+  if (document.getElementById('optSize').style.display !== 'none')      params.append('size',      getPillValue('sizePills'));
 
   fetch('add_to_cart.php', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'}, body: params.toString() })
     .then(function(r) { return r.json(); })
@@ -1873,7 +1938,9 @@ document.addEventListener('DOMContentLoaded', function() {
   // Wire product cards
   document.querySelectorAll('.js-open-product').forEach(function(card) {
     var handler = function() {
-      openModal(card.dataset.productId, card.dataset.productName||'', Number(card.dataset.productPrice||0), card.dataset.productImage||'', card.dataset.productCategory||'', card.dataset.productDesc||'', card.dataset.productBadge||'');
+      var sizes = [];
+      try { sizes = JSON.parse(card.dataset.productSizes || '[]'); } catch (e) { sizes = []; }
+      openModal(card.dataset.productId, card.dataset.productName||'', Number(card.dataset.productPrice||0), card.dataset.productImage||'', card.dataset.productCategory||'', card.dataset.productDesc||'', card.dataset.productBadge||'', card.dataset.productHasSizes==='1', sizes);
     };
     card.addEventListener('click', handler);
     card.addEventListener('keydown', function(e) { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); handler(); } });
