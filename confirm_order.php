@@ -157,8 +157,8 @@ if ($existing_order_id > 0) {
         $stmt_upd->execute();
 
         $stmt_item = $conn->prepare("
-            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
         foreach ($_SESSION['cart'] as $item) {
@@ -169,13 +169,16 @@ if ($existing_order_id > 0) {
             $sweet      = $item['sweetness'] ?? '';
             $ice        = $item['ice'] ?? '';
             $milk       = $item['milk'] ?? '';
+            $scode      = $item['size_code'] ?? '';
+            $slabel     = $item['size_label'] ?? '';
+            $sfactor    = (float)($item['size_factor'] ?? 1.0);
 
-            $stmt_item->bind_param("iisdisss", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk);
+            $stmt_item->bind_param("iisdisssss", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel);
             $stmt_item->execute();
 
             // ── STOCK: deduct at order creation time ──
             if ($product_id > 0) {
-                _deduct_stock($conn, $product_id, $qty, $milk, $existing_order_id);
+                _deduct_stock($conn, $product_id, $qty, $milk, $existing_order_id, $sfactor);
             }
         }
 
@@ -377,8 +380,8 @@ try {
 
     // ── ORDER ITEMS + STOCK DEDUCTION ──
     $stmt_item = $conn->prepare("
-        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     foreach ($_SESSION['cart'] as $item) {
         $qty        = max(1, (int)($item['qty'] ?? 1));
@@ -388,20 +391,23 @@ try {
         $sweet      = $item['sweetness'] ?? '';
         $ice        = $item['ice'] ?? '';
         $milk       = $item['milk'] ?? '';
+        $scode      = $item['size_code'] ?? '';
+        $slabel     = $item['size_label'] ?? '';
+        $sfactor    = (float)($item['size_factor'] ?? 1.0);
 
-        $stmt_item->bind_param("iisdisss", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk);
+        $stmt_item->bind_param("iisdisssss", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel);
         $stmt_item->execute();
 
         if ($product_id > 0) {
-            _deduct_stock($conn, $product_id, $qty, $milk, $order_id);
+            _deduct_stock($conn, $product_id, $qty, $milk, $order_id, $sfactor);
         }
     }
 
     // ── ADD REDEEMED REWARDS TO ORDER + deduct points now that order is confirmed ──
     if (!empty($_SESSION['redeemed_rewards'])) {
         $stmt_reward = $conn->prepare("
-            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt_deduct   = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points - ?), last_used = NOW() WHERE card_id = ?");
         $stmt_hist     = $conn->prepare("
@@ -416,7 +422,7 @@ try {
             $rprice     = 0.0;
             $rqty       = 1;
             $rempty     = '';
-            $stmt_reward->bind_param("iisdisss", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty);
+            $stmt_reward->bind_param("iisdisssss", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty, $rempty, $rempty);
             $stmt_reward->execute();
 
             // Deduct points from card (the deduction that loyalty_redeem.php now defers)
@@ -519,7 +525,7 @@ try {
 }
 
 // ── HELPER: deduct ingredients, respecting milk substitution ──
-function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_choice, int $order_id = 0): void {
+function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_choice, int $order_id = 0, float $size_factor = 1.0): void {
     $stmt = $conn->prepare("
         SELECT pi.ingredient_id, pi.amount_used, i.ingredient_name
         FROM product_ingredients pi
@@ -534,7 +540,7 @@ function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_cho
 
     while ($row = $rows->fetch_assoc()) {
         $ing_id   = (int)$row['ingredient_id'];
-        $amount   = (float)$row['amount_used'] * $qty;
+        $amount   = (float)$row['amount_used'] * $qty * $size_factor;
         $ing_name = strtolower(trim($row['ingredient_name']));
 
         // Substitute milk ingredient if customer chose a different milk
