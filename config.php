@@ -533,6 +533,31 @@ _migrate($conn, 'stock_count_module_fix_v2', function($db) {
     $db->query("UPDATE permissions SET module='Reconciliation' WHERE slug IN ('stock_count','cash_reconciliation')");
 });
 
+// ── Drink sizes: products.has_sizes, product_sizes table, order_items size columns ──
+_migrate($conn, 'drink_sizes_v1', function($db) {
+    $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS has_sizes TINYINT(1) NOT NULL DEFAULT 0");
+    if ($db->errno) return;
+
+    $db->query("CREATE TABLE IF NOT EXISTS product_sizes (
+        size_id     INT(11) NOT NULL AUTO_INCREMENT,
+        product_id  INT(11) NOT NULL,
+        size_code   VARCHAR(10) NOT NULL,
+        label       VARCHAR(20) NOT NULL,
+        price       DECIMAL(10,2) NOT NULL,
+        size_factor DECIMAL(4,2) NOT NULL DEFAULT 1.00,
+        sort_order  INT(11) NOT NULL DEFAULT 0,
+        PRIMARY KEY (size_id),
+        UNIQUE KEY uq_product_size (product_id, size_code),
+        CONSTRAINT fk_product_sizes_product FOREIGN KEY (product_id)
+            REFERENCES products(product_id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    if ($db->errno) return;
+
+    $db->query("ALTER TABLE order_items
+        ADD COLUMN IF NOT EXISTS size_code  VARCHAR(10) NULL,
+        ADD COLUMN IF NOT EXISTS size_label VARCHAR(20) NULL");
+});
+
 // ── SANITIZE FUNCTION ──
 if (!function_exists('sanitizeForReceipt')) {
     function sanitizeForReceipt(string $text): string {
