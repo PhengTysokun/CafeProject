@@ -226,11 +226,11 @@ while ($row = mysqli_fetch_assoc($result)) {
     .menu-scroll::-webkit-scrollbar-track { background: transparent; }
     .menu-scroll::-webkit-scrollbar-thumb { background: rgba(209,144,75,.35); border-radius: 99px; }
     .menu-scroll::-webkit-scrollbar-thumb:hover { background: rgba(209,144,75,.65); }
-    .cp-body { scrollbar-width: thin; scrollbar-color: rgba(209,144,75,.35) transparent; }
-    .cp-body::-webkit-scrollbar { width: 3px; }
-    .cp-body::-webkit-scrollbar-track { background: transparent; }
-    .cp-body::-webkit-scrollbar-thumb { background: rgba(209,144,75,.35); border-radius: 99px; }
-    .cp-body::-webkit-scrollbar-thumb:hover { background: rgba(209,144,75,.65); }
+    #cpItems { scrollbar-width: thin; scrollbar-color: rgba(209,144,75,.35) transparent; }
+    #cpItems::-webkit-scrollbar { width: 3px; }
+    #cpItems::-webkit-scrollbar-track { background: transparent; }
+    #cpItems::-webkit-scrollbar-thumb { background: rgba(209,144,75,.35); border-radius: 99px; }
+    #cpItems::-webkit-scrollbar-thumb:hover { background: rgba(209,144,75,.65); }
 
     .menu-main { padding: 0 20px; }
     .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
@@ -274,8 +274,10 @@ while ($row = mysqli_fetch_assoc($result)) {
     }
     .cp-clear-btn:hover { background: #e74c3c; color: #fff; border-color: #e74c3c; }
 
-    /* Cart items scroll area */
-    .cp-body { overflow-y: auto; min-height: 0; }
+    /* Cart body: items scroll, summary stays pinned above the footer */
+    .cp-body { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    #cpItems { flex: 0 1 auto; overflow-y: auto; min-height: 0; }
+    .cp-empty { flex: 1; }
 
     /* Empty state */
     .cp-empty {
@@ -329,8 +331,8 @@ while ($row = mysqli_fetch_assoc($result)) {
     .cp-free-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 22px; background: linear-gradient(135deg,#e8f5e9,#f0fff4); border-radius: 7px; flex-shrink: 0; }
     .cp-free-badge { background: #27ae60; color: #fff; font-size: 9px; padding: 1px 5px; border-radius: 20px; font-weight: 700; vertical-align: middle; }
 
-    /* Summary area (inside cp-body, after items) */
-    .cp-summary { padding: 12px 16px; border-top: 1px solid var(--border,#e0d4c4); }
+    /* Summary area: pinned below the scrolling items, above the footer */
+    .cp-summary { flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border,#e0d4c4); }
     .cp-sum-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12.5px; color: var(--text-sec,#5a4a3a); }
     .cp-sum-row.discount { color: #e74c3c; }
 
