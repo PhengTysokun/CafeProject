@@ -1053,7 +1053,7 @@ while ($row = mysqli_fetch_assoc($result)) {
       <?php endif; ?>
     </div>
     <button type="button" class="cp-pm-confirm" id="cpConfirmPayBtn">
-      <i class="fa-solid fa-check"></i> <span>Confirm Payment</span>
+      <i class="fa-solid fa-check" id="cpConfirmPayIcon"></i> <span id="cpConfirmPayText">Confirm Payment</span>
     </button>
   </div>
 </div>
@@ -1499,14 +1499,16 @@ function cpGetCartTotal() {
 }
 
 function cpUpdateConfirmBtn(selected) {
-  var btn  = document.getElementById('cpConfirmBtn');
-  var icon = document.getElementById('cpConfirmIcon');
-  var text = document.getElementById('cpConfirmText');
+  // Updates the MODAL's Confirm Payment button — never the footer Confirm Order
+  // button, which must always stay "Confirm Order" (it just opens the modal).
+  var btn  = document.getElementById('cpConfirmPayBtn');
+  var icon = document.getElementById('cpConfirmPayIcon');
+  var text = document.getElementById('cpConfirmPayText');
   var cc   = document.getElementById('cpChangeCalc');
   var rc   = document.getElementById('cpRielCalc');
   if (!btn) return;
 
-  btn.className = 'cp-confirm-btn';
+  btn.className = 'cp-pm-confirm';
   if (cc) cc.classList.remove('visible');
   if (rc) rc.classList.remove('visible');
 
@@ -1545,8 +1547,8 @@ function cpUpdateConfirmBtn(selected) {
     if (text) text.textContent = 'Generate Bakong QR';
     btn.classList.add('bakong');
   } else {
-    if (icon) icon.className = 'fa-solid fa-credit-card';
-    if (text) text.textContent = 'Confirm Order';
+    if (icon) icon.className = 'fa-solid fa-check';
+    if (text) text.textContent = 'Confirm Payment';
   }
 }
 
@@ -1563,6 +1565,17 @@ function cpOpenPayModal() {
 }
 function cpClosePayModal() {
   document.getElementById('cpPayModal').classList.remove('active');
+  // Abandoning the modal clears payment selection so the next order starts
+  // clean (no stale method carried over). Submitting navigates away instead,
+  // so this only runs on Esc / backdrop / X.
+  document.querySelectorAll('.cp-pay-method input[type="checkbox"]').forEach(function(c) {
+    c.checked = false;
+    c.closest('.cp-pay-method').classList.remove('selected');
+  });
+  var cr = document.getElementById('cpCashReceived'); if (cr) cr.value = '';
+  var ri = document.getElementById('cpRielReceived'); if (ri) ri.value = '';
+  cpUpdateConfirmBtn([]);
+  cpUpdateSplitInputs();
 }
 function cpOnConfirmOrderClick() {
   if (typeof ADD_TO_ORDER_MODE !== 'undefined' && ADD_TO_ORDER_MODE) {
