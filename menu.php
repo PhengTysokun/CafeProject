@@ -695,7 +695,7 @@ if (!empty($flat_products)) {
                   <img src="<?= e($p['image']) ?>" loading="lazy" alt="<?= e($p['name']) ?>">
                   <div class="img-overlay"></div>
                   <?php if ((int)($p['has_sizes'] ?? 0) === 1): ?>
-                  <button class="quick-add-btn" onclick="event.stopPropagation(); openModal(<?= (int)$p['product_id'] ?>, '<?= e($p['name']) ?>', <?= e($p['price']) ?>, '<?= e($p['image']) ?>', '<?= e($p['category']) ?>', '<?= e($p['description']) ?>', '<?= e($p['badge_text'] ?? '') ?>', true, <?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>)" title="Choose size"><i class="fa-solid fa-plus"></i></button>
+                  <button class="quick-add-btn" onclick="event.stopPropagation(); openModalFromCard(this.closest('.product-card'));" title="Choose size"><i class="fa-solid fa-plus"></i></button>
                   <?php else: ?>
                   <button class="quick-add-btn" onclick="event.stopPropagation(); quickAdd(<?= (int)$p['product_id'] ?>, <?= (float)$p['price'] ?>)" title="Quick add"><i class="fa-solid fa-plus"></i></button>
                   <?php endif; ?>
@@ -746,7 +746,7 @@ if (!empty($flat_products)) {
                   <img src="<?= e($p['image']) ?>" loading="lazy" alt="<?= e($p['name']) ?>">
                   <div class="img-overlay"></div>
                   <?php if ((int)($p['has_sizes'] ?? 0) === 1): ?>
-                  <button class="quick-add-btn" onclick="event.stopPropagation(); openModal(<?= (int)$p['product_id'] ?>, '<?= e($p['name']) ?>', <?= e($p['price']) ?>, '<?= e($p['image']) ?>', '<?= e($p['category']) ?>', '<?= e($p['description']) ?>', '<?= e($p['badge_text'] ?? '') ?>', true, <?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>)" title="Choose size"><i class="fa-solid fa-plus"></i></button>
+                  <button class="quick-add-btn" onclick="event.stopPropagation(); openModalFromCard(this.closest('.product-card'));" title="Choose size"><i class="fa-solid fa-plus"></i></button>
                   <?php else: ?>
                   <button class="quick-add-btn" onclick="event.stopPropagation(); quickAdd(<?= (int)$p['product_id'] ?>, <?= (float)$p['price'] ?>)" title="Quick add"><i class="fa-solid fa-plus"></i></button>
                   <?php endif; ?>
@@ -1244,6 +1244,14 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes) {
   updateModalTotal();
   document.getElementById('modal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
+}
+
+// Open the product modal using a card's data-product-* attributes (avoids inline-onclick string interpolation)
+function openModalFromCard(card) {
+  if (!card) return;
+  var sizes = [];
+  try { sizes = JSON.parse(card.dataset.productSizes || '[]'); } catch (e) { sizes = []; }
+  openModal(card.dataset.productId, card.dataset.productName||'', Number(card.dataset.productPrice||0), card.dataset.productImage||'', card.dataset.productCategory||'', card.dataset.productDesc||'', card.dataset.productBadge||'', card.dataset.productHasSizes==='1', sizes);
 }
 
 function closeModal() { document.getElementById('modal').style.display = 'none'; document.body.style.overflow = ''; }
@@ -1939,11 +1947,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Wire product cards
   document.querySelectorAll('.js-open-product').forEach(function(card) {
-    var handler = function() {
-      var sizes = [];
-      try { sizes = JSON.parse(card.dataset.productSizes || '[]'); } catch (e) { sizes = []; }
-      openModal(card.dataset.productId, card.dataset.productName||'', Number(card.dataset.productPrice||0), card.dataset.productImage||'', card.dataset.productCategory||'', card.dataset.productDesc||'', card.dataset.productBadge||'', card.dataset.productHasSizes==='1', sizes);
-    };
+    var handler = function() { openModalFromCard(card); };
     card.addEventListener('click', handler);
     card.addEventListener('keydown', function(e) { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); handler(); } });
   });
