@@ -363,17 +363,24 @@ while ($row = mysqli_fetch_assoc($result)) {
     .cp-section-label { font-size: 10px; font-weight: 700; color: var(--text-sec,#5a4a3a); display: flex; align-items: center; gap: 5px; margin-bottom: 7px; letter-spacing: .07em; text-transform: uppercase; }
     .cp-section-label i { color: #d1904b; }
 
-    /* Payment methods */
-    .cp-pay-methods { display: flex; gap: 6px; }
+    /* Payment methods — tactile tiles */
+    .cp-pm-methods-label { font-size: 11px; font-weight: 600; color: var(--text-muted,#9a8070); margin-bottom: 8px; }
+    .cp-pay-methods { display: flex; gap: 8px; }
     .cp-pay-method {
-      flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
-      padding: 10px 4px; border: 1.5px solid var(--border,#e0d4c4); border-radius: 11px;
-      cursor: pointer; font-size: 12px; font-weight: 600;
-      background: var(--bg,#f4efe9); color: var(--text-sec,#5a4a3a);
-      transition: all .2s; user-select: none;
+      flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 13px 4px 11px; border: 1.5px solid var(--border,#e0d4c4); border-radius: 14px;
+      cursor: pointer; background: var(--bg,#f4efe9); color: var(--text-sec,#5a4a3a);
+      transition: transform .12s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
+      user-select: none;
     }
-    .cp-pay-method:hover { border-color: rgba(209,144,75,.5); background: rgba(209,144,75,.05); }
-    .cp-pay-method.selected { border-color: #d1904b; background: rgba(209,144,75,.12); color: var(--text,#1a1410); box-shadow: 0 0 0 2px rgba(209,144,75,.18); }
+    .cp-pay-method .cp-pm-ico { font-size: 19px; color: var(--text-muted,#9a8070); transition: color .15s ease; }
+    .cp-pay-method .cp-pm-lbl { font-size: 11.5px; font-weight: 600; }
+    .cp-pay-method .cp-pm-check { position: absolute; top: 6px; right: 7px; font-size: 13px; color: #d1904b; opacity: 0; transform: scale(.5); transition: opacity .15s ease, transform .15s ease; }
+    .cp-pay-method:hover { border-color: rgba(209,144,75,.5); }
+    .cp-pay-method:active { transform: scale(.96); }
+    .cp-pay-method.selected { border-color: #d1904b; background: rgba(209,144,75,.12); color: var(--text,#1a1410); box-shadow: 0 0 0 3px rgba(209,144,75,.16); }
+    .cp-pay-method.selected .cp-pm-ico { color: #d1904b; }
+    .cp-pay-method.selected .cp-pm-check { opacity: 1; transform: scale(1); }
     .cp-pay-method input { display: none; }
 
     /* Split payment inputs */
@@ -479,15 +486,21 @@ while ($row = mysqli_fetch_assoc($result)) {
     .cp-paymodal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .cp-paymodal-head h3 { font-size: 16px; font-weight: 700; color: var(--text,#1a1410); margin: 0; }
     .cp-paymodal-close { background: none; border: none; font-size: 20px; color: var(--text-muted,#9a8070); cursor: pointer; line-height: 1; }
-    .cp-pm-breakdown { background: var(--bg,#f4efe9); border: 1px solid var(--border,#e0d4c4); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
-    .cp-pm-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-sec,#5a4a3a); padding: 2px 0; }
-    .cp-pm-row.total { border-top: 1px solid var(--border,#e0d4c4); margin-top: 6px; padding-top: 8px; font-size: 20px; font-weight: 700; color: var(--text,#1a1410); }
-    .cp-pm-row.total span:last-child { color: #d1904b; }
-    .cp-pm-confirm { width: 100%; margin-top: 14px; padding: 13px; border: none; border-radius: 11px; background: #d1904b; color: #fff; font-size: 15px; font-weight: 700; font-family: 'Poppins',sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .cp-pm-breakdown { background: var(--bg,#f4efe9); border: 1px solid var(--border,#e0d4c4); border-radius: 10px; padding: 9px 14px; margin-bottom: 12px; }
+    .cp-pm-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-sec,#5a4a3a); padding: 2px 0; font-variant-numeric: tabular-nums; }
+    .cp-pm-hero { display: flex; flex-direction: column; padding: 0 4px; margin-bottom: 16px; }
+    .cp-pm-hero-label { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted,#9a8070); }
+    .cp-pm-hero-amt { font-size: 40px; font-weight: 800; line-height: 1.04; color: var(--text,#1a1410); font-variant-numeric: tabular-nums; letter-spacing: -.02em; margin-top: 1px; }
+    .cp-pm-hero-khr { font-size: 13px; font-weight: 600; color: #d1904b; margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .cp-pm-confirm { width: 100%; margin-top: 16px; padding: 14px; border: none; border-radius: 13px; background: linear-gradient(135deg,#d99a55,#c07f37); box-shadow: 0 6px 18px rgba(209,144,75,.28); color: #fff; font-size: 15px; font-weight: 700; font-family: 'Poppins',sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: filter .15s ease, transform .12s ease; }
     .cp-pm-confirm:hover { filter: brightness(1.07); }
+    .cp-pm-confirm:active { transform: scale(.99); }
     [data-theme="dark"] .cp-paymodal-card { background: #161616; border-color: #252525; }
     [data-theme="dark"] .cp-pm-breakdown { background: #1a1a1a; border-color: #252525; }
-    [data-theme="dark"] .cp-pm-row.total { border-color: #252525; }
+    @media (prefers-reduced-motion: reduce) {
+      .cp-paymodal-card { animation: none; }
+      .cp-pay-method, .cp-pm-confirm, .cp-pay-method .cp-pm-ico, .cp-pay-method .cp-pm-check { transition: none; }
+    }
 
     /* ── Chat toggle in header ── */
     #chatToggle {
@@ -1009,22 +1022,35 @@ while ($row = mysqli_fetch_assoc($result)) {
     <div class="cp-pm-breakdown">
       <div class="cp-pm-row"><span>Subtotal</span><span id="cpPmSubtotal">$0.00</span></div>
       <div class="cp-pm-row"><span>Tax (<?= (int)TAX_RATE ?>%)</span><span id="cpPmTax">$0.00</span></div>
-      <div class="cp-pm-row total"><span>Total</span><span id="cpPmTotal">$0.00</span></div>
+    </div>
+    <div class="cp-pm-hero">
+      <span class="cp-pm-hero-label">Total due</span>
+      <span class="cp-pm-hero-amt" id="cpPmTotal">$0.00</span>
+      <span class="cp-pm-hero-khr" id="cpPmKhr">&#x17DB; 0</span>
     </div>
     <div id="cpPayModalBody">
       <?php if (!$add_to_order_mode): ?>
+      <div class="cp-pm-methods-label">How is the customer paying?</div>
       <div class="cp-pay-methods" id="cpPayMethods">
-        <div class="cp-pay-method" onclick="cpTogglePayment(this)">
-          <input type="checkbox" value="bakong"> <span>&#x1F4F1; Bakong</span>
+        <div class="cp-pay-method" data-method="bakong" onclick="cpTogglePayment(this)">
+          <input type="checkbox" value="bakong">
+          <i class="cp-pm-ico fa-solid fa-qrcode"></i><span class="cp-pm-lbl">Bakong</span>
+          <i class="cp-pm-check fa-solid fa-circle-check"></i>
         </div>
-        <div class="cp-pay-method" onclick="cpTogglePayment(this)">
-          <input type="checkbox" value="cash"> <span>&#x1F4B5; Cash</span>
+        <div class="cp-pay-method" data-method="cash" onclick="cpTogglePayment(this)">
+          <input type="checkbox" value="cash">
+          <i class="cp-pm-ico fa-solid fa-money-bill-wave"></i><span class="cp-pm-lbl">Cash</span>
+          <i class="cp-pm-check fa-solid fa-circle-check"></i>
         </div>
-        <div class="cp-pay-method" onclick="cpTogglePayment(this)">
-          <input type="checkbox" value="paylater"> <span>&#x23F0; Later</span>
+        <div class="cp-pay-method" data-method="paylater" onclick="cpTogglePayment(this)">
+          <input type="checkbox" value="paylater">
+          <i class="cp-pm-ico fa-solid fa-clock"></i><span class="cp-pm-lbl">Later</span>
+          <i class="cp-pm-check fa-solid fa-circle-check"></i>
         </div>
-        <div class="cp-pay-method" onclick="cpTogglePayment(this)">
-          <input type="checkbox" value="riel"> <span>&#x1F1F0;&#x1F1ED; Riel &#x17DB;</span>
+        <div class="cp-pay-method" data-method="riel" onclick="cpTogglePayment(this)">
+          <input type="checkbox" value="riel">
+          <i class="cp-pm-ico fa-solid fa-coins"></i><span class="cp-pm-lbl">Riel &#x17DB;</span>
+          <i class="cp-pm-check fa-solid fa-circle-check"></i>
         </div>
       </div>
       <div class="cp-split-inputs" id="cpSplitInputs"><div id="cpSplitRows"></div></div>
@@ -1561,6 +1587,9 @@ function cpOpenPayModal() {
   document.getElementById('cpPmSubtotal').textContent = '$' + sub.toFixed(2);
   document.getElementById('cpPmTax').textContent = '$' + tax.toFixed(2);
   document.getElementById('cpPmTotal').textContent = '$' + total.toFixed(2);
+  var khr = Math.round(total * CP_KHR_RATE / 100) * 100;
+  var khrEl = document.getElementById('cpPmKhr');
+  if (khrEl) khrEl.textContent = '៛ ' + khr.toLocaleString();
   document.getElementById('cpPayModal').classList.add('active');
 }
 function cpClosePayModal() {
