@@ -30,6 +30,40 @@ if (isset($_POST['add_product'])) {
     $stmt = $conn->prepare("INSERT INTO products (name, description, price, category, category_id, image, badge_text) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->bind_param("ssdsiss", $name, $description, $price, $category, $category_id, $image_path, $badge_text);
     if ($stmt->execute()) {
+        $product_id = $conn->insert_id;
+
+        // ── Sizes: toggle + upsert S/M/L rows, sync products.price to Medium ──
+        $has_sizes = isset($_POST['has_sizes']) ? 1 : 0;
+        $conn->query("UPDATE products SET has_sizes=" . (int)$has_sizes . " WHERE product_id=" . (int)$product_id);
+
+        if ($has_sizes) {
+            $codes   = $_POST['size_code']   ?? [];
+            $labels  = $_POST['size_label']  ?? [];
+            $prices  = $_POST['size_price']  ?? [];
+            $factors = $_POST['size_factor'] ?? [];
+            $sorts   = $_POST['size_sort']   ?? [];
+            $up = $conn->prepare("INSERT INTO product_sizes (product_id,size_code,label,price,size_factor,sort_order)
+                VALUES (?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE label=VALUES(label), price=VALUES(price), size_factor=VALUES(size_factor), sort_order=VALUES(sort_order)");
+            $mediumPrice = null;
+            foreach ($codes as $i => $code) {
+                $sizePrice = (float)($prices[$i] ?? 0);
+                if ($sizePrice <= 0) continue; // skip blank rows
+                $sizeLabel  = trim((string)($labels[$i] ?? $code));
+                $sizeFactor = (float)($factors[$i] ?? 1.0);
+                $sizeSort   = (int)($sorts[$i] ?? 0);
+                $up->bind_param("issddi", $product_id, $code, $sizeLabel, $sizePrice, $sizeFactor, $sizeSort);
+                $up->execute();
+                if ($code === 'M') $mediumPrice = $sizePrice;
+            }
+            // Keep products.price == Medium so legacy single-price paths stay correct
+            if ($mediumPrice !== null) {
+                $sp = $conn->prepare("UPDATE products SET price=? WHERE product_id=?");
+                $sp->bind_param("di", $mediumPrice, $product_id);
+                $sp->execute();
+            }
+        }
+
         header("Location: products.php");
         exit;
     }
@@ -296,6 +330,32 @@ body {
             <div class="input-group">
                 <i class="fa-solid fa-dollar-sign"></i>
                 <input type="number" step="0.01" name="price" placeholder="Price ($)" required>
+            </div>
+
+            <div class="input-group" style="display:flex;align-items:center;gap:8px;padding-left:0;">
+                <label class="form-check" for="has_sizes" style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text-muted);font-size:14px;">
+                    <input type="checkbox" id="has_sizes" name="has_sizes" value="1"
+                        onchange="document.getElementById('sizeRows').style.display=this.checked?'block':'none'">
+                    This product has sizes (S / M / L)
+                </label>
+            </div>
+            <div id="sizeRows" style="display:none;flex-direction:column;gap:10px;margin-bottom:14px;">
+                <?php
+                $sizeDefaults = [
+                    ['code'=>'S','label'=>'Small','factor'=>'0.80','sort'=>0],
+                    ['code'=>'M','label'=>'Medium','factor'=>'1.00','sort'=>1],
+                    ['code'=>'L','label'=>'Large','factor'=>'1.30','sort'=>2],
+                ];
+                foreach ($sizeDefaults as $d):
+                ?>
+                <div class="size-row" style="display:flex;gap:8px;align-items:center;">
+                    <input type="hidden" name="size_code[]" value="<?= $d['code'] ?>">
+                    <input type="hidden" name="size_sort[]" value="<?= $d['sort'] ?>">
+                    <input type="text" name="size_label[]" value="<?= htmlspecialchars($d['label']) ?>" placeholder="Label" style="flex:1.3;padding-left:14px;">
+                    <input type="number" step="0.01" min="0" name="size_price[]" value="" placeholder="Price ($)" style="flex:1;padding-left:14px;">
+                    <input type="number" step="0.01" min="0" name="size_factor[]" value="<?= $d['factor'] ?>" placeholder="Stock ×" style="flex:0.8;padding-left:14px;">
+                </div>
+                <?php endforeach; ?>
             </div>
 
             <div class="input-group">

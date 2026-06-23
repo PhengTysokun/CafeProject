@@ -11,6 +11,14 @@ $stmt_sel->execute();
 $product = $stmt_sel->get_result()->fetch_assoc();
 if (!$product) { header("Location: products.php"); exit; }
 
+$existingSizes = [];
+$qs = $conn->prepare("SELECT size_code,label,price,size_factor,sort_order FROM product_sizes WHERE product_id=? ORDER BY sort_order ASC");
+$qs->bind_param("i", $id);
+$qs->execute();
+$rs = $qs->get_result();
+while ($row = $rs->fetch_assoc()) { $existingSizes[$row['size_code']] = $row; }
+$hasSizes = !empty($product['has_sizes']) || !empty($existingSizes);
+
 $error   = '';
 $success = false;
 
@@ -61,6 +69,48 @@ if (isset($_POST['update_product'])) {
         $product['category']     = $category;
         $product['is_available'] = $is_avail;
         $product['badge_text']   = $badge_text ?: null;
+
+        // ── Sizes: toggle + upsert S/M/L rows, sync products.price to Medium ──
+        $has_sizes = isset($_POST['has_sizes']) ? 1 : 0;
+        $conn->query("UPDATE products SET has_sizes=" . (int)$has_sizes . " WHERE product_id=" . (int)$id);
+
+        if ($has_sizes) {
+            $codes   = $_POST['size_code']   ?? [];
+            $labels  = $_POST['size_label']  ?? [];
+            $prices  = $_POST['size_price']  ?? [];
+            $factors = $_POST['size_factor'] ?? [];
+            $sorts   = $_POST['size_sort']   ?? [];
+            $up = $conn->prepare("INSERT INTO product_sizes (product_id,size_code,label,price,size_factor,sort_order)
+                VALUES (?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE label=VALUES(label), price=VALUES(price), size_factor=VALUES(size_factor), sort_order=VALUES(sort_order)");
+            $mediumPrice = null;
+            foreach ($codes as $i => $code) {
+                $sizePrice = (float)($prices[$i] ?? 0);
+                if ($sizePrice <= 0) continue; // skip blank rows
+                $sizeLabel  = trim((string)($labels[$i] ?? $code));
+                $sizeFactor = (float)($factors[$i] ?? 1.0);
+                $sizeSort   = (int)($sorts[$i] ?? 0);
+                $up->bind_param("issddi", $id, $code, $sizeLabel, $sizePrice, $sizeFactor, $sizeSort);
+                $up->execute();
+                if ($code === 'M') $mediumPrice = $sizePrice;
+            }
+            // Keep products.price == Medium so legacy single-price paths stay correct
+            if ($mediumPrice !== null) {
+                $sp = $conn->prepare("UPDATE products SET price=? WHERE product_id=?");
+                $sp->bind_param("di", $mediumPrice, $id);
+                $sp->execute();
+                $product['price'] = $mediumPrice;
+            }
+        }
+
+        // Refresh prefill state to reflect what was just saved
+        $existingSizes = [];
+        $qs2 = $conn->prepare("SELECT size_code,label,price,size_factor,sort_order FROM product_sizes WHERE product_id=? ORDER BY sort_order ASC");
+        $qs2->bind_param("i", $id);
+        $qs2->execute();
+        $rs2 = $qs2->get_result();
+        while ($row2 = $rs2->fetch_assoc()) { $existingSizes[$row2['size_code']] = $row2; }
+        $hasSizes = (bool)$has_sizes;
     }
 }
 
@@ -578,6 +628,40 @@ input[name=category] { display: none; }
                             <input type="number" id="f_price" name="price" step="0.01" min="0" max="9999.99"
                                 required class="has-prefix"
                                 value="<?= $product['price'] ?>">
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label class="form-check" for="has_sizes" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="has_sizes" name="has_sizes" value="1"
+                                <?= $hasSizes ? 'checked' : '' ?>
+                                onchange="document.getElementById('sizeRows').style.display=this.checked?'block':'none'">
+                            <span class="flabel" style="margin:0">This product has sizes (S / M / L)</span>
+                        </label>
+                        <div id="sizeRows" style="display:<?= $hasSizes ? 'block' : 'none' ?>;flex-direction:column;gap:10px;margin-top:10px;">
+                            <?php
+                            $sizeDefaults = [
+                                ['code'=>'S','label'=>'Small','factor'=>'0.80','sort'=>0],
+                                ['code'=>'M','label'=>'Medium','factor'=>'1.00','sort'=>1],
+                                ['code'=>'L','label'=>'Large','factor'=>'1.30','sort'=>2],
+                            ];
+                            foreach ($sizeDefaults as $d):
+                                $ex = $existingSizes[$d['code']] ?? null;
+                                $pv = $ex['price'] ?? '';
+                                $lv = $ex['label'] ?? $d['label'];
+                                $fv = $ex['size_factor'] ?? $d['factor'];
+                            ?>
+                            <div class="size-row" style="display:flex;gap:8px;align-items:center;">
+                                <input type="hidden" name="size_code[]" value="<?= $d['code'] ?>">
+                                <input type="hidden" name="size_sort[]" value="<?= $d['sort'] ?>">
+                                <input type="text" name="size_label[]" value="<?= htmlspecialchars($lv) ?>" placeholder="Label" style="flex:1.3">
+                                <div class="input-wrap" style="flex:1">
+                                    <span class="prefix">$</span>
+                                    <input type="number" step="0.01" min="0" name="size_price[]" value="<?= htmlspecialchars($pv) ?>" placeholder="Price" class="has-prefix">
+                                </div>
+                                <input type="number" step="0.01" min="0" name="size_factor[]" value="<?= htmlspecialchars($fv) ?>" placeholder="Stock ×" style="flex:0.8">
+                            </div>
+                            <?php endforeach; ?>
                         </div>
                     </div>
                 </div>
