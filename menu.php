@@ -373,13 +373,17 @@ while ($row = mysqli_fetch_assoc($result)) {
       transition: transform .12s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
       user-select: none;
     }
-    .cp-pay-method .cp-pm-ico { font-size: 19px; color: var(--text-muted,#9a8070); transition: color .15s ease; }
+    /* per-method accent colors */
+    .cp-pay-method[data-method="bakong"]   { --m:#e0454a; --mbg:rgba(224,69,74,.12);  --mring:rgba(224,69,74,.22); }
+    .cp-pay-method[data-method="cash"]     { --m:#27ae60; --mbg:rgba(39,174,96,.12);  --mring:rgba(39,174,96,.22); }
+    .cp-pay-method[data-method="paylater"] { --m:#e8973a; --mbg:rgba(232,151,58,.12); --mring:rgba(232,151,58,.22); }
+    .cp-pay-method[data-method="riel"]     { --m:#2d8fd5; --mbg:rgba(45,143,213,.12); --mring:rgba(45,143,213,.22); }
+    .cp-pay-method .cp-pm-ico { font-size: 19px; color: var(--m,#9a8070); transition: color .15s ease; }
     .cp-pay-method .cp-pm-lbl { font-size: 11.5px; font-weight: 600; }
-    .cp-pay-method .cp-pm-check { position: absolute; top: 6px; right: 7px; font-size: 13px; color: #d1904b; opacity: 0; transform: scale(.5); transition: opacity .15s ease, transform .15s ease; }
-    .cp-pay-method:hover { border-color: rgba(209,144,75,.5); }
+    .cp-pay-method .cp-pm-check { position: absolute; top: 6px; right: 7px; font-size: 13px; color: var(--m,#d1904b); opacity: 0; transform: scale(.5); transition: opacity .15s ease, transform .15s ease; }
+    .cp-pay-method:hover { border-color: var(--m,#d1904b); }
     .cp-pay-method:active { transform: scale(.96); }
-    .cp-pay-method.selected { border-color: #d1904b; background: rgba(209,144,75,.12); color: var(--text,#1a1410); box-shadow: 0 0 0 3px rgba(209,144,75,.16); }
-    .cp-pay-method.selected .cp-pm-ico { color: #d1904b; }
+    .cp-pay-method.selected { border-color: var(--m,#d1904b); background: var(--mbg,rgba(209,144,75,.12)); color: var(--text,#1a1410); box-shadow: 0 0 0 3px var(--mring,rgba(209,144,75,.16)); }
     .cp-pay-method.selected .cp-pm-check { opacity: 1; transform: scale(1); }
     .cp-pay-method input { display: none; }
 
