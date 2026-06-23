@@ -1164,6 +1164,9 @@ body {
                 <div class="item-info">
                     <h3><?= htmlspecialchars($item['product_name']) ?></h3>
                     <div class="item-meta">
+                        <?php if (!empty($item['size_label'])): ?>
+                            <span>Size: <?= htmlspecialchars($item['size_label']) ?></span>
+                        <?php endif; ?>
                         <?php if (!empty($item['sweetness'])): ?>
                             <span>Sweet: <?= htmlspecialchars($item['sweetness']) ?></span>
                         <?php endif; ?>

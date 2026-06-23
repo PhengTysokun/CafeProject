@@ -812,9 +812,10 @@ if (!empty($flat_products)) {
           $qty  = (int)($item['qty'] ?? 1);
           $line = (float)($item['price'] ?? 0) * $qty;
           $meta = array_filter([
-            !empty($item['sweetness']) ? 'Sweet: '.$item['sweetness'] : '',
-            !empty($item['ice'])       ? 'Ice: '.$item['ice']         : '',
-            !empty($item['milk'])      ? 'Milk: '.$item['milk']       : '',
+            !empty($item['size_label']) ? 'Size: '.$item['size_label']  : '',
+            !empty($item['sweetness'])  ? 'Sweet: '.$item['sweetness']  : '',
+            !empty($item['ice'])        ? 'Ice: '.$item['ice']          : '',
+            !empty($item['milk'])       ? 'Milk: '.$item['milk']        : '',
           ]);
         ?>
         <div class="cp-item" id="cp-item-<?= $i ?>">
@@ -1325,6 +1326,7 @@ function renderCartPanel(data) {
   var itemsHtml = '<div id="cpItems">';
   data.items.forEach(function(item) {
     var meta = [
+      item.size_label ? 'Size: '  + item.size_label : '',
       item.sweetness ? 'Sweet: ' + item.sweetness : '',
       item.ice       ? 'Ice: '   + item.ice       : '',
       item.milk      ? 'Milk: '  + item.milk      : '',
