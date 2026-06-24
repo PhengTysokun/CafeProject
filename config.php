@@ -6,10 +6,17 @@ date_default_timezone_set('Asia/Phnom_Penh');
 //   CREATE USER 'cafe_pos'@'localhost' IDENTIFIED BY 'Caf3P0S!2025#Kh';
 //   GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER ON db_coffee.* TO 'cafe_pos'@'localhost';
 //   FLUSH PRIVILEGES;
+// Local XAMPP defaults. In production, override these via a git-ignored
+// db_config.local.php (copy db_config.local.example.php) so real credentials
+// never live in the repo — same pattern as bakong_config.local.php.
 $servername = "localhost";
 $username   = "root";
 $password   = "";
 $dbname     = "db_coffee";
+
+if (is_file(__DIR__ . '/db_config.local.php')) {
+    require __DIR__ . '/db_config.local.php';
+}
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 

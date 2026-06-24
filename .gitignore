@@ -2,8 +2,12 @@
 /node_modules/
 /vendor/
 
-# Local secrets — real Bakong payment credentials live here, never commit
+# Local secrets — real credentials live here, never commit
 bakong_config.local.php
+db_config.local.php
+
+# Database dump generated for migration (may contain live data)
+db_coffee_export.sql
 
 # Generated output
 /reports/
