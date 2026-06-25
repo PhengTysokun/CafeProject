@@ -80,8 +80,8 @@ function he($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
 
 .topbar{display:flex;align-items:center;gap:12px;padding:18px 32px;border-bottom:1px solid var(--border);background:var(--bg-card);position:sticky;top:0;z-index:100;}
-.topbar-back{display:flex;align-items:center;gap:6px;color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;padding:6px 12px;border-radius:8px;border:1px solid var(--border);transition:var(--transition);}
-.topbar-back:hover{color:var(--accent);border-color:var(--accent);}
+.topbar-back{display:flex;align-items:center;gap:7px;color:#d1904b;text-decoration:none;font-size:13px;font-weight:600;padding:7px 14px;border-radius:10px;border:1px solid rgba(209,144,75,.35);background:rgba(209,144,75,.08);transition:var(--transition);}
+.topbar-back:hover{background:rgba(209,144,75,.16);border-color:#d1904b;}
 .topbar-title{font-size:18px;font-weight:700;color:var(--text-light);flex:1;}
 .topbar-title i{color:var(--accent);margin-right:8px;}
 .btn{display:inline-flex;align-items:center;gap:7px;padding:8px 18px;border-radius:9px;border:none;font-family:'Poppins',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:var(--transition);text-decoration:none;}

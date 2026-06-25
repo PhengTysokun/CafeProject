@@ -509,7 +509,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
 
     <!-- Top Bar -->
     <div class="top-bar">
-        <a href="dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
+        <a href="dashboard.php" style="display:inline-flex;align-items:center;gap:7px;color:#d1904b;text-decoration:none;font-size:13px;font-weight:600;padding:7px 14px;border-radius:10px;border:1px solid rgba(209,144,75,.35);background:rgba(209,144,75,.08);transition:all .2s;"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
         <button class="top-bar a theme-toggle" onclick="toggleTheme()" style="background:var(--bg-card);border:1px solid var(--border);border-radius:50px;padding:8px 16px;cursor:pointer;color:var(--text);font-family:'Poppins',sans-serif;font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:8px;">
             <i id="themeIcon" class="fa-solid fa-moon" style="color:var(--accent);"></i>
             <span id="themeText">Dark</span>

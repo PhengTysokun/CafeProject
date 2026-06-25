@@ -230,16 +230,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['refill'])) {
         }
 
         .back-link {
-            display: inline-block;
-            color: var(--text-muted);
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: #d1904b;
             text-decoration: none;
-            font-size: 14px;
+            font-size: 13px;
+            font-weight: 600;
             margin-top: 20px;
+            padding: 7px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(209,144,75,.35);
+            background: rgba(209,144,75,.08);
             transition: var(--transition);
         }
 
         .back-link:hover {
-            color: var(--accent);
+            background: rgba(209,144,75,.16);
+            border-color: #d1904b;
         }
 
         @media (max-width: 768px) {

@@ -127,15 +127,15 @@ body::after {
 .back-btn {
     position: fixed;
     top: 20px; left: 20px;
-    display: flex; align-items: center; gap: 8px;
-    color: var(--text-muted);
+    display: flex; align-items: center; gap: 7px;
+    color: #d1904b;
     text-decoration: none;
-    font-weight: 500; font-size: 14px;
+    font-weight: 600; font-size: 14px;
     padding: 9px 16px;
     border-radius: 12px;
-    background: rgba(18,18,18,0.9);
+    background: rgba(209,144,75,.08);
     backdrop-filter: blur(10px);
-    border: 1px solid var(--border);
+    border: 1px solid rgba(209,144,75,.35);
     transition: var(--transition);
     z-index: 100;
 }

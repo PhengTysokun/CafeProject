@@ -565,6 +565,14 @@ _migrate($conn, 'drink_sizes_v1', function($db) {
         ADD COLUMN IF NOT EXISTS size_label VARCHAR(20) NULL");
 });
 
+// ── Loyalty history: widen type ENUM so adjustment rows store correctly ──
+// Code writes 'adjusted_add'/'adjusted_deduct' (cancel reversal, order-edit point sync).
+// The original ENUM lacked them → on strict-mode MySQL those INSERTs fail; on lax mode
+// they silently stored ''. Add the values so every loyalty path records accurately.
+_migrate($conn, 'loyalty_history_type_enum_v1', function($db) {
+    $db->query("ALTER TABLE loyalty_history MODIFY COLUMN type ENUM('earned','redeemed','bonus','created','adjusted_add','adjusted_deduct') NOT NULL");
+});
+
 // ── SANITIZE FUNCTION ──
 if (!function_exists('sanitizeForReceipt')) {
     function sanitizeForReceipt(string $text): string {

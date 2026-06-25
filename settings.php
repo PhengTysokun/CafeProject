@@ -168,14 +168,14 @@ body::after {
     position: fixed;
     top: 22px; left: 22px;
     display: flex; align-items: center; gap: 7px;
-    color: var(--text-muted);
+    color: #d1904b;
     text-decoration: none;
-    font-weight: 500; font-size: 13px;
+    font-weight: 600; font-size: 13px;
     padding: 9px 16px;
     border-radius: 12px;
-    background: rgba(15,15,15,0.85);
+    background: rgba(209,144,75,.08);
     backdrop-filter: blur(16px);
-    border: 1px solid var(--border);
+    border: 1px solid rgba(209,144,75,.35);
     transition: var(--transition);
     z-index: 100;
 }

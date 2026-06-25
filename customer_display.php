@@ -100,11 +100,11 @@ body{
 .topbar-right{display:flex;align-items:center;gap:14px;}
 .clock{font-size:16px;font-weight:700;color:var(--amber);letter-spacing:.04em;}
 .back-btn{
-  display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:10px;
-  background:rgba(255,255,255,.05);border:1px solid var(--border);
-  color:var(--muted2);font-size:12px;font-weight:500;text-decoration:none;transition:all .2s;
+  display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:10px;
+  background:rgba(209,144,75,.08);border:1px solid rgba(209,144,75,.35);
+  color:#d1904b;font-size:13px;font-weight:600;text-decoration:none;transition:all .2s;
 }
-.back-btn:hover{color:var(--text);background:rgba(255,255,255,.09);}
+.back-btn:hover{background:rgba(209,144,75,.16);border-color:#d1904b;}
 
 /* ── LEGEND ── */
 .legend{

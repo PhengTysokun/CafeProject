@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $qtys = isset($_POST['qtys']) ? json_decode($_POST['qtys'], true) : [];
 
     // Verify order is still editable and fetch order_date to preserve happy hour
-    $stmt = $conn->prepare("SELECT order_id, order_date FROM orders WHERE order_id = ? AND payment_method = 'paylater' AND status = 'Preparing'");
+    $stmt = $conn->prepare("SELECT order_id, order_date, loyalty_card_id, points_earned FROM orders WHERE order_id = ? AND payment_method = 'paylater' AND status = 'Preparing'");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
     $editable_order = $stmt->get_result()->fetch_assoc();
@@ -64,11 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             exit;
         }
 
-        $subtotal  = 0; $total_qty = 0; $min_price = PHP_FLOAT_MAX;
+        $subtotal  = 0; $total_qty = 0; $min_price = PHP_FLOAT_MAX; $points_qty = 0;
         foreach ($remaining as $row) {
             $p = (float)$row['price']; $q = (int)$row['quantity'];
             $subtotal  += $p * $q;
             $total_qty += $q;
+            if ($p > 0) $points_qty += $q;   // chargeable drinks earn points (gifts at $0 don't)
             if ($p < $min_price) $min_price = $p;
         }
 
@@ -89,6 +90,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt_upd = $conn->prepare("UPDATE orders SET total = ?, promotion_discount = ? WHERE order_id = ?");
         $stmt_upd->bind_param("ddi", $total, $total_discount, $order_id);
         $stmt_upd->execute();
+
+        // ── LOYALTY: keep points in sync with the new drink count ──
+        // Points were granted at order creation (points_earned). After editing, adjust
+        // the card balance by the delta so adding drinks adds points and removing
+        // drinks takes them back. Only chargeable drinks (price > 0) count.
+        $lc_id = (int)($editable_order['loyalty_card_id'] ?? 0);
+        if ($lc_id > 0) {
+            $old_pts = (int)($editable_order['points_earned'] ?? 0);
+            $delta   = $points_qty - $old_pts;
+            if ($delta !== 0) {
+                $lc = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points + ?), total_drinks = GREATEST(0, total_drinks + ?), last_used = NOW() WHERE card_id = ?");
+                $lc->bind_param("iii", $delta, $delta, $lc_id);
+                $lc->execute();
+
+                $htype = $delta > 0 ? 'adjusted_add' : 'adjusted_deduct';
+                $hdesc = "Order #{$order_id} edited — points adjusted by {$delta}";
+                $hi = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, ?, ?)");
+                $hi->bind_param("iiiss", $lc_id, $order_id, $delta, $htype, $hdesc);
+                $hi->execute();
+
+                // Keep the order's recorded points current so future edits delta correctly
+                $up = $conn->prepare("UPDATE orders SET points_earned = ? WHERE order_id = ?");
+                $up->bind_param("ii", $points_qty, $order_id);
+                $up->execute();
+            }
+        }
 
         $conn->commit();
         echo json_encode([

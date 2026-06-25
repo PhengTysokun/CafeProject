@@ -258,18 +258,18 @@ body::after {
     position: fixed;
     top: 24px;
     left: 24px;
-    color: var(--text-muted);
+    color: #d1904b;
     text-decoration: none;
-    font-weight: 500;
+    font-weight: 600;
     font-size: 15px;
     transition: var(--transition);
     display: flex;
     align-items: center;
-    gap: 8px;
-    background: var(--bg-card);
+    gap: 7px;
+    background: rgba(209,144,75,.08);
     padding: 10px 18px;
     border-radius: 12px;
-    border: 1px solid var(--border);
+    border: 1px solid rgba(209,144,75,.35);
     z-index: 100;
 }
 

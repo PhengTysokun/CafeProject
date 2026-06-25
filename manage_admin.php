@@ -101,13 +101,13 @@ body {
 }
 .back-btn {
     display: flex; align-items: center; gap: 7px;
-    color: var(--accent); text-decoration: none;
+    color: #d1904b; text-decoration: none;
     font-weight: 600; font-size: 13px;
-    padding: 7px 14px; border: 1px solid #2a2a2a;
-    border-radius: 10px; background: #0f0f0f;
+    padding: 7px 14px; border: 1px solid rgba(209,144,75,.35);
+    border-radius: 10px; background: rgba(209,144,75,.08);
     transition: background .2s, border-color .2s;
 }
-.back-btn:hover { background: #1a1a1a; border-color: var(--accent); }
+.back-btn:hover { background: rgba(209,144,75,.16); border-color: #d1904b; }
 .nav-title {
     font-size: 14px; font-weight: 600; color: var(--text);
     margin-left: 4px;

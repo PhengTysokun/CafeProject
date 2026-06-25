@@ -78,10 +78,15 @@ body{
 }
 
 .back{
-  color:var(--accent);
+  display:inline-flex;align-items:center;gap:7px;
+  color:#d1904b;
   text-decoration:none;
-  font-weight:600;
+  font-weight:600;font-size:13px;
+  padding:7px 14px;border-radius:10px;
+  border:1px solid rgba(209,144,75,.35);background:rgba(209,144,75,.08);
+  transition:all .2s;
 }
+.back:hover{background:rgba(209,144,75,.16);border-color:#d1904b;}
 
 h2{
   text-align:center;

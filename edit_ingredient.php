@@ -144,15 +144,15 @@ body {
 }
 .topnav a.back-btn {
     display: flex; align-items: center; gap: 7px;
-    color: var(--accent); text-decoration: none;
+    color: #d1904b; text-decoration: none;
     font-weight: 600; font-size: 13px;
     padding: 7px 14px;
-    border: 1px solid #2a2a2a;
+    border: 1px solid rgba(209,144,75,.35);
     border-radius: 10px;
-    background: #0f0f0f;
+    background: rgba(209,144,75,.08);
     transition: background .2s, border-color .2s;
 }
-.topnav a.back-btn:hover { background: #1a1a1a; border-color: var(--accent); }
+.topnav a.back-btn:hover { background: rgba(209,144,75,.16); border-color: #d1904b; }
 .breadcrumb {
     font-size: 12px; color: var(--muted);
     display: flex; align-items: center; gap: 6px;

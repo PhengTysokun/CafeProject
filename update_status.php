@@ -47,12 +47,14 @@ $stmt->execute();
 // ── LOYALTY: Earn points when order is Paid or Completed ──
 if ($new_status === 'Paid' || $new_status === 'Completed') {
     // Get loyalty card ID from order
-    $stmt = $conn->prepare("SELECT loyalty_card_id FROM orders WHERE order_id = ?");
+    $stmt = $conn->prepare("SELECT loyalty_card_id, points_earned FROM orders WHERE order_id = ?");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
-    
-    if ($order['loyalty_card_id']) {
+
+    // Guard: only award if a card is linked AND points were not already granted
+    // (confirm_order.php / check_payment.php award at creation/settlement — avoid double-counting)
+    if ($order['loyalty_card_id'] && (int)($order['points_earned'] ?? 0) === 0) {
         // Get total quantity of drinks (excluding loyalty items with price 0)
         $stmt = $conn->prepare("
             SELECT SUM(quantity) as total_drinks 
@@ -77,6 +79,11 @@ if ($new_status === 'Paid' || $new_status === 'Completed') {
             ");
             $description = "Earned {$total_drinks} points from order #{$order_id}";
             $stmt->bind_param("iiis", $order['loyalty_card_id'], $order_id, $total_drinks, $description);
+            $stmt->execute();
+
+            // Record on the order so points are never granted twice (the guard above reads this)
+            $stmt = $conn->prepare("UPDATE orders SET points_earned = ? WHERE order_id = ?");
+            $stmt->bind_param("ii", $total_drinks, $order_id);
             $stmt->execute();
         }
     }

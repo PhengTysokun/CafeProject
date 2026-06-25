@@ -185,18 +185,18 @@ body::after {
     left: 24px;
     display: flex;
     align-items: center;
-    gap: 10px;
-    color: var(--text-muted);
+    gap: 7px;
+    color: #d1904b;
     text-decoration: none;
-    font-weight: 500;
+    font-weight: 600;
     font-size: 15px;
     transition: var(--transition);
     z-index: 10;
     padding: 10px 18px;
     border-radius: 12px;
-    background: rgba(18, 18, 18, 0.8);
+    background: rgba(209,144,75,.08);
     backdrop-filter: blur(10px);
-    border: 1px solid var(--border);
+    border: 1px solid rgba(209,144,75,.35);
 }
 
 .back-btn:hover {

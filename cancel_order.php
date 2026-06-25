@@ -70,20 +70,39 @@ try {
         _restore_stock($conn, $order_id);
     }
 
-    $conn->commit();
+    // ── LOYALTY: reverse points for this order (inside the transaction so it
+    //    rolls back with everything else if anything fails) ──
+    $card_id    = (int)($order['loyalty_card_id'] ?? 0);
+    $pts_earned = (int)($order['points_earned']   ?? 0);
+    if ($card_id > 0) {
+        // 1) Claw back the points EARNED on this order
+        if ($pts_earned > 0) {
+            $stmt_pts = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points - ?), total_drinks = GREATEST(0, total_drinks - ?), last_used = NOW() WHERE card_id = ?");
+            $stmt_pts->bind_param("iii", $pts_earned, $pts_earned, $card_id);
+            $stmt_pts->execute();
+            $neg = -$pts_earned;
+            $stmt_hist = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, 'adjusted_deduct', 'Points reversed — order cancelled')");
+            $stmt_hist->bind_param("iii", $card_id, $order_id, $neg);
+            $stmt_hist->execute();
+        }
 
-    // ── Reverse loyalty points earned on this order ──
-    $card_id     = (int)($order['loyalty_card_id'] ?? 0);
-    $pts_earned  = (int)($order['points_earned']   ?? 0);
-    if ($card_id > 0 && $pts_earned > 0) {
-        $stmt_pts = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points - ?), last_used = NOW() WHERE card_id = ?");
-        $stmt_pts->bind_param("ii", $pts_earned, $card_id);
-        $stmt_pts->execute();
-        $neg = -$pts_earned;
-        $stmt_hist = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, 'adjusted_deduct', 'Points reversed — order cancelled')");
-        $stmt_hist->bind_param("iii", $card_id, $order_id, $neg);
-        $stmt_hist->execute();
+        // 2) Refund points the customer SPENT redeeming rewards on this order
+        //    (type='redeemed' rows are real reward redemptions; edit-sync uses adjusted_*)
+        $stmt_sp = $conn->prepare("SELECT COALESCE(SUM(-points_change), 0) AS spent FROM loyalty_history WHERE order_id = ? AND type = 'redeemed' AND points_change < 0");
+        $stmt_sp->bind_param("i", $order_id);
+        $stmt_sp->execute();
+        $spent = (int)$stmt_sp->get_result()->fetch_assoc()['spent'];
+        if ($spent > 0) {
+            $stmt_ref = $conn->prepare("UPDATE loyalty_cards SET points = points + ?, last_used = NOW() WHERE card_id = ?");
+            $stmt_ref->bind_param("ii", $spent, $card_id);
+            $stmt_ref->execute();
+            $stmt_rh = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, 'adjusted_add', 'Redeemed points refunded — order cancelled')");
+            $stmt_rh->bind_param("iii", $card_id, $order_id, $spent);
+            $stmt_rh->execute();
+        }
     }
+
+    $conn->commit();
 
     echo json_encode(["ok" => 1, "message" => "Order #{$order['daily_order_no']} cancelled successfully"]);
 

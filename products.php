@@ -185,7 +185,7 @@ body {
 .navbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .back-link {
-    color: var(--accent);
+    color: #d1904b;
     text-decoration: none;
     font-weight: 600;
     font-size: 13px;
@@ -194,8 +194,8 @@ body {
     gap: 7px;
     padding: 7px 14px;
     border-radius: 10px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
+    background: rgba(209,144,75,.08);
+    border: 1px solid rgba(209,144,75,.35);
     transition: var(--transition);
     white-space: nowrap;
 }

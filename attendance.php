@@ -68,12 +68,12 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 }
 .topbar-left { display:flex; align-items:center; gap:16px; }
 .back-btn {
-    display:inline-flex; align-items:center; gap:8px;
-    text-decoration:none; color:var(--text-muted);
-    font-size:13px; font-weight:500; padding:6px 12px;
-    border-radius:8px; border:1px solid var(--border); transition:all .2s;
+    display:inline-flex; align-items:center; gap:7px;
+    text-decoration:none; color:#d1904b;
+    font-size:13px; font-weight:600; padding:7px 14px;
+    border-radius:10px; border:1px solid rgba(209,144,75,.35); background:rgba(209,144,75,.08); transition:all .2s;
 }
-.back-btn:hover { color:var(--accent); border-color:rgba(209,144,75,.3); background:rgba(209,144,75,.06); }
+.back-btn:hover { background:rgba(209,144,75,.16); border-color:#d1904b; }
 .page-title { font-size:15px; font-weight:700; }
 .page-title span { color:var(--accent); }
 

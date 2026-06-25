@@ -90,7 +90,7 @@ $existing_order_id = ($is_add_to_order && isset($_SESSION['add_to_order_id']))
 
 if ($existing_order_id > 0) {
     $stmt = $conn->prepare("
-        SELECT order_id, customer_name, total, promotion_discount, is_open, order_date
+        SELECT order_id, customer_name, total, promotion_discount, is_open, order_date, loyalty_card_id, points_earned
         FROM orders
         WHERE order_id = ?
           AND is_open = 1
@@ -118,15 +118,17 @@ if ($existing_order_id > 0) {
     $was_happy_hour = ($orig_hour >= HAPPY_HOUR_START && $orig_hour < HAPPY_HOUR_END);
 
     // Combine existing + new items for full recalculation
-    $subtotal = 0; $total_qty = 0; $min_price = PHP_FLOAT_MAX;
+    $subtotal = 0; $total_qty = 0; $min_price = PHP_FLOAT_MAX; $points_qty = 0;
     foreach ($existing_items as $ei) {
         $p = (float)$ei['price']; $q = (int)$ei['quantity'];
         $subtotal += $p * $q; $total_qty += $q;
+        if ($p > 0) $points_qty += $q;
         if ($p < $min_price) $min_price = $p;
     }
     foreach ($_SESSION['cart'] as $item) {
         $p = (float)($item['price'] ?? 0.0); $q = max(1, (int)($item['qty'] ?? 1));
         $subtotal += $p * $q; $total_qty += $q;
+        if ($p > 0) $points_qty += $q;
         if ($p < $min_price) $min_price = $p;
     }
 
@@ -155,6 +157,28 @@ if ($existing_order_id > 0) {
         $stmt_upd = $conn->prepare("UPDATE orders SET total = ?, promotion_discount = ? WHERE order_id = ?");
         $stmt_upd->bind_param("ddi", $final_total, $final_discount, $existing_order_id);
         $stmt_upd->execute();
+
+        // ── LOYALTY: sync points with new combined drink count (adding items earns more) ──
+        $lc_id = (int)($existing_order['loyalty_card_id'] ?? 0);
+        if ($lc_id > 0) {
+            $old_pts = (int)($existing_order['points_earned'] ?? 0);
+            $delta   = $points_qty - $old_pts;
+            if ($delta !== 0) {
+                $lc = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points + ?), total_drinks = GREATEST(0, total_drinks + ?), last_used = NOW() WHERE card_id = ?");
+                $lc->bind_param("iii", $delta, $delta, $lc_id);
+                $lc->execute();
+
+                $htype = $delta > 0 ? 'adjusted_add' : 'adjusted_deduct';
+                $hdesc = "Order #{$existing_order_id} items added — points adjusted by {$delta}";
+                $hi = $conn->prepare("INSERT INTO loyalty_history (card_id, order_id, points_change, type, description) VALUES (?, ?, ?, ?, ?)");
+                $hi->bind_param("iiiss", $lc_id, $existing_order_id, $delta, $htype, $hdesc);
+                $hi->execute();
+
+                $up = $conn->prepare("UPDATE orders SET points_earned = ? WHERE order_id = ?");
+                $up->bind_param("ii", $points_qty, $existing_order_id);
+                $up->execute();
+            }
+        }
 
         $stmt_item = $conn->prepare("
             INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label)

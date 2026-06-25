@@ -664,6 +664,13 @@ body.no-sidebar{--sidebar-w:0px;}
     transition:.15s var(--ease);flex-shrink:0;
 }
 .btn-ready:hover{background:var(--amber-light);transform:scale(1.05);}
+.k-status-pill{
+    display:inline-flex;align-items:center;gap:5px;
+    background:rgba(209,144,75,.1);color:var(--amber);
+    border:1px solid rgba(209,144,75,.3);
+    font-size:11px;font-weight:600;
+    padding:5px 11px;border-radius:var(--r-xs);flex-shrink:0;
+}
 
 .k-empty{
     display:flex;flex-direction:column;align-items:center;
@@ -1416,9 +1423,9 @@ body.no-sidebar{--sidebar-w:0px;}
                 <div class="k-name"><?= htmlspecialchars($kr['customer_name']) ?></div>
                 <div class="k-total">$<?= number_format((float)$kr['total'], 2) ?></div>
                 <div class="k-timer <?= $tc ?>"><?= $mins ?>m</div>
-                <a href="update_status.php?order_id=<?= $kr['order_id'] ?>&status=Completed" class="btn-ready">
-                    <i class="fa-solid fa-check"></i> Ready
-                </a>
+                <span class="k-status-pill">
+                    <i class="fa-solid fa-fire-burner"></i> Preparing
+                </span>
             </div>
             <?php endforeach; else: ?>
             <div class="k-empty">
@@ -1900,9 +1907,9 @@ function fetchDashboardData(){
                             <div class="k-name">${o.customer_name}</div>
                             <div class="k-total">$${parseFloat(o.total).toFixed(2)}</div>
                             <div class="k-timer ${tc}">${mins}m</div>
-                            <a href="update_status.php?order_id=${o.order_id}&status=Completed" class="btn-ready">
-                                <i class="fa-solid fa-check"></i> Ready
-                            </a>
+                            <span class="k-status-pill">
+                                <i class="fa-solid fa-fire-burner"></i> Preparing
+                            </span>
                         </div>`;
                     }).join('');
                 } else {
