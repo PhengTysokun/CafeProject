@@ -225,6 +225,7 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
     <div class="topbar-left">
         <a href="dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
         <span class="page-title">Staff <span>Attendance</span></span>
+        <a href="attendance_history.php" class="back-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
     </div>
     <?php if ($is_today): ?>
     <div id="liveIndicatorWrap" style="display:<?= $still_working > 0 ? 'flex' : 'none' ?>;align-items:center;gap:8px;font-size:13px;color:var(--success)">
