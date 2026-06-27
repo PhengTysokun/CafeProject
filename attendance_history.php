@@ -44,9 +44,15 @@ if (($_GET['export'] ?? '') === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
     header("Content-Disposition: attachment; filename=\"attendance_{$from}_to_{$to}.csv\"");
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Date', 'Employee', 'Username', 'Clock In', 'Clock Out', 'Hours', 'Status']);
+
+    $csv_safe = function ($v) {
+        $s = (string)$v;
+        return ($s !== '' && strpbrk($s[0], "=+-@\t\r") !== false) ? "'" . $s : $s;
+    };
+
+    fputcsv($out, array_map($csv_safe, ['Date', 'Employee', 'Username', 'Clock In', 'Clock Out', 'Hours', 'Status']));
     while ($r = $csv_res->fetch_assoc()) {
-        fputcsv($out, [
+        fputcsv($out, array_map($csv_safe, [
             $r['date'],
             $r['emp_name'],
             $r['username'],
@@ -54,7 +60,7 @@ if (($_GET['export'] ?? '') === 'csv') {
             $r['clock_out'] ?? '',
             is_null($r['hours_worked']) ? '' : number_format((float)$r['hours_worked'], 2),
             is_null($r['clock_out']) ? 'Active' : 'Complete',
-        ]);
+        ]));
     }
     fclose($out);
     exit;
