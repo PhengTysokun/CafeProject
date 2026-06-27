@@ -1,10 +1,20 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) session_start();
-require 'config.php';
-require 'admin_only.php';
+require 'auth.php';   // session + login + role refresh + config (provides can())
 
-$order_id = (int)($_GET['order_id'] ?? 0);
+$order_id   = (int)($_GET['order_id'] ?? 0);
 $new_status = $_GET['status'] ?? '';
+$is_ajax    = isset($_GET['ajax']);
+
+/** Respond as JSON for AJAX callers, else fall back to a redirect. Always exits. */
+function us_respond(bool $ok, string $msg, bool $is_ajax, string $err_qs = ''): void {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => $ok, 'error' => $ok ? null : $msg]);
+    } else {
+        header('Location: dashboard.php' . ($ok ? '' : $err_qs));
+    }
+    exit;
+}
 
 // ── Allowed transitions ──
 $allowed_transitions = [
@@ -14,8 +24,20 @@ $allowed_transitions = [
 ];
 
 if ($order_id <= 0 || empty($new_status)) {
-    header("Location: dashboard.php");
-    exit;
+    us_respond(false, 'Invalid request.', $is_ajax);
+}
+
+// ── Authorization (per action) ──
+// Marking a drink "Completed" is the barista-station action → anyone holding
+// barista_station (barista, manager, admin). Any other transition (Paid,
+// Cancelled) stays manager/admin-only.
+$role   = $_SESSION['role'] ?? '';
+$is_mgr = in_array($role, ['admin', 'manager'], true);
+$authorized = ($new_status === 'Completed') ? can('barista_station') : $is_mgr;
+
+if (!$authorized) {
+    http_response_code(403);
+    us_respond(false, 'You are not allowed to perform this action.', $is_ajax, '?denied=1');
 }
 
 // Fetch current status
@@ -25,20 +47,18 @@ $stmt->execute();
 $row = $stmt->get_result()->fetch_assoc();
 
 if (!$row) {
-    header("Location: dashboard.php");
-    exit;
+    us_respond(false, 'Order not found.', $is_ajax);
 }
 
 $current_status = $row['status'];
 
 // Validate transition
-if (!isset($allowed_transitions[$current_status]) || !in_array($new_status, $allowed_transitions[$current_status])) {
-    header("Location: dashboard.php?error=invalid_transition");
-    exit;
+if (!isset($allowed_transitions[$current_status]) || !in_array($new_status, $allowed_transitions[$current_status], true)) {
+    us_respond(false, 'This order can no longer be updated.', $is_ajax, '?error=invalid_transition');
 }
 
 // Apply status update
-$extra_sql = ($new_status === 'Completed') ? ", is_open = 0, completed_at = NOW()" : "";
+$extra_sql  = ($new_status === 'Completed') ? ", is_open = 0, completed_at = NOW()" : "";
 $extra_sql .= ($new_status === 'Paid') ? ", completed_at = NOW()" : "";
 $stmt = $conn->prepare("UPDATE orders SET status = ? $extra_sql WHERE order_id = ?");
 $stmt->bind_param("si", $new_status, $order_id);
@@ -57,21 +77,21 @@ if ($new_status === 'Paid' || $new_status === 'Completed') {
     if ($order['loyalty_card_id'] && (int)($order['points_earned'] ?? 0) === 0) {
         // Get total quantity of drinks (excluding loyalty items with price 0)
         $stmt = $conn->prepare("
-            SELECT SUM(quantity) as total_drinks 
-            FROM order_items 
+            SELECT SUM(quantity) as total_drinks
+            FROM order_items
             WHERE order_id = ? AND price > 0
         ");
         $stmt->bind_param("i", $order_id);
         $stmt->execute();
         $items = $stmt->get_result()->fetch_assoc();
         $total_drinks = (int)($items['total_drinks'] ?? 0);
-        
+
         if ($total_drinks > 0) {
             // Add points (1 point per drink)
             $stmt = $conn->prepare("UPDATE loyalty_cards SET points = points + ?, total_orders = total_orders + 1, total_drinks = total_drinks + ?, last_used = NOW() WHERE card_id = ?");
             $stmt->bind_param("iii", $total_drinks, $total_drinks, $order['loyalty_card_id']);
             $stmt->execute();
-            
+
             // Add history
             $stmt = $conn->prepare("
                 INSERT INTO loyalty_history (card_id, order_id, points_change, type, description)
@@ -89,6 +109,4 @@ if ($new_status === 'Paid' || $new_status === 'Completed') {
     }
 }
 
-header("Location: dashboard.php");
-exit;
-?>
+us_respond(true, '', $is_ajax);

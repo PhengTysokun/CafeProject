@@ -540,6 +540,20 @@ _migrate($conn, 'stock_count_module_fix_v2', function($db) {
     $db->query("UPDATE permissions SET module='Reconciliation' WHERE slug IN ('stock_count','cash_reconciliation')");
 });
 
+// ── Re-grant barista_station via role_id ──
+// The legacy rbac_barista_station_recon_v1 inserted into a `role` (slug) column
+// that was later dropped in favour of role_id, so those grants silently failed
+// and NO role actually held barista_station — only admin (can() bypass) could
+// reach barista_display.php. Re-grant to the operational roles using role_id.
+// admin bypasses can(), so it does not need an explicit row.
+_migrate($conn, 'rbac_barista_station_roleid_v1', function($db) {
+    foreach (['barista', 'manager'] as $role) {
+        $db->query("INSERT IGNORE INTO role_permissions (role_id, permission_id)
+            SELECT r.id, p.id FROM roles r, permissions p
+            WHERE r.slug='$role' AND p.slug='barista_station'");
+    }
+});
+
 // ── Drink sizes: products.has_sizes, product_sizes table, order_items size columns ──
 _migrate($conn, 'drink_sizes_v1', function($db) {
     $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS has_sizes TINYINT(1) NOT NULL DEFAULT 0");
