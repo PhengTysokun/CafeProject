@@ -28,6 +28,38 @@ function qs(array $overrides = []): string {
     return 'attendance_history.php?' . http_build_query($p);
 }
 
+// ── CSV export (must run before any HTML output) ──
+if (($_GET['export'] ?? '') === 'csv') {
+    $csv_stmt = $conn->prepare(
+        "SELECT a.date, COALESCE(e.name, a.username) AS emp_name, a.username,
+                a.clock_in, a.clock_out, a.hours_worked
+         FROM attendance a LEFT JOIN employees e ON e.user_id = a.user_id
+         WHERE $where
+         ORDER BY a.date DESC, a.clock_in ASC"
+    );
+    $csv_stmt->bind_param($types, ...$binds);
+    $csv_stmt->execute();
+    $csv_res = $csv_stmt->get_result();
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header("Content-Disposition: attachment; filename=\"attendance_{$from}_to_{$to}.csv\"");
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Date', 'Employee', 'Username', 'Clock In', 'Clock Out', 'Hours', 'Status']);
+    while ($r = $csv_res->fetch_assoc()) {
+        fputcsv($out, [
+            $r['date'],
+            $r['emp_name'],
+            $r['username'],
+            $r['clock_in'],
+            $r['clock_out'] ?? '',
+            is_null($r['hours_worked']) ? '' : number_format((float)$r['hours_worked'], 2),
+            is_null($r['clock_out']) ? 'Active' : 'Complete',
+        ]);
+    }
+    fclose($out);
+    exit;
+}
+
 // ── Pagination math ──
 $per_page = 10;
 $page     = max(1, (int)($_GET['page'] ?? 1));
