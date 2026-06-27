@@ -70,6 +70,17 @@ $summary = $sum_stmt->get_result()->fetch_assoc();
 $emp_list = $conn->query(
     "SELECT user_id, name FROM employees WHERE user_id IS NOT NULL ORDER BY name ASC"
 )->fetch_all(MYSQLI_ASSOC);
+
+// ── Quick-range presets + active detection ──
+$presets = [
+    'week'  => [date('Y-m-d', strtotime('monday this week')), $today],
+    'month' => [date('Y-m-01'),                               $today],
+    'm30'   => [$default_from,                                $today],
+];
+$active_preset = '';
+foreach ($presets as $k => $range) {
+    if ($from === $range[0] && $to === $range[1]) { $active_preset = $k; break; }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -260,6 +271,22 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
 .fb-field { display:flex; flex-direction:column; gap:5px; }
 .fb-label { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:var(--text-muted); }
 .filters-bar .date-input { min-width:150px; }
+
+/* Presets + CSV */
+.preset-row { display:flex; gap:6px; flex-wrap:wrap; }
+.preset-btn {
+    display:inline-flex; align-items:center; height:38px; padding:0 14px;
+    border-radius:8px; border:1px solid var(--border); background:rgba(255,255,255,.03);
+    color:var(--text-muted); font-size:12.5px; font-weight:600; text-decoration:none; transition:all .2s;
+}
+.preset-btn:hover { color:var(--accent); border-color:rgba(209,144,75,.3); }
+.preset-btn.active { background:var(--accent); border-color:var(--accent); color:#1a1410; }
+.csv-btn {
+    display:inline-flex; align-items:center; gap:7px; height:38px; padding:0 16px;
+    border-radius:8px; border:1px solid rgba(85,224,135,.3); background:rgba(85,224,135,.08);
+    color:var(--success); font-size:12.5px; font-weight:600; text-decoration:none; transition:all .2s;
+}
+.csv-btn:hover { background:rgba(85,224,135,.16); border-color:var(--success); }
 </style>
 </head>
 <body>
@@ -289,6 +316,18 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
                 </option>
                 <?php endforeach; ?>
             </select>
+        </div>
+        <div class="fb-field">
+            <label class="fb-label">Quick range</label>
+            <div class="preset-row">
+                <a href="<?= htmlspecialchars(qs(['from'=>$presets['week'][0],  'to'=>$presets['week'][1],  'page'=>1])) ?>"  class="preset-btn<?= $active_preset==='week'  ? ' active' : '' ?>">This week</a>
+                <a href="<?= htmlspecialchars(qs(['from'=>$presets['month'][0], 'to'=>$presets['month'][1], 'page'=>1])) ?>" class="preset-btn<?= $active_preset==='month' ? ' active' : '' ?>">This month</a>
+                <a href="<?= htmlspecialchars(qs(['from'=>$presets['m30'][0],   'to'=>$presets['m30'][1],   'page'=>1])) ?>"   class="preset-btn<?= $active_preset==='m30'   ? ' active' : '' ?>">Last 30 days</a>
+            </div>
+        </div>
+        <div class="fb-field" style="margin-left:auto">
+            <label class="fb-label">&nbsp;</label>
+            <a href="<?= htmlspecialchars(qs(['export'=>'csv'])) ?>" class="csv-btn"><i class="fa-solid fa-file-csv"></i> Export CSV</a>
         </div>
     </form>
 
