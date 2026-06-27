@@ -964,6 +964,8 @@ kbd {
                             $display_label = $old_job;
                             $display_icon  = '';
                             foreach ($job_titles as $jt) { if ($jt['value'] === $old_job) { $display_icon = $jt['icon']; break; } }
+                            // Custom job title = a non-empty value not matching any known role
+                            $is_other = $old_job !== '' && !in_array($old_job, array_column($job_titles, 'value'), true);
                             ?>
                             <!-- Hidden real input submitted with form -->
                             <input type="hidden" name="job_title" id="jobInput" value="<?= htmlspecialchars($old_job) ?>" required>

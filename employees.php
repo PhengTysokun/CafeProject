@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'get_emp
     header('Content-Type: application/json');
     $eid = intval($_GET['eid'] ?? 0);
     if ($eid > 0) {
-        $s = $conn->prepare("SELECT e.*, COALESCE(NULLIF(u.role,''),'staff') AS emp_role FROM employees e LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) WHERE e.employee_id=?");
+        $s = $conn->prepare("SELECT e.*, COALESCE(r.slug,'staff') AS emp_role FROM employees e LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) LEFT JOIN roles r ON r.id = u.role_id WHERE e.employee_id=?");
         $s->bind_param("i", $eid); $s->execute();
         $emp = $s->get_result()->fetch_assoc();
         if ($emp) { ob_end_clean(); echo json_encode(['ok' => true, 'emp' => $emp]); exit; }
@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'get_sta
             FROM orders
             WHERE status NOT IN ('cancelled','refunded','void')
             GROUP BY employee_id
-        ) s ON s.employee_id = e.user_id
+        ) s ON s.employee_id = e.employee_id
     ");
     $stats = []; $max = 1;
     while ($r = $res->fetch_assoc()) {
@@ -182,7 +182,7 @@ if ($has_orders) {
             FROM orders
             WHERE status NOT IN ('cancelled','refunded','void')
             GROUP BY employee_id
-        ) s ON s.employee_id = e.user_id
+        ) s ON s.employee_id = e.employee_id
         ORDER BY total_orders DESC, e.name ASC
     ";
 } else {
