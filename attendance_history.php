@@ -136,7 +136,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 .date-input:focus { border-color:rgba(209,144,75,.45); }
 .date-label {
     font-size:15px; font-weight:700;
-    color:<?= $is_today ? 'var(--accent)' : 'var(--text)' ?>;
+    color:var(--text);
 }
 
 /* Summary cards */
@@ -254,10 +254,43 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
 .report-pager .rp-btn.active { background:var(--accent); border-color:var(--accent); color:#1a1410; }
 .report-pager .rp-btn:disabled { opacity:.35; cursor:not-allowed; }
 .report-pager .rp-ellipsis { color:var(--text-muted); padding:0 4px; }
+
+/* Filters bar */
+.filters-bar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:22px; }
+.fb-field { display:flex; flex-direction:column; gap:5px; }
+.fb-label { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:var(--text-muted); }
+.filters-bar .date-input { min-width:150px; }
 </style>
 </head>
 <body>
+<div class="topbar">
+    <div class="topbar-left">
+        <a href="attendance.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Attendance</a>
+        <span class="page-title">Attendance <span>History</span></span>
+    </div>
+</div>
 <div class="page-wrap">
+    <form method="GET" class="filters-bar" id="filtersForm">
+        <div class="fb-field">
+            <label class="fb-label">From</label>
+            <input type="date" name="from" class="date-input" value="<?= htmlspecialchars($from) ?>" max="<?= $today ?>" onchange="document.getElementById('filtersForm').submit()">
+        </div>
+        <div class="fb-field">
+            <label class="fb-label">To</label>
+            <input type="date" name="to" class="date-input" value="<?= htmlspecialchars($to) ?>" max="<?= $today ?>" onchange="document.getElementById('filtersForm').submit()">
+        </div>
+        <div class="fb-field">
+            <label class="fb-label">Employee</label>
+            <select name="emp" class="date-input" onchange="document.getElementById('filtersForm').submit()">
+                <option value="all"<?= $emp === 0 ? ' selected' : '' ?>>All staff</option>
+                <?php foreach ($emp_list as $e): ?>
+                <option value="<?= (int)$e['user_id'] ?>"<?= $emp === (int)$e['user_id'] ? ' selected' : '' ?>>
+                    <?= htmlspecialchars($e['name']) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+    </form>
 
     <!-- Summary -->
     <div class="summary">
