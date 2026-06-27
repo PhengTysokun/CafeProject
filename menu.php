@@ -159,6 +159,8 @@ if (!empty($flat_products)) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Apply theme before paint (default dark, matching the rest of the app) to avoid a flash -->
+  <script>(function(){if((localStorage.getItem('theme')||'dark')!=='light')document.documentElement.setAttribute('data-theme','dark');})();</script>
   <title>POS | Bird's Nest Coffee</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1169,7 +1171,7 @@ const CP_KHR_RATE = <?= defined('KHR_RATE') ? (int)KHR_RATE : 4100 ?>;
 
 // ── Theme ──
 (function() {
-  var saved = localStorage.getItem('theme') || 'light';
+  var saved = localStorage.getItem('theme') || 'dark';
   if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
 })();
 
@@ -1179,7 +1181,7 @@ function toggleTheme() {
   else        { html.setAttribute('data-theme','dark'); localStorage.setItem('theme','dark'); document.getElementById('themeIcon').className='fa-solid fa-sun'; }
 }
 document.addEventListener('DOMContentLoaded', function() {
-  if (localStorage.getItem('theme') === 'dark') document.getElementById('themeIcon').className = 'fa-solid fa-sun';
+  if ((localStorage.getItem('theme') || 'dark') === 'dark') document.getElementById('themeIcon').className = 'fa-solid fa-sun';
 });
 
 // ── Constants from PHP ──
