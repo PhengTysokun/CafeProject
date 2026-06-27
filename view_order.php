@@ -2542,7 +2542,8 @@ if ($action === "fetch") {
             oi.size_label,
             oi.quantity
         FROM orders o
-        LEFT JOIN users u ON u.user_id = o.employee_id
+        LEFT JOIN employees emp ON emp.employee_id = o.employee_id
+        LEFT JOIN users u ON u.user_id = emp.user_id
         LEFT JOIN roles ro ON ro.id = u.role_id
         LEFT JOIN order_remakes rm ON rm.order_id = o.order_id
         LEFT JOIN order_items oi ON o.order_id = oi.order_id

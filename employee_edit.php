@@ -5,7 +5,7 @@ require 'config.php';
 $id = intval($_GET['id']);
 
 // Load employee first (needed in POST too for user_id)
-$stmt_sel = $conn->prepare("SELECT e.*, COALESCE(u.role,'staff') AS emp_role FROM employees e LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) WHERE e.employee_id=?");
+$stmt_sel = $conn->prepare("SELECT e.*, COALESCE(r.slug,'staff') AS emp_role FROM employees e LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) LEFT JOIN roles r ON r.id = u.role_id WHERE e.employee_id=?");
 $stmt_sel->bind_param("i", $id);
 $stmt_sel->execute();
 $e = $stmt_sel->get_result()->fetch_assoc();
@@ -45,7 +45,7 @@ if (isset($_POST['update'])) {
         $vr->bind_param("s", $new_role); $vr->execute();
         if ($vr->get_result()->fetch_assoc()) {
             $uid = !empty($e['user_id']) ? intval($e['user_id']) : $id;
-            $rs  = $conn->prepare("UPDATE users SET role=? WHERE user_id=?");
+            $rs  = $conn->prepare("UPDATE users SET role_id=(SELECT id FROM roles WHERE slug=?) WHERE user_id=?");
             $rs->bind_param("si", $new_role, $uid); $rs->execute();
         }
     }
