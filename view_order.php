@@ -2105,7 +2105,7 @@ function closeRemakeModal() {
 
 async function confirmRemake() {
     const reason = document.getElementById('remakeReason').value.trim();
-    if (!reason) { alert('Please enter a reason for the remake.'); return; }
+    if (!reason) { showToast('Please enter a reason for the remake.', 'error'); return; }
 
     const btn = document.querySelector('#remakeModal .btn-refund-yes');
     btn.disabled = true;
@@ -2131,10 +2131,10 @@ async function confirmRemake() {
             showToast('🔁 ' + data.message);
             await loadOrders();
         } else {
-            alert(data.error || 'Failed to log remake.');
+            showToast('❌ ' + (data.error || 'Failed to log remake.'), 'error');
         }
     } catch(e) {
-        alert('Network error. Please try again.');
+        showToast('❌ Network error. Please try again.', 'error');
     } finally {
         btn.disabled = false;
     }

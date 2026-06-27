@@ -648,6 +648,31 @@ textarea.em-input { resize:vertical; min-height:62px; line-height:1.5; }
 .em-btn-save:hover { filter:brightness(1.1); transform:translateY(-1px); }
 .em-btn-save:disabled { opacity:.6; cursor:not-allowed; transform:none; }
 .em-photo-pill { display:none; align-items:center; gap:6px; font-size:11px; font-weight:500; color:var(--accent); background:rgba(209,144,75,.1); border:1px solid rgba(209,144,75,.2); padding:3px 10px; border-radius:20px; margin-top:6px; }
+
+/* ── UI CONFIRM MODAL (replaces native confirm) ── */
+.ui-confirm-overlay { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.66); backdrop-filter:blur(9px); opacity:0; pointer-events:none; transition:opacity .25s ease; }
+.ui-confirm-overlay.open { opacity:1; pointer-events:auto; }
+.ui-confirm-box { position:relative; width:100%; max-width:380px; background:var(--bg-card); border:1px solid var(--border); border-radius:22px; padding:30px 26px 24px; text-align:center; box-shadow:0 30px 80px rgba(0,0,0,.6); transform:translateY(20px) scale(.93); opacity:0; transition:transform .34s cubic-bezier(.34,1.56,.64,1), opacity .25s ease; overflow:hidden; }
+.ui-confirm-overlay.open .ui-confirm-box { transform:none; opacity:1; }
+.uc-glow { position:absolute; top:-64px; left:50%; transform:translateX(-50%); width:190px; height:120px; border-radius:50%; filter:blur(50px); opacity:.26; pointer-events:none; }
+.uc-icon { position:relative; width:62px; height:62px; margin:0 auto 16px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; color:var(--uc,#d1904b); animation:ucPop .42s cubic-bezier(.34,1.56,.64,1) both; }
+.uc-icon::after { content:''; position:absolute; inset:-6px; border-radius:50%; border:2px solid var(--uc,#d1904b); opacity:.25; animation:ucRing 1.9s ease-out infinite; }
+@keyframes ucRing { 0%{transform:scale(.9);opacity:.4} 70%{transform:scale(1.28);opacity:0} 100%{opacity:0} }
+@keyframes ucPop  { from{transform:scale(.4);opacity:0} to{transform:scale(1);opacity:1} }
+.uc-title { font-size:18px; font-weight:800; color:var(--text-light); margin-bottom:9px; }
+.uc-roles { display:flex; align-items:center; justify-content:center; gap:10px; margin:4px 0 13px; flex-wrap:wrap; }
+.uc-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:700; background:rgba(255,255,255,.06); border:1px solid var(--border); color:var(--text-muted); }
+.uc-arrow { color:var(--text-muted); font-size:12px; animation:ucArrow 1.2s ease-in-out infinite; }
+@keyframes ucArrow { 0%,100%{transform:translateX(0)} 50%{transform:translateX(4px)} }
+.uc-msg { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:22px; }
+.uc-msg b { color:var(--text); font-weight:700; }
+.uc-actions { display:flex; gap:10px; }
+.uc-btn { flex:1; padding:11px; border-radius:12px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Poppins',sans-serif; border:1px solid transparent; transition:var(--transition); }
+.uc-cancel { background:transparent; border-color:var(--border-hover); color:var(--text-muted); }
+.uc-cancel:hover { color:var(--text); border-color:var(--text-muted); }
+.uc-ok { background:var(--uc,#d1904b); color:#fff; }
+.uc-ok:hover { filter:brightness(1.09); transform:translateY(-1px); }
+@media (prefers-reduced-motion:reduce){ .uc-icon::after,.uc-arrow{animation:none} }
 </style>
 </head>
 <body>
@@ -1033,6 +1058,25 @@ foreach ($sorted_employees as $idx => $emp):
     </div>
 </div>
 
+<!-- ── UI CONFIRM MODAL ── -->
+<div class="ui-confirm-overlay" id="uiConfirmOverlay">
+  <div class="ui-confirm-box">
+    <div class="uc-glow" id="ucGlow"></div>
+    <div class="uc-icon" id="ucIcon"><i class="fa-solid fa-circle-question"></i></div>
+    <h3 class="uc-title" id="ucTitle">Are you sure?</h3>
+    <div class="uc-roles" id="ucRoles" style="display:none">
+      <span class="uc-pill" id="ucFrom"></span>
+      <i class="fa-solid fa-arrow-right uc-arrow"></i>
+      <span class="uc-pill" id="ucTo"></span>
+    </div>
+    <p class="uc-msg" id="ucMsg"></p>
+    <div class="uc-actions">
+      <button class="uc-btn uc-cancel" id="ucCancel" type="button">Cancel</button>
+      <button class="uc-btn uc-ok" id="ucOk" type="button">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-cnt"></div>
 
 <div class="sc-bar">
@@ -1304,16 +1348,81 @@ function moveRowToGroup(row, prevRole, newRole, newInfo) {
     anchor.after(row);
 }
 
+/* ── REUSABLE STYLED CONFIRM (replaces native confirm) ── */
+function uiConfirm(opts = {}) {
+    return new Promise(resolve => {
+        const ov     = document.getElementById('uiConfirmOverlay');
+        const color  = opts.color || '#d1904b';
+        const iconEl = document.getElementById('ucIcon');
+        const okBtn  = document.getElementById('ucOk');
+        const cancel = document.getElementById('ucCancel');
+
+        document.getElementById('ucTitle').textContent = opts.title || 'Are you sure?';
+        document.getElementById('ucMsg').innerHTML      = opts.message || '';
+        iconEl.innerHTML = `<i class="fa-solid ${opts.icon || 'fa-circle-question'}"></i>`;
+        iconEl.style.setProperty('--uc', color);
+        iconEl.style.background = color + '24';
+        iconEl.style.border     = '1px solid ' + color + '59';
+        document.getElementById('ucGlow').style.background = color;
+        okBtn.textContent     = opts.confirmText || 'Confirm';
+        cancel.textContent    = opts.cancelText  || 'Cancel';
+        okBtn.style.setProperty('--uc', color);
+
+        const rolesWrap = document.getElementById('ucRoles');
+        if (opts.fromRole && opts.toRole) {
+            const fi = ROLES_INFO[opts.fromRole], ti = ROLES_INFO[opts.toRole];
+            const from = document.getElementById('ucFrom'), to = document.getElementById('ucTo');
+            from.innerHTML = `<i class="fa-solid ${fi?.icon || 'fa-user'}"></i> ${fi?.name || opts.fromRole}`;
+            to.innerHTML   = `<i class="fa-solid ${ti?.icon || 'fa-user'}"></i> ${ti?.name || opts.toRole}`;
+            to.style.background  = color + '22';
+            to.style.borderColor = color + '66';
+            to.style.color       = color;
+            rolesWrap.style.display = 'flex';
+        } else {
+            rolesWrap.style.display = 'none';
+        }
+
+        ov.classList.add('open');
+        setTimeout(() => okBtn.focus(), 60);
+
+        function cleanup(val) {
+            ov.classList.remove('open');
+            okBtn.removeEventListener('click', onOk);
+            cancel.removeEventListener('click', onCancel);
+            ov.removeEventListener('click', onBack);
+            document.removeEventListener('keydown', onKey);
+            resolve(val);
+        }
+        const onOk     = () => cleanup(true);
+        const onCancel = () => cleanup(false);
+        const onBack   = e => { if (e.target === ov) cleanup(false); };
+        const onKey    = e => {
+            if (e.key === 'Escape') { e.stopPropagation(); cleanup(false); }
+            else if (e.key === 'Enter') { e.preventDefault(); cleanup(true); }
+        };
+        okBtn.addEventListener('click', onOk);
+        cancel.addEventListener('click', onCancel);
+        ov.addEventListener('click', onBack);
+        document.addEventListener('keydown', onKey);
+    });
+}
+
 async function updateRole(eid, sel) {
     const newRole = sel.value;
     const wrap    = sel.closest('.role-wrap');
     const prev    = wrap.dataset.current;
     if (newRole === prev) return;
-    const newName = ROLES_INFO[newRole]?.name || newRole;
-    if (!confirm(`Change this employee's role to ${newName}? Their page access updates immediately.`)) {
-        sel.value = prev;
-        return;
-    }
+    const info = ROLES_INFO[newRole];
+    const ok = await uiConfirm({
+        title:       'Change Role?',
+        message:     'Their page access updates <b>immediately</b>.',
+        confirmText: 'Yes, change',
+        icon:        info?.icon || 'fa-user-shield',
+        color:       info?.color || '#d1904b',
+        fromRole:    prev,
+        toRole:      newRole
+    });
+    if (!ok) { sel.value = prev; return; }
     try {
         const fd = new FormData();
         fd.append('action', 'quick_role');
