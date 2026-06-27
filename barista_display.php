@@ -210,6 +210,20 @@ body{
 .done-btn:hover{background:rgba(34,197,94,.2);border-color:rgba(34,197,94,.4);transform:translateY(-1px);}
 .done-btn:active{transform:scale(.98);}
 
+/* Error toast (failed Done) */
+.bd-toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:10px;
+  background:#2a1414;border:1px solid rgba(239,68,68,.4);color:#ff8a8a;
+  padding:13px 20px;border-radius:12px;font-size:14px;font-weight:600;
+  z-index:10000;box-shadow:0 8px 30px rgba(0,0,0,.5);
+  animation:bdToastIn .3s ease both;
+}
+.bd-toast i{font-size:16px;}
+.bd-toast-out{animation:bdToastOut .35s ease forwards;}
+@keyframes bdToastIn{from{opacity:0;transform:translate(-50%,16px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes bdToastOut{to{opacity:0;transform:translate(-50%,12px)}}
+
 /* ── Empty state ── */
 .empty{
   grid-column:1/-1;
@@ -308,9 +322,26 @@ function renderTicket(o) {
 
 async function markDone(orderId, card) {
     card.classList.add('completing');
-    await fetch(`update_status.php?order_id=${orderId}&status=Completed`);
-    knownOrders.delete(String(orderId));
-    setTimeout(() => card.remove(), 420);
+    try {
+        const res  = await fetch(`update_status.php?order_id=${orderId}&status=Completed&ajax=1`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Could not complete order.');
+        knownOrders.delete(String(orderId));
+        setTimeout(() => card.remove(), 420);
+    } catch (e) {
+        // Server rejected (or unreachable) — keep the ticket on screen, surface why
+        card.classList.remove('completing');
+        showBaristaToast(e.message || 'Could not complete order.');
+    }
+}
+
+function showBaristaToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'bd-toast';
+    t.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i><span></span>';
+    t.querySelector('span').textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => { t.classList.add('bd-toast-out'); setTimeout(() => t.remove(), 350); }, 3200);
 }
 
 async function refresh() {
