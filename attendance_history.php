@@ -47,7 +47,7 @@ if (($_GET['export'] ?? '') === 'csv') {
 
     $csv_safe = function ($v) {
         $s = (string)$v;
-        return ($s !== '' && strpbrk($s[0], "=+-@\t\r") !== false) ? "'" . $s : $s;
+        return ($s !== '' && strpbrk($s[0], "=+-@\t\r\n") !== false) ? "'" . $s : $s;
     };
 
     fputcsv($out, array_map($csv_safe, ['Date', 'Employee', 'Username', 'Clock In', 'Clock Out', 'Hours', 'Status']));
@@ -284,25 +284,6 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
 #attTbody tr:nth-child(8)  { animation-delay:.72s; }
 #attTbody tr:nth-child(9)  { animation-delay:.76s; }
 #attTbody tr:nth-child(10) { animation-delay:.80s; }
-
-/* Pagination */
-.report-pager {
-    display:flex; align-items:center; justify-content:center;
-    gap:6px; flex-wrap:wrap; padding:16px 20px 20px;
-    border-top:1px solid var(--border);
-}
-.report-pager .rp-btn {
-    min-width:36px; height:36px; padding:0 10px;
-    border-radius:9px; border:1px solid var(--border);
-    background:rgba(255,255,255,.04); color:var(--text);
-    font-size:13px; font-weight:600; cursor:pointer;
-    font-family:'Poppins',sans-serif; transition:all .15s;
-    display:inline-flex; align-items:center; justify-content:center;
-}
-.report-pager .rp-btn:hover:not(:disabled):not(.active) { border-color:var(--accent); color:var(--accent); }
-.report-pager .rp-btn.active { background:var(--accent); border-color:var(--accent); color:#1a1410; }
-.report-pager .rp-btn:disabled { opacity:.35; cursor:not-allowed; }
-.report-pager .rp-ellipsis { color:var(--text-muted); padding:0 4px; }
 
 /* Filters bar */
 .filters-bar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:22px; }
