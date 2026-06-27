@@ -22,8 +22,9 @@ if (isset($_POST['update'])) {
     $new_role = trim($_POST['emp_role'] ?? '');
 
     if (!empty($_FILES['photo']['name'])) {
-        $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
-        if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+        $ext    = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+        $okSize = $_FILES['photo']['size'] > 0 && $_FILES['photo']['size'] <= 5 * 1024 * 1024; // 5MB cap
+        if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp']) && $okSize && @getimagesize($_FILES['photo']['tmp_name']) !== false) {
             if (!is_dir('uploads')) mkdir('uploads');
             $photo = 'uploads/' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
             move_uploaded_file($_FILES['photo']['tmp_name'], $photo);

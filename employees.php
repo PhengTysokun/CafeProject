@@ -87,8 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
 
     $photo = null;
     if (!empty($_FILES['photo']['name']) && $_FILES['photo']['error'] === 0) {
-        $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
-        if (in_array($ext, ['jpg','jpeg','png','gif','webp'])) {
+        $ext    = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+        $okExt  = in_array($ext, ['jpg','jpeg','png','gif','webp']);
+        $okSize = $_FILES['photo']['size'] > 0 && $_FILES['photo']['size'] <= 5 * 1024 * 1024; // 5MB cap
+        if ($okExt && $okSize && @getimagesize($_FILES['photo']['tmp_name']) !== false) {
             if (!is_dir('uploads')) mkdir('uploads', 0755, true);
             $photo = 'uploads/' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
             move_uploaded_file($_FILES['photo']['tmp_name'], $photo);
@@ -1209,7 +1211,9 @@ function exportCSV() {
             c[c.length - 2]?.textContent?.trim().replace(/\s+/g,' ') || '',
         ]);
     });
-    const csv  = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    // Guard against CSV formula injection (Excel runs cells starting with = + - @ tab CR)
+    const csvCell = v => { let s = String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return `"${s.replace(/"/g,'""')}"`; };
+    const csv  = [headers, ...rows].map(r => r.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1295,6 +1299,11 @@ async function updateRole(eid, sel) {
     const wrap    = sel.closest('.role-wrap');
     const prev    = wrap.dataset.current;
     if (newRole === prev) return;
+    const newName = ROLES_INFO[newRole]?.name || newRole;
+    if (!confirm(`Change this employee's role to ${newName}? Their page access updates immediately.`)) {
+        sel.value = prev;
+        return;
+    }
     try {
         const fd = new FormData();
         fd.append('action', 'quick_role');
