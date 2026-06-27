@@ -1619,7 +1619,7 @@ window.addEventListener('storage', function (e) {
 // ═══════════════════════════════════════════════════
 // LIVE TABLE SEARCH & TIER FILTER  (JS pagination)
 // ═══════════════════════════════════════════════════
-const PER_PAGE_LC = 20;
+const PER_PAGE_LC = 10;
 let currentPageLC  = 1;
 let lastFilteredLC = [];
 
