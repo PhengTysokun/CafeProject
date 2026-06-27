@@ -658,6 +658,8 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
         /* ── REWARDS LIST ── */
         .rewards-list {
             padding: 4px 0;
+            max-height: 340px;
+            overflow-y: auto;
         }
 
         .reward-row {

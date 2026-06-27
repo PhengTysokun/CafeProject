@@ -699,6 +699,25 @@ if (isset($_GET['edit'])) {
         .rewards-table tbody tr:nth-child(6)      { animation-delay: .61s; }
         .rewards-table tbody tr:nth-child(7)      { animation-delay: .68s; }
         .rewards-table tbody tr:nth-child(8)      { animation-delay: .75s; }
+
+        /* ── PAGINATION ── */
+        .report-pager {
+            display: flex; align-items: center; justify-content: center;
+            gap: 6px; flex-wrap: wrap; padding: 16px 20px 20px;
+            border-top: 1px solid var(--border);
+        }
+        .report-pager .rp-btn {
+            min-width: 36px; height: 36px; padding: 0 10px;
+            border-radius: 9px; border: 1px solid var(--border);
+            background: rgba(255,255,255,.04); color: var(--text);
+            font-size: 13px; font-weight: 600; cursor: pointer;
+            font-family: 'Poppins', sans-serif; transition: var(--transition);
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .report-pager .rp-btn:hover:not(:disabled):not(.active) { border-color: var(--accent); color: var(--accent); }
+        .report-pager .rp-btn.active { background: var(--accent); border-color: var(--accent); color: #000; }
+        .report-pager .rp-btn:disabled { opacity: .35; cursor: not-allowed; }
+        .report-pager .rp-ellipsis { color: var(--text-muted); padding: 0 4px; }
     </style>
 </head>
 <body>
@@ -818,7 +837,7 @@ if (isset($_GET['edit'])) {
             </div>
             <?php else: ?>
             <div class="table-wrap">
-                <table class="rewards-table">
+                <table class="rewards-table" id="rewardsTable">
                     <thead>
                         <tr>
                             <th>Reward</th>
@@ -872,11 +891,66 @@ if (isset($_GET['edit'])) {
                     </tbody>
                 </table>
             </div>
+            <div class="report-pager" id="rewardsPager"></div>
             <?php endif; ?>
         </div>
 
     </div>
 </div>
+
+<script>
+// ── Client-side table pagination (10 rows/page) ──
+const __pagers = {};
+function setupPager(tableId, pagerId, pageSize) {
+    const tbl = document.getElementById(tableId);
+    const pager = document.getElementById(pagerId);
+    if (!tbl || !pager) return;
+    const body = tbl.querySelector('tbody');
+    if (body && body.querySelector('td[colspan]')) return;
+    __pagers[tableId] = { pagerId, pageSize, page: 1 };
+    renderPagerPage(tableId);
+}
+function renderPagerPage(tableId) {
+    const st = __pagers[tableId];
+    if (!st) return;
+    const rows = Array.from(document.getElementById(tableId).querySelector('tbody').querySelectorAll('tr'));
+    const pages = Math.max(1, Math.ceil(rows.length / st.pageSize));
+    if (st.page > pages) st.page = pages;
+    const start = (st.page - 1) * st.pageSize, end = start + st.pageSize;
+    rows.forEach((r, i) => { r.style.display = (i >= start && i < end) ? '' : 'none'; });
+    buildPagerControls(tableId, pages);
+}
+function buildPagerControls(tableId, pages) {
+    const st = __pagers[tableId];
+    const pager = document.getElementById(st.pagerId);
+    if (pages <= 1) { pager.innerHTML = ''; return; }
+    const p = st.page;
+    const btn = (label, target, o = {}) => o.ellipsis
+        ? '<span class="rp-ellipsis">…</span>'
+        : `<button class="rp-btn${o.active ? ' active' : ''}" ${o.disabled ? 'disabled' : ''} data-go="${target}" aria-label="${o.aria || ('Page ' + label)}">${label}</button>`;
+    let html = btn('«', 1, { disabled: p === 1, aria: 'First page' }) + btn('‹', p - 1, { disabled: p === 1, aria: 'Previous page' });
+    const win = [];
+    if (pages <= 7) { for (let i = 1; i <= pages; i++) win.push(i); }
+    else {
+        win.push(1);
+        let s = Math.max(2, p - 1), e = Math.min(pages - 1, p + 1);
+        if (s > 2) win.push('...');
+        for (let i = s; i <= e; i++) win.push(i);
+        if (e < pages - 1) win.push('...');
+        win.push(pages);
+    }
+    win.forEach(n => { html += n === '...' ? btn('', 0, { ellipsis: true }) : btn(n, n, { active: n === p }); });
+    html += btn('›', p + 1, { disabled: p === pages, aria: 'Next page' }) + btn('»', pages, { disabled: p === pages, aria: 'Last page' });
+    pager.innerHTML = html;
+    pager.querySelectorAll('button[data-go]').forEach(b => {
+        b.addEventListener('click', () => {
+            const g = parseInt(b.dataset.go, 10);
+            if (g >= 1 && g <= pages) { st.page = g; renderPagerPage(tableId); }
+        });
+    });
+}
+setupPager('rewardsTable', 'rewardsPager', 10);
+</script>
 
 </body>
 </html>
