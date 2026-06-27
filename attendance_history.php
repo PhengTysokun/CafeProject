@@ -287,6 +287,16 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
     color:var(--success); font-size:12.5px; font-weight:600; text-decoration:none; transition:all .2s;
 }
 .csv-btn:hover { background:rgba(85,224,135,.16); border-color:var(--success); }
+
+/* Pagination */
+.pg-wrap { padding:14px 18px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.pg-nav { display:flex; gap:4px; flex-wrap:wrap; }
+.pg-btn { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; text-decoration:none; transition:all .2s; }
+.pg-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pg-active { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; background:var(--accent); border:1px solid var(--accent); color:#000; font-size:13px; font-weight:700; }
+.pg-disabled { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); color:var(--text-muted); font-size:13px; opacity:.35; cursor:default; }
+.pg-ellipsis { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; color:var(--text-muted); font-size:13px; }
+.pg-info { font-size:12px; color:var(--text-muted); }
 </style>
 </head>
 <body>
@@ -397,6 +407,42 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
             <?php endforeach; endif; ?>
             </tbody>
         </table>
+        <?php if ($total_pages > 1 || $total_count > 0): ?>
+        <div class="pg-wrap">
+            <span class="pg-info">
+                <?php $rng_start = $total_count ? $offset + 1 : 0; $rng_end = $offset + count($records); ?>
+                <?= $rng_start ?>–<?= $rng_end ?> of <?= number_format($total_count) ?> results
+            </span>
+            <?php if ($total_pages > 1): ?>
+            <nav class="pg-nav">
+                <?php if ($page > 1): ?>
+                <a href="<?= htmlspecialchars(qs(['page'=>1])) ?>" class="pg-btn">«</a>
+                <a href="<?= htmlspecialchars(qs(['page'=>$page-1])) ?>" class="pg-btn">‹</a>
+                <?php else: ?>
+                <span class="pg-disabled">«</span><span class="pg-disabled">‹</span>
+                <?php endif; ?>
+                <?php
+                $w_start = max(1, $page - 2);
+                $w_end   = min($total_pages, $page + 2);
+                if ($w_start > 1): ?><span class="pg-ellipsis">…</span><?php endif;
+                for ($pg_i = $w_start; $pg_i <= $w_end; $pg_i++): ?>
+                    <?php if ($pg_i === $page): ?>
+                    <span class="pg-active"><?= $pg_i ?></span>
+                    <?php else: ?>
+                    <a href="<?= htmlspecialchars(qs(['page'=>$pg_i])) ?>" class="pg-btn"><?= $pg_i ?></a>
+                    <?php endif; ?>
+                <?php endfor;
+                if ($w_end < $total_pages): ?><span class="pg-ellipsis">…</span><?php endif; ?>
+                <?php if ($page < $total_pages): ?>
+                <a href="<?= htmlspecialchars(qs(['page'=>$page+1])) ?>" class="pg-btn">›</a>
+                <a href="<?= htmlspecialchars(qs(['page'=>$total_pages])) ?>" class="pg-btn">»</a>
+                <?php else: ?>
+                <span class="pg-disabled">›</span><span class="pg-disabled">»</span>
+                <?php endif; ?>
+            </nav>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
     </div>
 
 </div>
