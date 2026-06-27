@@ -7,6 +7,13 @@ if (($_SESSION['role'] ?? '') !== 'admin') {
     header("Location: dashboard.php"); exit;
 }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+function csrf_ok(): bool {
+    return hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '');
+}
+
 function audit_log(mysqli $db, string $action, string $role_slug, string $detail = ''): void {
     if (session_status() === PHP_SESSION_NONE) session_start();
     $by = $_SESSION['username'] ?? (isset($_SESSION['user_id']) ? 'user#'.$_SESSION['user_id'] : 'unknown');
@@ -17,22 +24,26 @@ function audit_log(mysqli $db, string $action, string $role_slug, string $detail
 
 /* ── POST: Create role ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create_role') {
+    if (!csrf_ok()) { header("Location: manage_roles.php"); exit; }
     $name = trim($_POST['role_name'] ?? '');
     $icon = trim($_POST['role_icon'] ?? 'fa-user');
     $color= trim($_POST['role_color'] ?? '#888888');
     $desc = trim($_POST['role_desc'] ?? '');
-    if ($name !== '') {
-        $slug = strtolower(preg_replace('/[^a-z0-9]+/i', '_', $name));
+    $slug = trim(strtolower(preg_replace('/[^a-z0-9]+/i', '_', $name)), '_');
+    if ($name !== '' && $slug !== '') {
         $s = $conn->prepare("INSERT IGNORE INTO roles (slug, name, icon, color, description, is_system) VALUES (?,?,?,?,?,0)");
         $s->bind_param("sssss", $slug, $name, $icon, $color, $desc);
         $s->execute();
-        if ($s->affected_rows > 0) audit_log($conn, 'create', $slug, "name=$name");
-        $tpl = trim($_POST['role_template'] ?? '');
-        if ($tpl !== '' && in_array($tpl, ['manager', 'staff'])) {
-            $st = $conn->prepare("INSERT IGNORE INTO role_permissions (role_id, permission_id)
-                SELECT (SELECT id FROM roles WHERE slug=?), permission_id FROM role_permissions WHERE role_id=(SELECT id FROM roles WHERE slug=?)");
-            $st->bind_param("ss", $slug, $tpl);
-            $st->execute();
+        // Only seed template perms for a genuinely new role — never merge into an existing slug
+        if ($s->affected_rows > 0) {
+            audit_log($conn, 'create', $slug, "name=$name");
+            $tpl = trim($_POST['role_template'] ?? '');
+            if (in_array($tpl, ['manager', 'staff'], true)) {
+                $st = $conn->prepare("INSERT IGNORE INTO role_permissions (role_id, permission_id)
+                    SELECT (SELECT id FROM roles WHERE slug=?), permission_id FROM role_permissions WHERE role_id=(SELECT id FROM roles WHERE slug=?)");
+                $st->bind_param("ss", $slug, $tpl);
+                $st->execute();
+            }
         }
     }
     header("Location: manage_roles.php"); exit;
@@ -40,6 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
 
 /* ── POST: Delete role ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_role') {
+    if (!csrf_ok()) { header("Location: manage_roles.php"); exit; }
     $slug     = trim($_POST['role_slug'] ?? '');
     $reassign = trim($_POST['reassign_to'] ?? '');
     if ($slug !== '' && $slug !== 'admin') {
@@ -61,14 +73,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             $detail = $reassign !== '' ? "reassigned_to=$reassign" : 'no_employees';
             audit_log($conn, 'delete', $slug, $detail);
         }
-        $sp = $conn->prepare("DELETE FROM role_permissions WHERE role_id=(SELECT id FROM roles WHERE slug=?)");
-        $sp->bind_param("s", $slug); $sp->execute();
+        // role_permissions rows are removed automatically by fk_rp_role ON DELETE CASCADE
     }
     header("Location: manage_roles.php"); exit;
 }
 
 /* ── POST: Edit role metadata ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_role') {
+    if (!csrf_ok()) { header("Location: manage_roles.php"); exit; }
     $slug = trim($_POST['role_slug'] ?? '');
     $name = trim($_POST['role_name'] ?? '');
     $icon = trim($_POST['role_icon'] ?? 'fa-user');
@@ -99,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'role_em
 /* ── AJAX: Save permissions ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_permissions') {
     header('Content-Type: application/json');
+    if (!csrf_ok()) { ob_clean(); echo json_encode(['success' => false, 'message' => 'Invalid session token']); exit; }
     $role = trim($_POST['role'] ?? '');
     // Validate against DB roles (not hardcoded)
     $vr = $conn->prepare("SELECT slug FROM roles WHERE slug=? AND slug != 'admin'");
@@ -123,6 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 
 /* ── POST: Bulk reassign ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_reassign') {
+    if (!csrf_ok()) { header("Location: manage_roles.php"); exit; }
     $from = trim($_POST['from_role'] ?? '');
     $to   = trim($_POST['to_role']   ?? '');
     if ($from !== '' && $to !== '' && $from !== $to && $from !== 'admin') {
@@ -767,6 +781,7 @@ tr:last-child td { border-bottom:none; }
             </div>
             <form method="POST" class="cr-form">
                 <input type="hidden" name="action" value="create_role">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <div class="cr-field">
                     <label>Role Name <span style="color:#e74c3c">*</span></label>
                     <input type="text" name="role_name" placeholder="e.g. Kitchen, Supervisor" maxlength="50" required>
@@ -825,6 +840,7 @@ tr:last-child td { border-bottom:none; }
             </div>
             <form method="POST" class="cr-form">
                 <input type="hidden" name="action" value="edit_role">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <input type="hidden" name="role_slug" id="erm-slug">
                 <div class="cr-field">
                     <label>Role Name <span style="color:#e74c3c">*</span></label>
@@ -865,6 +881,7 @@ tr:last-child td { border-bottom:none; }
             </div>
             <form method="POST" id="deleteRoleForm">
                 <input type="hidden" name="action" value="delete_role">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <input type="hidden" name="role_slug" id="dr-slug">
                 <input type="hidden" name="reassign_to" id="dr-reassign">
 
@@ -897,6 +914,7 @@ tr:last-child td { border-bottom:none; }
             </div>
             <form method="POST">
                 <input type="hidden" name="action" value="bulk_reassign">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <input type="hidden" name="from_role" id="br-from">
                 <p id="br-msg" style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6"></p>
                 <div style="margin-bottom:18px">
@@ -1047,6 +1065,7 @@ tr:last-child td { border-bottom:none; }
 <div id="toast-cnt"></div>
 
 <script>
+const CSRF       = '<?= htmlspecialchars($_SESSION['csrf_token']) ?>';
 const ALL_PERMS  = <?= json_encode($all_perms, JSON_UNESCAPED_UNICODE) ?>;
 const ROLE_IDS   = <?= json_encode(array_map(fn($ids) => array_keys($ids), $role_perm_ids), JSON_UNESCAPED_UNICODE) ?>;
 const TOTAL      = <?= $total_perm_count ?>;
@@ -1190,7 +1209,7 @@ async function savePermissions() {
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
     const ids  = [...selected];
-    const body = new URLSearchParams({ action:'save_permissions', role:currentRole });
+    const body = new URLSearchParams({ action:'save_permissions', role:currentRole, csrf_token:CSRF });
     ids.forEach(id => body.append('permissions[]', id));
     try {
         const res  = await fetch('manage_roles.php', { method:'POST', body });
@@ -1227,7 +1246,7 @@ async function quickToggle(role, pid, btn) {
 
     clearTimeout(_pending[role]);
     _pending[role] = setTimeout(async () => {
-        const body = new URLSearchParams({ action:'save_permissions', role });
+        const body = new URLSearchParams({ action:'save_permissions', role, csrf_token:CSRF });
         ROLE_IDS[role].forEach(id => body.append('permissions[]', id));
         try {
             const res  = await fetch('manage_roles.php', { method:'POST', body });

@@ -4,6 +4,13 @@ require 'auth.php';
 require_once 'config.php';
 if (!can('employees')) { header("Location: dashboard.php?denied=1"); exit; }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+function csrf_ok(): bool {
+    return hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '');
+}
+
 /* ── Get employee data for edit modal (AJAX GET) ── */
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'get_employee') {
     header('Content-Type: application/json');
@@ -65,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'get_sta
 /* ── Save employee from edit modal (AJAX POST) ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_employee') {
     header('Content-Type: application/json');
+    if (!csrf_ok()) { ob_end_clean(); echo json_encode(['ok' => false, 'msg' => 'Invalid session token']); exit; }
     $eid      = intval($_POST['eid'] ?? 0);
     $name     = trim($_POST['name'] ?? '');
     $phone    = trim($_POST['phone'] ?? '');
@@ -124,6 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
 /* ── Quick role update (AJAX) ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_role') {
     header('Content-Type: application/json');
+    if (!csrf_ok()) { ob_end_clean(); echo json_encode(['ok' => false, 'msg' => 'Invalid session token']); exit; }
     $eid      = intval($_POST['eid'] ?? 0);
     $new_role = trim($_POST['role'] ?? '');
     $_cur_is_admin = ($_SESSION['role'] ?? '') === 'admin';
@@ -1034,6 +1043,7 @@ foreach ($sorted_employees as $idx => $emp):
 
 <script>
 const TOTAL = <?= $total_staff ?>;
+const CSRF  = '<?= htmlspecialchars($_SESSION['csrf_token']) ?>';
 const ROLES_INFO = <?= json_encode(array_combine(
     array_keys($_roles_db),
     array_map(fn($r) => ['name' => $r['name'], 'icon' => $r['icon'], 'color' => $r['color'] ?? '#888'], $_roles_db)
@@ -1309,6 +1319,7 @@ async function updateRole(eid, sel) {
         fd.append('action', 'quick_role');
         fd.append('eid', eid);
         fd.append('role', newRole);
+        fd.append('csrf_token', CSRF);
         const res = await fetch('employees.php', { method:'POST', body:fd });
         const j   = await res.json();
         if (j.ok) {
@@ -1589,6 +1600,7 @@ async function submitEditForm(e) {
 
     const form = document.getElementById('emForm');
     const fd   = new FormData(form);
+    fd.append('csrf_token', CSRF);
     if (_emPhotoFile) fd.set('photo', _emPhotoFile);
 
     try {
