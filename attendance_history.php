@@ -27,6 +27,49 @@ function qs(array $overrides = []): string {
     $p = array_merge(['from' => $from, 'to' => $to, 'emp' => $emp ?: 'all'], $overrides);
     return 'attendance_history.php?' . http_build_query($p);
 }
+
+// ── Pagination math ──
+$per_page = 10;
+$page     = max(1, (int)($_GET['page'] ?? 1));
+
+$cnt_stmt = $conn->prepare("SELECT COUNT(*) FROM attendance a WHERE $where");
+$cnt_stmt->bind_param($types, ...$binds);
+$cnt_stmt->execute();
+$total_count = (int)$cnt_stmt->get_result()->fetch_row()[0];
+$total_pages = $total_count > 0 ? (int)ceil($total_count / $per_page) : 1;
+$page   = min($page, $total_pages);
+$offset = ($page - 1) * $per_page;
+
+// ── Page rows ──
+$rows_stmt = $conn->prepare(
+    "SELECT a.*, e.name AS emp_name
+     FROM attendance a LEFT JOIN employees e ON e.user_id = a.user_id
+     WHERE $where
+     ORDER BY a.date DESC, a.clock_in ASC
+     LIMIT ? OFFSET ?"
+);
+$rt = $types . "ii";
+$rb = array_merge($binds, [$per_page, $offset]);
+$rows_stmt->bind_param($rt, ...$rb);
+$rows_stmt->execute();
+$records = $rows_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// ── Range summary (full filtered range, not just page) ──
+$sum_stmt = $conn->prepare(
+    "SELECT COUNT(*)                      AS shifts,
+            COALESCE(SUM(hours_worked),0) AS total_hours,
+            COUNT(DISTINCT a.user_id)     AS staff,
+            COALESCE(AVG(hours_worked),0) AS avg_hours
+     FROM attendance a WHERE $where"
+);
+$sum_stmt->bind_param($types, ...$binds);
+$sum_stmt->execute();
+$summary = $sum_stmt->get_result()->fetch_assoc();
+
+// ── Employee dropdown (roster, only those linked to a login) ──
+$emp_list = $conn->query(
+    "SELECT user_id, name FROM employees WHERE user_id IS NOT NULL ORDER BY name ASC"
+)->fetch_all(MYSQLI_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -34,9 +77,256 @@ function qs(array $overrides = []): string {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Attendance History | Bird's Nest Coffee</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+:root {
+    --accent:       #d1904b;
+    --accent-light: #e8b87a;
+    --accent-dark:  #a0702a;
+    --bg:           #0b0b0b;
+    --card:         #111;
+    --border:       rgba(255,255,255,0.07);
+    --text:         #f5f5f5;
+    --text-muted:   #777;
+    --success:      #55e087;
+    --warning:      #f39c12;
+    --danger:       #e74c3c;
+}
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+.topbar {
+    position:sticky; top:0; z-index:100;
+    background:rgba(10,10,10,.95); border-bottom:1px solid var(--border);
+    backdrop-filter:blur(12px);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 28px; height:62px;
+}
+.topbar-left { display:flex; align-items:center; gap:16px; }
+.back-btn {
+    display:inline-flex; align-items:center; gap:7px;
+    text-decoration:none; color:#d1904b;
+    font-size:13px; font-weight:600; padding:7px 14px;
+    border-radius:10px; border:1px solid rgba(209,144,75,.35); background:rgba(209,144,75,.08); transition:all .2s;
+}
+.back-btn:hover { background:rgba(209,144,75,.16); border-color:#d1904b; }
+.page-title { font-size:15px; font-weight:700; }
+.page-title span { color:var(--accent); }
+
+.page-wrap { max-width:900px; margin:0 auto; padding:32px 20px 60px; }
+
+/* Date nav */
+.date-nav {
+    display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap;
+}
+.date-nav a {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:7px 14px; border-radius:8px; border:1px solid var(--border);
+    background:rgba(255,255,255,.03); color:var(--text-muted);
+    text-decoration:none; font-size:13px; transition:all .2s;
+}
+.date-nav a:hover { color:var(--accent); border-color:rgba(209,144,75,.3); }
+.date-input {
+    padding:7px 14px; border-radius:8px; border:1px solid var(--border);
+    background:rgba(255,255,255,.03); color:var(--text);
+    font-size:13px; font-family:'Poppins',sans-serif; outline:none;
+    transition:border-color .2s;
+}
+.date-input:focus { border-color:rgba(209,144,75,.45); }
+.date-label {
+    font-size:15px; font-weight:700;
+    color:<?= $is_today ? 'var(--accent)' : 'var(--text)' ?>;
+}
+
+/* Summary cards */
+.summary { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px; }
+@media(max-width:600px) { .summary { grid-template-columns:1fr 1fr; } }
+.scard {
+    background:var(--card); border:1px solid var(--border);
+    border-radius:14px; padding:18px 20px;
+}
+.scard-val { font-size:24px; font-weight:800; margin-bottom:4px; }
+.scard-lbl { font-size:11px; color:var(--text-muted); font-weight:500; }
+.scard.c-accent { border-color:rgba(209,144,75,.2); }
+.scard.c-accent .scard-val { color:var(--accent); }
+.scard.c-green  { border-color:rgba(85,224,135,.15); }
+.scard.c-green  .scard-val { color:var(--success); }
+.scard.c-orange { border-color:rgba(243,156,18,.15); }
+.scard.c-orange .scard-val { color:var(--warning); }
+.scard.c-blue   { border-color:rgba(91,192,222,.15); }
+.scard.c-blue   .scard-val { color:#5bc0de; }
+
+/* Table */
+.card { background:var(--card); border:1px solid var(--border); border-radius:18px; overflow:hidden; }
+.card-header {
+    padding:18px 24px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:14px;
+}
+.card-icon {
+    width:38px; height:38px; border-radius:10px; flex-shrink:0;
+    background:linear-gradient(135deg,rgba(209,144,75,.2),rgba(209,144,75,.06));
+    border:1px solid rgba(209,144,75,.2);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--accent); font-size:15px;
+}
+.card-title { font-size:14px; font-weight:700; }
+.card-sub   { font-size:12px; color:var(--text-muted); margin-top:2px; }
+
+table { width:100%; border-collapse:collapse; }
+thead th {
+    padding:11px 20px; text-align:left;
+    font-size:10.5px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.6px; color:var(--text-muted);
+    border-bottom:1px solid var(--border);
+    background:rgba(255,255,255,.02);
+}
+tbody tr { border-bottom:1px solid var(--border); transition:background .15s; }
+tbody tr:last-child { border-bottom:none; }
+tbody tr:hover { background:rgba(255,255,255,.02); }
+tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
+
+.badge {
+    display:inline-flex; align-items:center; gap:5px;
+    padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600;
+}
+.badge-working { background:rgba(85,224,135,.1); color:var(--success); border:1px solid rgba(85,224,135,.25); }
+.badge-done    { background:rgba(255,255,255,.05); color:var(--text-muted); border:1px solid var(--border); }
+
+.empty-state { padding:48px 20px; text-align:center; color:var(--text-muted); }
+.empty-state i { font-size:40px; margin-bottom:14px; opacity:.25; display:block; }
+.empty-state p { font-size:13px; }
+
+.live-dot { width:7px; height:7px; border-radius:50%; background:var(--success); display:inline-block; animation:pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── Entrance & motion ─────────────────────────────── */
+@keyframes fadeUp    { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideDown { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+
+.topbar   { animation:slideDown .45s cubic-bezier(.22,1,.36,1) both; }
+.date-nav { animation:fadeUp .45s cubic-bezier(.22,1,.36,1) both; animation-delay:.08s; }
+.card     { animation:fadeUp .45s cubic-bezier(.22,1,.36,1) both; animation-delay:.38s; box-shadow:0 4px 32px rgba(0,0,0,.3); }
+
+.scard {
+    animation:fadeUp .4s cubic-bezier(.22,1,.36,1) both;
+    transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+}
+.scard:nth-child(1) { animation-delay:.14s; }
+.scard:nth-child(2) { animation-delay:.21s; }
+.scard:nth-child(3) { animation-delay:.28s; }
+.scard:nth-child(4) { animation-delay:.35s; }
+
+.scard:hover { transform:translateY(-3px); }
+.scard.c-accent:hover { box-shadow:0 8px 28px rgba(209,144,75,.18); border-color:rgba(209,144,75,.4); }
+.scard.c-green:hover  { box-shadow:0 8px 28px rgba(85,224,135,.14); border-color:rgba(85,224,135,.35); }
+.scard.c-blue:hover   { box-shadow:0 8px 28px rgba(91,192,222,.14); border-color:rgba(91,192,222,.35); }
+.scard.c-orange:hover { box-shadow:0 8px 28px rgba(243,156,18,.14); border-color:rgba(243,156,18,.35); }
+
+/* Staggered table row entrances */
+#attTbody tr { animation:fadeUp .35s cubic-bezier(.22,1,.36,1) both; }
+#attTbody tr:nth-child(1)  { animation-delay:.44s; }
+#attTbody tr:nth-child(2)  { animation-delay:.48s; }
+#attTbody tr:nth-child(3)  { animation-delay:.52s; }
+#attTbody tr:nth-child(4)  { animation-delay:.56s; }
+#attTbody tr:nth-child(5)  { animation-delay:.60s; }
+#attTbody tr:nth-child(6)  { animation-delay:.64s; }
+#attTbody tr:nth-child(7)  { animation-delay:.68s; }
+#attTbody tr:nth-child(8)  { animation-delay:.72s; }
+#attTbody tr:nth-child(9)  { animation-delay:.76s; }
+#attTbody tr:nth-child(10) { animation-delay:.80s; }
+
+/* Pagination */
+.report-pager {
+    display:flex; align-items:center; justify-content:center;
+    gap:6px; flex-wrap:wrap; padding:16px 20px 20px;
+    border-top:1px solid var(--border);
+}
+.report-pager .rp-btn {
+    min-width:36px; height:36px; padding:0 10px;
+    border-radius:9px; border:1px solid var(--border);
+    background:rgba(255,255,255,.04); color:var(--text);
+    font-size:13px; font-weight:600; cursor:pointer;
+    font-family:'Poppins',sans-serif; transition:all .15s;
+    display:inline-flex; align-items:center; justify-content:center;
+}
+.report-pager .rp-btn:hover:not(:disabled):not(.active) { border-color:var(--accent); color:var(--accent); }
+.report-pager .rp-btn.active { background:var(--accent); border-color:var(--accent); color:#1a1410; }
+.report-pager .rp-btn:disabled { opacity:.35; cursor:not-allowed; }
+.report-pager .rp-ellipsis { color:var(--text-muted); padding:0 4px; }
+</style>
 </head>
 <body>
-<h1>Attendance History (scaffold)</h1>
-<p>Range: <?= htmlspecialchars($from) ?> → <?= htmlspecialchars($to) ?> | emp: <?= (int)$emp ?></p>
+<div class="page-wrap">
+
+    <!-- Summary -->
+    <div class="summary">
+        <div class="scard c-accent">
+            <div class="scard-val"><?= (int)$summary['shifts'] ?></div>
+            <div class="scard-lbl"><i class="fa-solid fa-calendar-check"></i> Total Shifts</div>
+        </div>
+        <div class="scard c-orange">
+            <div class="scard-val"><?= number_format((float)$summary['total_hours'], 1) ?>h</div>
+            <div class="scard-lbl"><i class="fa-solid fa-clock"></i> Total Hours</div>
+        </div>
+        <div class="scard c-green">
+            <div class="scard-val"><?= (int)$summary['staff'] ?></div>
+            <div class="scard-lbl"><i class="fa-solid fa-users"></i> Staff</div>
+        </div>
+        <div class="scard c-blue">
+            <div class="scard-val"><?= number_format((float)$summary['avg_hours'], 2) ?>h</div>
+            <div class="scard-lbl"><i class="fa-solid fa-chart-simple"></i> Avg / Shift</div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+            <div>
+                <div class="card-title">Attendance History</div>
+                <div class="card-sub"><?= htmlspecialchars($from) ?> → <?= htmlspecialchars($to) ?></div>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th><th>Employee</th><th>Clock In</th>
+                    <th>Clock Out</th><th>Hours</th><th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php if (empty($records)): ?>
+            <tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted)">
+                <i class="fa-solid fa-calendar-xmark" style="display:block;font-size:32px;margin-bottom:12px;opacity:.25"></i>
+                No attendance records in this range.
+            </td></tr>
+            <?php else: foreach ($records as $r):
+                $name    = $r['emp_name'] ?: $r['username'];
+                $working = is_null($r['clock_out']);
+            ?>
+            <tr>
+                <td><?= date('d M Y', strtotime($r['date'])) ?></td>
+                <td>
+                    <div style="font-weight:600"><?= htmlspecialchars($name) ?></div>
+                    <div style="font-size:11px;color:var(--text-muted)"><?= htmlspecialchars($r['username']) ?></div>
+                </td>
+                <td><?= date('g:i A', strtotime($r['clock_in'])) ?></td>
+                <td><?= $working ? '<span style="color:var(--text-muted)">—</span>' : date('g:i A', strtotime($r['clock_out'])) ?></td>
+                <td><?= $working ? '<span style="color:var(--text-muted)">—</span>' : number_format((float)$r['hours_worked'], 2) . 'h' ?></td>
+                <td>
+                    <?php if ($working): ?>
+                    <span class="badge badge-working"><span class="live-dot" style="width:6px;height:6px"></span> Active</span>
+                    <?php else: ?>
+                    <span class="badge badge-done"><i class="fa-solid fa-circle-check"></i> Complete</span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endforeach; endif; ?>
+            </tbody>
+        </table>
+    </div>
+
+</div>
 </body>
 </html>
