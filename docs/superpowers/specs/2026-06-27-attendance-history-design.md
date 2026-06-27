@@ -70,8 +70,10 @@ resolved range matches no preset (custom dates), no button is highlighted.
 This avoids a full `attendance` scan (which grows unbounded with history) and uses the small,
 indexed roster instead:
 ```sql
-SELECT user_id, name FROM employees ORDER BY name ASC
+SELECT user_id, name FROM employees WHERE user_id IS NOT NULL ORDER BY name ASC
 ```
+(`employees.user_id` is nullable; attendance keys on `user_id`, so rows without a linked login
+are excluded from the filter.)
 Tradeoff: a user who has attendance rows but no `employees` record won't appear as a filter
 option. Such rows still display in the table (their `username` shows); they just can't be
 isolated via the dropdown. Acceptable — the roster is the canonical staff list.
