@@ -530,6 +530,17 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 .rm-save:disabled { opacity:.6; cursor:not-allowed; transform:none; }
 .rm-cancel { background:rgba(255,255,255,.05); color:var(--text); border:1px solid var(--border) !important; }
 .rm-cancel:hover { border-color:var(--accent) !important; }
+
+/* ── PAGINATION ── */
+.pg-wrap { display:none; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin:20px 28px 0; padding:14px 18px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); }
+.pg-nav { display:flex; gap:4px; flex-wrap:wrap; }
+.pg-btn { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; text-decoration:none; transition:var(--transition); }
+.pg-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pg-active { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; background:var(--accent); border:1px solid var(--accent); color:#000; font-size:13px; font-weight:700; }
+.pg-disabled { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); color:var(--text-muted); font-size:13px; opacity:.35; cursor:default; }
+.pg-ellipsis { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; color:var(--text-muted); font-size:13px; }
+.pg-info { font-size:12px; color:var(--text-muted); }
+@media print { .pg-wrap { display:none !important; } }
 </style>
 </head>
 <body>
@@ -765,6 +776,12 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 <?php endif; ?>
 </div>
 
+<!-- ── PAGINATION ── -->
+<div id="pgWrapRV" class="pg-wrap">
+    <span id="pgInfoRV" class="pg-info"></span>
+    <nav id="pgNavRV" class="pg-nav"></nav>
+</div>
+
 <!-- ── Inline Recipe Editor Modal ── -->
 <div class="recipe-modal" id="recipeModal">
     <div class="recipe-modal-content">
@@ -940,12 +957,14 @@ function filterCat(btn, cat) {
         p.style.background = isActive ? (cat === 'all' ? 'var(--accent)' : p.style.getPropertyValue('--cat-color') || 'var(--accent)') : '';
         p.style.color = isActive ? '#000' : '';
     });
+    currentPageRV = 1;
     applyFilters();
 }
 
 // ── Search ──
 searchInput.addEventListener('input', function() {
     currentQ = this.value.toLowerCase().trim();
+    currentPageRV = 1;
     applyFilters();
 });
 
@@ -953,31 +972,73 @@ searchInput.addEventListener('input', function() {
 sortSelect.addEventListener('change', function() {
     currentSort = this.value;
     applySortToDOM();
+    currentPageRV = 1;
+    applyFilters();
 });
 
-// ── Apply filters (search + category) ──
+// ── Pagination state ──
+const PER_PAGE_RV = 12;
+let currentPageRV = 1;
+
+// ── Apply filters (search + category) + paginate ──
 function applyFilters() {
     const cards = [...grid.querySelectorAll('.card:not(#emptySearch)')];
-    let visible = 0;
 
-    cards.forEach(card => {
+    const matched = cards.filter(card => {
         const name = card.dataset.name || '';
         const cat  = card.dataset.cat  || '';
         const ings = card.dataset.ingredients || '';
-
         const catMatch  = currentCat === 'all' || cat === currentCat;
         const textMatch = !currentQ || name.includes(currentQ) || ings.includes(currentQ);
-
-        const show = catMatch && textMatch;
-        card.classList.toggle('hidden', !show);
-        if (show) visible++;
+        return catMatch && textMatch;
     });
 
-    countLabel.textContent = `(${visible} drink${visible !== 1 ? 's' : ''})`;
+    const total      = matched.length;
+    const totalPages = Math.max(1, Math.ceil(total / PER_PAGE_RV));
+    if (currentPageRV > totalPages) currentPageRV = totalPages;
+    const start = (currentPageRV - 1) * PER_PAGE_RV;
+    const end   = start + PER_PAGE_RV;
 
-    if (emptySearch) {
-        emptySearch.style.display = visible === 0 ? 'block' : 'none';
+    // hide everything, then reveal only the matched cards on this page
+    cards.forEach(card => card.classList.add('hidden'));
+    matched.slice(start, end).forEach(card => card.classList.remove('hidden'));
+
+    countLabel.textContent = `(${total} drink${total !== 1 ? 's' : ''})`;
+    if (emptySearch) emptySearch.style.display = total === 0 ? 'block' : 'none';
+
+    renderPagerRV(total, totalPages);
+}
+
+function renderPagerRV(total, totalPages) {
+    const wrap = document.getElementById('pgWrapRV');
+    if (!wrap) return;
+    if (totalPages <= 1) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'flex';
+    document.getElementById('pgInfoRV').textContent =
+        `Page ${currentPageRV} of ${totalPages} · ${total} drink${total !== 1 ? 's' : ''}`;
+    const nav = document.getElementById('pgNavRV');
+    let html = currentPageRV > 1
+        ? `<a href="#" class="pg-btn" onclick="goPageRV(1);return false;">«</a><a href="#" class="pg-btn" onclick="goPageRV(${currentPageRV - 1});return false;">‹</a>`
+        : `<span class="pg-disabled">«</span><span class="pg-disabled">‹</span>`;
+    const ws = Math.max(1, currentPageRV - 2);
+    const we = Math.min(totalPages, currentPageRV + 2);
+    if (ws > 1) html += `<span class="pg-ellipsis">…</span>`;
+    for (let i = ws; i <= we; i++) {
+        html += i === currentPageRV
+            ? `<span class="pg-active">${i}</span>`
+            : `<a href="#" class="pg-btn" onclick="goPageRV(${i});return false;">${i}</a>`;
     }
+    if (we < totalPages) html += `<span class="pg-ellipsis">…</span>`;
+    html += currentPageRV < totalPages
+        ? `<a href="#" class="pg-btn" onclick="goPageRV(${currentPageRV + 1});return false;">›</a><a href="#" class="pg-btn" onclick="goPageRV(${totalPages});return false;">»</a>`
+        : `<span class="pg-disabled">›</span><span class="pg-disabled">»</span>`;
+    nav.innerHTML = html;
+}
+
+function goPageRV(p) {
+    currentPageRV = p;
+    applyFilters();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ── Sort DOM cards ──
@@ -1047,6 +1108,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('themeIcon').className = 'fa-solid fa-sun';
     }
 });
+
+// initial pagination render (paginate the full set on first load)
+applyFilters();
 </script>
 <script src="animations.js"></script>
 </body>
