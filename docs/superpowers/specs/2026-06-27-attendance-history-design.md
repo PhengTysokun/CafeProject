@@ -54,14 +54,27 @@ reached through the live page.
 Preset buttons (This week / This month / Last 30 days) are plain links that set `from`/`to`
 and reset `page=1`. "Last 30 days" equals the default state.
 
+**Active preset detection:** each preset maps to a computed `(from, to)` pair —
+- This week: Monday of current week → today
+- This month: first day of current month → today
+- Last 30 days: today − 30 days → today
+
+After resolving the effective `from`/`to` for the request, compare against each preset's pair;
+the matching button gets an `.active` CSS class. "Last 30 days" is active when no `from`/`to`
+params are present (default) or when the present values equal its computed pair. If the
+resolved range matches no preset (custom dates), no button is highlighted.
+
 ## Data Access
 
-**Employee dropdown** (distinct staff who have any attendance record):
+**Employee dropdown** — sourced from the `employees` roster table, not the `attendance` table.
+This avoids a full `attendance` scan (which grows unbounded with history) and uses the small,
+indexed roster instead:
 ```sql
-SELECT DISTINCT a.user_id, COALESCE(e.name, a.username) AS label
-FROM attendance a LEFT JOIN employees e ON e.user_id = a.user_id
-ORDER BY COALESCE(e.name, a.username) ASC
+SELECT user_id, name FROM employees ORDER BY name ASC
 ```
+Tradeoff: a user who has attendance rows but no `employees` record won't appear as a filter
+option. Such rows still display in the table (their `username` shows); they just can't be
+isolated via the dropdown. Acceptable — the roster is the canonical staff list.
 
 **Page rows** (paginated):
 ```sql
