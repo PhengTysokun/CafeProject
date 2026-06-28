@@ -3,7 +3,7 @@ require 'admin_only.php';
 require 'config.php';
 
 $id = intval($_GET['id']);
-$stmt = $conn->prepare("SELECT * FROM employees WHERE employee_id = ?");
+$stmt = $conn->prepare("SELECT e.*, COALESCE(r.slug,'staff') AS emp_role, COALESCE(r.name,'Staff') AS role_name, COALESCE(r.color,'#888') AS role_color, COALESCE(r.icon,'fa-user') AS role_icon FROM employees e LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) LEFT JOIN roles r ON r.id = u.role_id WHERE e.employee_id = ?");
 $stmt->bind_param("i", $id);
 $stmt->execute();
 $e = $stmt->get_result()->fetch_assoc();
@@ -36,6 +36,7 @@ $has_photo = !empty($e['photo']) && file_exists($e['photo']);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Employee Details | Bird's Nest Coffee</title>
+<script>(function(){if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
@@ -56,7 +57,26 @@ $has_photo = !empty($e['photo']) && file_exists($e['photo']);
     --transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
 }
 
+/* ── Light theme (matches employees.php) ── */
+[data-theme="light"] {
+    --bg: #F0F2F5; --bg-card: #FFFFFF;
+    --border: #E5E7EB; --border-hover: #D1D5DB;
+    --text: #111827; --text-muted: #6B7280;
+    --shadow-lg: 0 8px 40px rgba(0,0,0,0.08);
+}
+[data-theme="light"] body { background: radial-gradient(circle at top, #FFFFFF 0%, #F0F2F5 60%); }
+[data-theme="light"] .card { background: #FFFFFF; }
+[data-theme="light"] .info-item { background: #F9FAFB; }
+[data-theme="light"] .info-item:hover, [data-theme="light"] .stat-chip { background: rgba(0,0,0,0.03); }
+[data-theme="light"] .back-btn { background: rgba(209,144,75,0.1); }
+
 *{box-sizing:border-box;margin:0;padding:0;}
+
+/* ── Role pill (dot + text, matches table) ── */
+.role-pill { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600; color:var(--text); background:rgba(255,255,255,0.04); border:1px solid var(--border); padding:4px 13px 4px 11px; border-radius:20px; margin-bottom:12px; margin-left:8px; }
+[data-theme="light"] .role-pill { background:rgba(0,0,0,0.03); }
+.role-pill .role-dot { width:7px; height:7px; border-radius:50%; background:var(--rc,#888); box-shadow:0 0 0 3px color-mix(in srgb, var(--rc,#888) 22%, transparent); flex-shrink:0; }
+.tnum { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
 
 html{height:100%;}
 
@@ -289,15 +309,15 @@ body::after {
 }
 
 .btn-delete {
-    border-color: #ff5c5c;
-    color: #ff5c5c;
-    background: rgba(255,92,92,0.05);
+    border-color: var(--border);
+    color: var(--text-muted);
+    background: transparent;
 }
 .btn-delete:hover {
-    background: #ff5c5c;
-    color: #000;
+    background: rgba(255,92,92,0.12);
+    color: #ff5c5c;
+    border-color: rgba(255,92,92,0.4);
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(255,92,92,0.3);
 }
 
 /* ── Responsive ── */
@@ -334,9 +354,14 @@ body::after {
             </div>
             <div class="profile-meta">
                 <div class="emp-name"><?= htmlspecialchars($e['name']) ?></div>
-                <div class="job-badge">
-                    <i class="fa-solid fa-briefcase"></i>
-                    <?= htmlspecialchars($e['job_title']) ?>
+                <div style="display:flex;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+                    <div class="job-badge" style="margin-bottom:0">
+                        <i class="fa-solid fa-briefcase"></i>
+                        <?= htmlspecialchars($e['job_title']) ?>
+                    </div>
+                    <span class="role-pill" style="--rc:<?= htmlspecialchars($e['role_color']) ?>;margin-bottom:0" title="System role (access level)">
+                        <span class="role-dot"></span><?= htmlspecialchars($e['role_name']) ?>
+                    </span>
                 </div>
                 <div class="stat-chips">
                     <?php if ($age !== null): ?>
@@ -392,7 +417,7 @@ body::after {
                 <?php if ($role !== 'admin'): ?>
                     <div class="info-value muted">••••••</div>
                 <?php else: ?>
-                    <div class="info-value accent">$<?= number_format($e['salary'], 2) ?></div>
+                    <div class="info-value accent tnum">$<?= number_format($e['salary'], 2) ?></div>
                 <?php endif; ?>
             </div>
 
