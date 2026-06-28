@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Add Employee | Bird's Nest Coffee</title>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 :root {
@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 html { scroll-behavior: smooth; }
 
 body {
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
@@ -468,7 +468,7 @@ body {
     border-radius: 10px;
     color: var(--text);
     font-size: 13px;
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
     transition: var(--transition);
     outline: none;
     -webkit-appearance: none;
@@ -693,7 +693,7 @@ body {
     color: #000;
     font-size: 14px;
     font-weight: 700;
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
     cursor: pointer;
     transition: var(--transition);
     display: flex;
@@ -714,7 +714,7 @@ kbd {
     border-radius: 4px;
     border: 1px solid var(--border);
     font-size: 10px;
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
     color: var(--text-muted);
     background: var(--bg-card);
 }
@@ -832,7 +832,7 @@ kbd {
     padding: 10px 14px;
     background: var(--input); border: 1px solid var(--accent);
     border-radius: 10px; color: var(--text);
-    font-size: 13px; font-family: 'Poppins', sans-serif;
+    font-size: 13px; font-family: 'Inter', sans-serif;
     outline: none; transition: var(--transition);
 }
 .cdd-custom-input:focus { box-shadow: var(--shadow-accent); }

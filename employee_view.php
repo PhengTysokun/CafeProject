@@ -37,7 +37,7 @@ $has_photo = !empty($e['photo']) && file_exists($e['photo']);
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Employee Details | Bird's Nest Coffee</title>
 <script>(function(){if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
 <style>
@@ -81,7 +81,7 @@ $has_photo = !empty($e['photo']) && file_exists($e['photo']);
 html{height:100%;}
 
 body {
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
     background: radial-gradient(circle at top, #111 0%, #000 60%);
     min-height: 100vh;
     color: var(--text);
@@ -293,7 +293,7 @@ body::after {
     transition: var(--transition);
     display: flex; align-items: center; gap: 8px;
     cursor: pointer;
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
 }
 .btn i { font-size: 15px; }
 
@@ -346,7 +346,7 @@ body::after {
 .uc-msg { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:22px; }
 .uc-msg b { color:var(--text); font-weight:700; }
 .uc-actions { display:flex; gap:10px; }
-.uc-btn { flex:1; padding:11px; border-radius:12px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Poppins',sans-serif; border:1px solid transparent; transition:var(--transition); }
+.uc-btn { flex:1; padding:11px; border-radius:12px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; border:1px solid transparent; transition:var(--transition); }
 .uc-cancel { background:transparent; border-color:var(--border-hover); color:var(--text-muted); }
 .uc-cancel:hover { color:var(--text); border-color:var(--text-muted); }
 .uc-ok { background:var(--uc,#d1904b); color:#fff; }

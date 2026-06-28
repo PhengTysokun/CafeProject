@@ -70,7 +70,7 @@ $initials  = strtoupper(mb_substr($e['name'], 0, 1));
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Edit Employee | Bird's Nest Coffee</title>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
 <style>
@@ -93,7 +93,7 @@ $initials  = strtoupper(mb_substr($e['name'], 0, 1));
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
     background: radial-gradient(circle at top, #111 0%, #000 60%);
     min-height: 100vh;
     color: var(--text);
@@ -296,7 +296,7 @@ body::after {
     color: var(--text);
     font-size: 14px;
     font-weight: 500;
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
     padding: 0;
     transition: var(--transition);
 }
@@ -330,7 +330,7 @@ textarea.tile-input {
     transition: var(--transition);
     display: flex; align-items: center; gap: 8px;
     cursor: pointer;
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Inter', sans-serif;
 }
 .btn i { font-size: 15px; }
 
