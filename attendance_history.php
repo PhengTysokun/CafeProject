@@ -181,8 +181,10 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     background:rgba(255,255,255,.03); color:var(--text);
     font-size:13px; font-family:'Poppins',sans-serif; outline:none;
     transition:border-color .2s;
+    color-scheme: dark; /* dark native dropdown + date-picker popups */
 }
 .date-input:focus { border-color:rgba(209,144,75,.45); }
+.date-input option { background:#1a1a1a; color:#f5f5f5; }
 .date-label {
     font-size:15px; font-weight:700;
     color:var(--text);
