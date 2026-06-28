@@ -687,6 +687,12 @@ textarea.em-input { resize:vertical; min-height:62px; line-height:1.5; }
 .em-btn-save:disabled { opacity:.6; cursor:not-allowed; transform:none; }
 .em-photo-pill { display:none; align-items:center; gap:6px; font-size:11px; font-weight:500; color:var(--accent); background:rgba(209,144,75,.1); border:1px solid rgba(209,144,75,.2); padding:3px 10px; border-radius:20px; margin-top:6px; }
 
+/* ── ELEVATION / DEPTH (subtle floating cards) ── */
+.stat-card, .lead-card, .table-card { box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 3px 14px rgba(0,0,0,.28); }
+.stat-card:hover, .lead-card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 8px 26px rgba(0,0,0,.42); }
+[data-theme="light"] .stat-card, [data-theme="light"] .lead-card, [data-theme="light"] .table-card { box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 6px 18px rgba(16,24,40,.06); }
+[data-theme="light"] .stat-card:hover, [data-theme="light"] .lead-card:hover { box-shadow: 0 2px 6px rgba(16,24,40,.08), 0 12px 28px rgba(16,24,40,.10); }
+
 /* ── TOP PERFORMERS STRIP (compact leaderboard) ── */
 .lead-strip { margin:16px 24px 0; }
 .lead-strip-hd { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.8px; display:flex; align-items:center; gap:7px; margin-bottom:9px; }
