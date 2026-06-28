@@ -331,6 +331,27 @@ body::after {
     .profile-header { gap: 16px; }
     .btn { padding: 9px 18px; font-size: 13px; }
 }
+
+/* ── UI CONFIRM MODAL (replaces native confirm) ── */
+.ui-confirm-overlay { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.6); backdrop-filter:blur(9px); opacity:0; pointer-events:none; transition:opacity .25s ease; }
+.ui-confirm-overlay.open { opacity:1; pointer-events:auto; }
+.ui-confirm-box { position:relative; width:100%; max-width:380px; background:var(--bg-card); border:1px solid var(--border); border-radius:22px; padding:30px 26px 24px; text-align:center; box-shadow:0 30px 80px rgba(0,0,0,.55); transform:translateY(20px) scale(.93); opacity:0; transition:transform .34s cubic-bezier(.34,1.56,.64,1), opacity .25s ease; overflow:hidden; }
+.ui-confirm-overlay.open .ui-confirm-box { transform:none; opacity:1; }
+.uc-glow { position:absolute; top:-64px; left:50%; transform:translateX(-50%); width:190px; height:120px; border-radius:50%; filter:blur(50px); opacity:.26; pointer-events:none; }
+.uc-icon { position:relative; width:62px; height:62px; margin:0 auto 16px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; color:var(--uc,#d1904b); animation:ucPop .42s cubic-bezier(.34,1.56,.64,1) both; }
+.uc-icon::after { content:''; position:absolute; inset:-6px; border-radius:50%; border:2px solid var(--uc,#d1904b); opacity:.25; animation:ucRing 1.9s ease-out infinite; }
+@keyframes ucRing { 0%{transform:scale(.9);opacity:.4} 70%{transform:scale(1.28);opacity:0} 100%{opacity:0} }
+@keyframes ucPop  { from{transform:scale(.4);opacity:0} to{transform:scale(1);opacity:1} }
+.uc-title { font-size:18px; font-weight:800; color:var(--text); margin-bottom:9px; }
+.uc-msg { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:22px; }
+.uc-msg b { color:var(--text); font-weight:700; }
+.uc-actions { display:flex; gap:10px; }
+.uc-btn { flex:1; padding:11px; border-radius:12px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Poppins',sans-serif; border:1px solid transparent; transition:var(--transition); }
+.uc-cancel { background:transparent; border-color:var(--border-hover); color:var(--text-muted); }
+.uc-cancel:hover { color:var(--text); border-color:var(--text-muted); }
+.uc-ok { background:var(--uc,#d1904b); color:#fff; }
+.uc-ok:hover { filter:brightness(1.09); transform:translateY(-1px); }
+@media (prefers-reduced-motion:reduce){ .uc-icon::after{animation:none} }
 </style>
 </head>
 
@@ -428,14 +449,83 @@ body::after {
             <a href="employee_edit.php?id=<?= $id ?>" class="btn btn-edit">
                 <i class="fa-solid fa-pen-to-square"></i> Edit
             </a>
-            <a href="employee_delete.php?id=<?= $id ?>" class="btn btn-delete"
-               onclick="return confirm('Delete <?= htmlspecialchars(addslashes($e['name'])) ?>? This cannot be undone.')">
+            <a href="employee_delete.php?id=<?= $id ?>" class="btn btn-delete" onclick="confirmDelete(event)">
                 <i class="fa-solid fa-trash"></i> Delete
             </a>
         </div>
 
     </div>
 </div>
+
+<!-- ── UI CONFIRM MODAL ── -->
+<div class="ui-confirm-overlay" id="uiConfirmOverlay">
+  <div class="ui-confirm-box">
+    <div class="uc-glow" id="ucGlow"></div>
+    <div class="uc-icon" id="ucIcon"><i class="fa-solid fa-circle-question"></i></div>
+    <h3 class="uc-title" id="ucTitle">Are you sure?</h3>
+    <p class="uc-msg" id="ucMsg"></p>
+    <div class="uc-actions">
+      <button class="uc-btn uc-cancel" id="ucCancel" type="button">Cancel</button>
+      <button class="uc-btn uc-ok" id="ucOk" type="button">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function uiConfirm(opts = {}) {
+    return new Promise(resolve => {
+        const ov = document.getElementById('uiConfirmOverlay');
+        const color = opts.color || '#d1904b';
+        const iconEl = document.getElementById('ucIcon');
+        const okBtn = document.getElementById('ucOk');
+        const cancel = document.getElementById('ucCancel');
+        document.getElementById('ucTitle').textContent = opts.title || 'Are you sure?';
+        document.getElementById('ucMsg').innerHTML = opts.message || '';
+        iconEl.innerHTML = `<i class="fa-solid ${opts.icon || 'fa-circle-question'}"></i>`;
+        iconEl.style.setProperty('--uc', color);
+        iconEl.style.background = color + '24';
+        iconEl.style.border = '1px solid ' + color + '59';
+        document.getElementById('ucGlow').style.background = color;
+        okBtn.textContent = opts.confirmText || 'Confirm';
+        cancel.textContent = opts.cancelText || 'Cancel';
+        okBtn.style.setProperty('--uc', color);
+        ov.classList.add('open');
+        setTimeout(() => okBtn.focus(), 60);
+        function cleanup(v) {
+            ov.classList.remove('open');
+            okBtn.removeEventListener('click', onOk);
+            cancel.removeEventListener('click', onCancel);
+            ov.removeEventListener('click', onBack);
+            document.removeEventListener('keydown', onKey);
+            resolve(v);
+        }
+        const onOk = () => cleanup(true);
+        const onCancel = () => cleanup(false);
+        const onBack = e => { if (e.target === ov) cleanup(false); };
+        const onKey = e => {
+            if (e.key === 'Escape') { e.stopPropagation(); cleanup(false); }
+            else if (e.key === 'Enter') { e.preventDefault(); cleanup(true); }
+        };
+        okBtn.addEventListener('click', onOk);
+        cancel.addEventListener('click', onCancel);
+        ov.addEventListener('click', onBack);
+        document.addEventListener('keydown', onKey);
+    });
+}
+
+const _EMP_NAME = <?= json_encode($e['name']) ?>;
+async function confirmDelete(e) {
+    e.preventDefault();
+    const ok = await uiConfirm({
+        title:       'Delete Employee?',
+        message:     `Permanently remove <b>${_EMP_NAME.replace(/</g,'&lt;')}</b>. This cannot be undone.`,
+        confirmText: 'Delete',
+        icon:        'fa-trash-can',
+        color:       '#ff5c5c'
+    });
+    if (ok) window.location.href = 'employee_delete.php?id=<?= $id ?>';
+}
+</script>
 
 </body>
 </html>
