@@ -649,6 +649,30 @@ textarea.em-input { resize:vertical; min-height:62px; line-height:1.5; }
 .em-btn-save:disabled { opacity:.6; cursor:not-allowed; transform:none; }
 .em-photo-pill { display:none; align-items:center; gap:6px; font-size:11px; font-weight:500; color:var(--accent); background:rgba(209,144,75,.1); border:1px solid rgba(209,144,75,.2); padding:3px 10px; border-radius:20px; margin-top:6px; }
 
+/* ── TOP PERFORMERS STRIP (compact leaderboard) ── */
+.lead-strip { margin:16px 24px 0; }
+.lead-strip-hd { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.8px; display:flex; align-items:center; gap:7px; margin-bottom:9px; }
+.lead-strip-hd i { color:var(--gold); }
+.lead-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.lead-card { display:flex; align-items:center; gap:11px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid var(--lc,var(--border)); border-radius:12px; transition:var(--transition); }
+.lead-card:hover { border-color:var(--border-hover); border-left-color:var(--lc); transform:translateY(-1px); box-shadow:var(--shadow-sm); }
+.lead-rank { color:var(--lc,var(--text-muted)); font-size:14px; width:16px; text-align:center; flex-shrink:0; }
+.lead-av { width:38px; height:38px; border-radius:50%; object-fit:cover; flex-shrink:0; }
+.lead-av-fb { display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:#fff; }
+.lead-info { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.lead-name { font-size:13px; font-weight:700; color:var(--text-light); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.lead-sub { font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.lead-metrics { display:flex; align-items:center; gap:16px; flex-shrink:0; }
+.lead-m { display:flex; flex-direction:column; align-items:flex-end; line-height:1.15; }
+.lead-m b { font-size:14px; font-weight:800; color:var(--text-light); }
+.lead-m small { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.3px; }
+@media (max-width:900px) { .lead-cards { grid-template-columns:1fr; } }
+
+/* ── FILTER GROUPS ── */
+.filter-group { display:inline-flex; align-items:center; gap:6px; }
+.fg-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:var(--text-muted); opacity:.65; margin-right:1px; }
+.fg-sep { width:1px; height:22px; background:var(--border); margin:0 4px; flex-shrink:0; }
+
 /* ── UI CONFIRM MODAL (replaces native confirm) ── */
 .ui-confirm-overlay { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.66); backdrop-filter:blur(9px); opacity:0; pointer-events:none; transition:opacity .25s ease; }
 .ui-confirm-overlay.open { opacity:1; pointer-events:auto; }
@@ -753,61 +777,54 @@ textarea.em-input { resize:vertical; min-height:62px; line-height:1.5; }
 </div>
 
 <?php if (!empty($leaderboard) && $total_orders_all > 0): ?>
-<!-- ── LEADERBOARD ── -->
-<div class="section-label"><i class="fa-solid fa-ranking-star" style="color:var(--gold)"></i> All-Time Leaderboard</div>
-<div class="leaderboard">
+<!-- ── TOP PERFORMERS (compact strip) ── -->
+<div class="lead-strip">
+    <div class="lead-strip-hd"><i class="fa-solid fa-ranking-star"></i> Top Performers</div>
+    <div class="lead-cards">
 <?php
-$medals = ['rank-1','rank-2','rank-3'];
-$rbadge = ['r1','r2','r3'];
-$rnums  = ['1','2','3'];
+$rmeta = [['fa-crown','var(--gold)'], ['fa-medal','var(--silver)'], ['fa-medal','var(--bronze)']];
 foreach ($leaderboard as $i => $emp):
     if ((int)$emp['total_orders'] === 0) continue;
     $color = avatarColor($emp['name']);
     $hasPhoto = !empty($emp['photo']) && file_exists($emp['photo']);
+    [$ric, $rcol] = $rmeta[$i] ?? ['fa-hashtag', 'var(--text-muted)'];
 ?>
-    <div class="podium-card <?= $medals[$i] ?>" data-podium-eid="<?= (int)$emp['employee_id'] ?>">
-        <?php if ($i === 0): ?><span class="top-badge"><i class="fa-solid fa-crown"></i> Top Performer</span><?php endif; ?>
-        <div class="rank-badge <?= $rbadge[$i] ?>"><?= $rnums[$i] ?></div>
-        <?php if ($hasPhoto): ?>
-            <img src="<?= h($emp['photo']) ?>" class="podium-img" alt="<?= h($emp['name']) ?>">
-        <?php else: ?>
-            <div class="podium-avatar" style="background:<?= $color ?>">
-                <?= initials($emp['name']) ?>
-            </div>
-        <?php endif; ?>
-        <div class="podium-name"><?= h($emp['name']) ?></div>
-        <?php
-        $shiftMeta = ['morning'=>['#f39c12','fa-sun','Morning'],'afternoon'=>['#3498db','fa-cloud-sun','Afternoon'],'night'=>['#9b59b6','fa-moon','Night']];
-        if (!empty($emp['shift']) && isset($shiftMeta[$emp['shift']])):
-            [$sc,$si,$sl] = $shiftMeta[$emp['shift']];
-        ?>
-        <div class="podium-title"><?= h($emp['job_title'] ?? '—') ?> <span style="color:<?= $sc ?>;font-size:9px;opacity:.85"><i class="fa-solid <?= $si ?>"></i> <?= $sl ?></span></div>
-        <?php else: ?>
-        <div class="podium-title"><?= h($emp['job_title'] ?? '—') ?></div>
-        <?php endif; ?>
-        <div class="podium-stats">
-            <div class="podium-stat">
-                <div class="ps-val ps-orders"><?= fmtnum($emp['total_orders']) ?></div>
-                <div class="ps-lbl">Orders</div>
-            </div>
-            <?php if ($sess_role === 'admin'): ?>
-            <div class="podium-stat ps-rev-wrap" <?= $emp['total_revenue'] <= 0 ? 'style="display:none"' : '' ?>>
-                <div class="ps-val ps-revenue" style="color:var(--ok)">$<?= fmtnum($emp['total_revenue']) ?></div>
-                <div class="ps-lbl">Revenue</div>
-            </div>
+        <div class="lead-card" data-podium-eid="<?= (int)$emp['employee_id'] ?>" style="--lc:<?= $rcol ?>">
+            <span class="lead-rank"><i class="fa-solid <?= $ric ?>"></i></span>
+            <?php if ($hasPhoto): ?>
+                <img src="<?= h($emp['photo']) ?>" class="lead-av" alt="<?= h($emp['name']) ?>">
+            <?php else: ?>
+                <div class="lead-av lead-av-fb" style="background:<?= $color ?>"><?= initials($emp['name']) ?></div>
             <?php endif; ?>
-            <div class="podium-stat">
-                <div class="ps-val ps-month" style="color:var(--blue)"><?= fmtnum($emp['orders_this_month']) ?></div>
-                <div class="ps-lbl">This Mo.</div>
+            <div class="lead-info">
+                <span class="lead-name"><?= h($emp['name']) ?></span>
+                <?php
+                $shiftMeta = ['morning'=>['#f39c12','fa-sun','Morning'],'afternoon'=>['#3498db','fa-cloud-sun','Afternoon'],'night'=>['#9b59b6','fa-moon','Night']];
+                if (!empty($emp['shift']) && isset($shiftMeta[$emp['shift']])):
+                    [$sc,$si,$sl] = $shiftMeta[$emp['shift']];
+                ?>
+                <span class="lead-sub podium-title"><?= h($emp['job_title'] ?? '—') ?> · <span style="color:<?= $sc ?>"><?= $sl ?></span></span>
+                <?php else: ?>
+                <span class="lead-sub podium-title"><?= h($emp['job_title'] ?? '—') ?></span>
+                <?php endif; ?>
+            </div>
+            <div class="lead-metrics">
+                <span class="lead-m"><b class="ps-orders"><?= fmtnum($emp['total_orders']) ?></b><small>orders</small></span>
+                <?php if ($sess_role === 'admin'): ?>
+                <span class="lead-m ps-rev-wrap" <?= $emp['total_revenue'] <= 0 ? 'style="display:none"' : '' ?>><b class="ps-revenue" style="color:var(--ok)">$<?= fmtnum($emp['total_revenue']) ?></b><small>revenue</small></span>
+                <?php endif; ?>
+                <span class="lead-m hide-mob"><b class="ps-month" style="color:var(--blue)"><?= fmtnum($emp['orders_this_month']) ?></b><small>this mo.</small></span>
             </div>
         </div>
-    </div>
 <?php endforeach; ?>
+    </div>
 </div>
 <?php endif; ?>
 
 <!-- ── CONTROLS BAR ── -->
 <div class="controls-bar">
+    <div class="filter-group">
+    <span class="fg-label">Status</span>
     <button class="filter-pill active" data-filter="all" onclick="setFilter(this,'all')">
         <i class="fa-solid fa-layer-group"></i> All <span class="pill-count"><?= $total_staff ?></span>
     </button>
@@ -817,6 +834,10 @@ foreach ($leaderboard as $i => $emp):
     <button class="filter-pill" data-filter="idle" onclick="setFilter(this,'idle')">
         <i class="fa-solid fa-moon"></i> No Orders <span class="pill-count"><?= count(array_filter($employees, fn($e) => (int)$e['total_orders'] === 0)) ?></span>
     </button>
+    </div>
+    <div class="fg-sep"></div>
+    <div class="filter-group">
+    <span class="fg-label">Role</span>
     <?php foreach ($_roles_db as $rslug => $rdata):
         $rc = $role_counts_emp[$rslug] ?? 0; ?>
     <button class="filter-pill <?= $rc === 0 ? 'role-empty' : '' ?>" data-filter="<?= $rslug ?>" onclick="setFilter(this,'<?= $rslug ?>')">
@@ -825,7 +846,10 @@ foreach ($leaderboard as $i => $emp):
         <span class="pill-count"><?= $rc ?></span>
     </button>
     <?php endforeach; ?>
-    <div class="shift-sep"></div>
+    </div>
+    <div class="fg-sep"></div>
+    <div class="filter-group">
+    <span class="fg-label">Shift</span>
     <button class="filter-pill shift-pill active-shift shift-active" data-shift-filter="" onclick="setShiftFilter(this,'')">
         <i class="fa-solid fa-clock-rotate-left"></i> All Shifts
     </button>
@@ -838,6 +862,7 @@ foreach ($leaderboard as $i => $emp):
     <button class="filter-pill shift-pill" data-shift-filter="night" onclick="setShiftFilter(this,'night')" style="--sb-active:#9b59b6">
         <i class="fa-solid fa-moon"></i> Night <span class="pill-count"><?= $shift_counts['night'] ?></span>
     </button>
+    </div>
     <div class="ctrl-right">
         <span class="row-count" id="rowCount">Showing <?= $total_staff ?> of <?= $total_staff ?></span>
         <button class="compact-btn" id="compactBtn" onclick="toggleCompact()">
