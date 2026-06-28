@@ -93,7 +93,7 @@ if ($order_ids) {
 // ── AJAX: save cash reconciliation ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['actual_cash'])) {
     header('Content-Type: application/json');
-    if (in_array($role, ['admin', 'manager', 'supervisor', 'inventory_clerk'])) {
+    if (in_array($role, ['admin', 'manager', 'supervisor', 'inventory_clerk', 'barista'])) {
         echo json_encode(['ok' => false, 'msg' => 'Not applicable for this role']);
         exit;
     }
@@ -398,12 +398,12 @@ a{text-decoration:none;}
 </div>
 
 <?php
-$has_countdown  = !in_array($role, ['admin', 'manager', 'supervisor', 'inventory_clerk']);
-$show_cash_step = $has_countdown; // cashier/staff/barista count the drawer; inventory_clerk does not handle cash
+$has_countdown  = !in_array($role, ['admin', 'manager', 'supervisor', 'inventory_clerk', 'barista']);
+$show_cash_step = $has_countdown; // only cashier/staff run the till; barista (drinks) + inventory_clerk do not handle cash
 ?>
 
 <?php if ($show_cash_step): ?>
-<!-- Cash reconciliation (staff / cashier / barista) -->
+<!-- Cash reconciliation (staff / cashier only) -->
 <div class="cash-section">
     <div class="section-title"><i class="fa-solid fa-cash-register"></i> Count Your Drawer</div>
     <div class="cash-row">
