@@ -592,6 +592,29 @@ tbody tr:hover .avatar, tbody tr:hover .avatar-img { border-color:var(--accent);
 @media (max-width:480px) {
     .stats-row { grid-template-columns:1fr 1fr; }
 }
+/* ── MOBILE CARD LAYOUT (≤600px) ── */
+@media (max-width:600px) {
+    .table-card { border:none; background:transparent; box-shadow:none; margin:8px 12px 0; }
+    .table-wrap { overflow:visible; max-height:none; min-height:0; }
+    #empTable, #empTable tbody, #empTable tr, #empTable td { display:block; width:auto; }
+    #empTable thead, #empTable tfoot { display:none; }
+    tr.group-sep { margin:16px 2px 6px; }
+    tr.group-sep td { border:none; background:transparent; padding:0 2px; }
+    tr[data-name] { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 14px; margin:0 0 10px; box-shadow:var(--shadow-sm); }
+    tr[data-name] td { border:none; padding:6px 0; }
+    .cell-rank, #empTable td.hide-mob { display:none !important; }
+    .cell-emp { padding-bottom:10px !important; border-bottom:1px solid var(--border) !important; margin-bottom:4px; }
+    .cell-role, .cell-orders, .cell-month { display:flex !important; align-items:center; justify-content:space-between; gap:12px; }
+    td[data-label]::before { content:attr(data-label); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); }
+    .cell-orders .perf-cell { min-width:0; text-align:right; }
+    .cell-orders .perf-bar { display:none; }
+    .cell-actions { padding-top:10px !important; border-top:1px solid var(--border); margin-top:4px; }
+    .row-actions { justify-content:flex-start; gap:8px; }
+    .btn-row.view { background:rgba(255,255,255,.05); padding:6px 12px; }
+    [data-theme="light"] .btn-row.view { background:rgba(0,0,0,.04); }
+    .btn-row.del { margin-left:auto; }
+}
+
 @media print {
     .topbar,.controls-bar,.row-actions,#toast-cnt,.modal-overlay,.sc-bar { display:none!important; }
     body { background:#fff; color:#000; padding:0; }
@@ -939,7 +962,7 @@ foreach ($sorted_employees as $idx => $emp):
                     data-role="<?= h($empRole) ?>"
                     data-shift="<?= h($emp['shift'] ?? '') ?>"
                     data-id="<?= $eid ?>">
-                    <td>
+                    <td class="cell-rank">
                         <div class="rank-cell <?= $rankCls ?>">
                             <?php if ($idx < 3 && $hasOrders): ?>
                                 <i class="fa-solid fa-medal"></i>
@@ -948,7 +971,7 @@ foreach ($sorted_employees as $idx => $emp):
                             <?php endif; ?>
                         </div>
                     </td>
-                    <td data-val="<?= h($emp['name']) ?>">
+                    <td data-val="<?= h($emp['name']) ?>" class="cell-emp">
                         <div class="emp-cell">
                             <?php if ($hasPhoto): ?>
                                 <img src="<?= h($emp['photo']) ?>" class="avatar-img" alt="<?= h($emp['name']) ?>">
@@ -969,7 +992,7 @@ foreach ($sorted_employees as $idx => $emp):
                             </div>
                         </div>
                     </td>
-                    <td data-val="<?= h($empRole) ?>">
+                    <td data-val="<?= h($empRole) ?>" class="cell-role" data-label="Role">
                         <?php
                             $_role_exists = isset($_roles_db[$empRole]);
                             $_rinfo  = $_roles_db[$empRole] ?? ['name' => ucfirst($empRole), 'icon' => 'fa-user', 'color' => '#888'];
@@ -1003,7 +1026,7 @@ foreach ($sorted_employees as $idx => $emp):
                         </div>
                         <?php endif; ?>
                     </td>
-                    <td data-val="<?= (int)$emp['total_orders'] ?>" data-stat-orders="<?= $eid ?>">
+                    <td data-val="<?= (int)$emp['total_orders'] ?>" data-stat-orders="<?= $eid ?>" class="cell-orders" data-label="All-Time Orders">
                         <div class="perf-cell">
                             <div class="perf-top">
                                 <span class="perf-num <?= !$hasOrders ? 'num-zero' : '' ?>"><?= fmtnum($emp['total_orders']) ?></span>
@@ -1015,7 +1038,7 @@ foreach ($sorted_employees as $idx => $emp):
                             <?php endif; ?>
                         </div>
                     </td>
-                    <td data-val="<?= (int)$emp['orders_this_month'] ?>" data-stat-month="<?= $eid ?>">
+                    <td data-val="<?= (int)$emp['orders_this_month'] ?>" data-stat-month="<?= $eid ?>" class="cell-month" data-label="This Month">
                         <span class="num-cell <?= (int)$emp['orders_this_month'] === 0 ? 'num-zero' : '' ?>">
                             <?= fmtnum($emp['orders_this_month']) ?>
                         </span>
@@ -1036,7 +1059,7 @@ foreach ($sorted_employees as $idx => $emp):
                             <?= tenure($emp['hire_date'] ?? '') ?>
                         </div>
                     </td>
-                    <td>
+                    <td class="cell-actions">
                         <div class="row-actions">
                             <a class="btn-row view" href="employee_view.php?id=<?= $eid ?>">
                                 <i class="fa-regular fa-eye"></i> View
