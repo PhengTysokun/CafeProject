@@ -525,12 +525,12 @@ tbody tr:hover .avatar, tbody tr:hover .avatar-img { border-color:var(--accent);
 .btn-row.view { background:transparent; color:var(--text-muted); }
 .btn-row.view:hover { background:rgba(255,255,255,.06); color:var(--text-light); }
 [data-theme="light"] .btn-row.view:hover { background:rgba(0,0,0,.05); }
-/* Edit = subtle icon square */
-.btn-row.edit { background:rgba(255,255,255,.04); border-color:var(--border); color:var(--text-muted); width:30px; height:28px; padding:0; }
+/* Edit = subtle labelled button */
+.btn-row.edit { background:rgba(255,255,255,.04); border-color:var(--border); color:var(--text-muted); padding:5px 11px; }
 [data-theme="light"] .btn-row.edit { background:rgba(0,0,0,.03); }
 .btn-row.edit:hover { background:rgba(209,144,75,.12); border-color:var(--accent); color:var(--accent); }
-/* Delete = ghost icon, separated to prevent mis-click */
-.btn-row.del  { background:transparent; color:var(--text-muted); width:30px; height:28px; padding:0; margin-left:8px; }
+/* Delete = quiet labelled button, separated to prevent mis-click */
+.btn-row.del  { background:transparent; color:var(--text-muted); padding:5px 11px; margin-left:8px; }
 .btn-row.del:hover  { background:rgba(255,95,95,.12); color:var(--danger); }
 
 /* ── INACTIVE TAG ── */
@@ -1071,11 +1071,11 @@ foreach ($sorted_employees as $idx => $emp):
                                 <i class="fa-regular fa-eye"></i> View
                             </a>
                             <button class="btn-row edit" onclick="openEditModal(<?= $eid ?>)" title="Edit employee">
-                                <i class="fa-solid fa-pen-to-square"></i>
+                                <i class="fa-solid fa-pen-to-square"></i> Edit
                             </button>
                             <?php if ($sess_role === 'admin'): ?>
                             <button class="btn-row del" onclick="confirmDelete(<?= $eid ?>,'<?= h($emp['name']) ?>')" title="Delete">
-                                <i class="fa-solid fa-trash-can"></i>
+                                <i class="fa-solid fa-trash-can"></i> Delete
                             </button>
                             <?php endif; ?>
                         </div>
