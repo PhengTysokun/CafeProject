@@ -185,6 +185,24 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 }
 .date-input:focus { border-color:rgba(209,144,75,.45); }
 .date-input option { background:#1a1a1a; color:#f5f5f5; }
+
+/* ── Searchable employee dropdown ── */
+.emp-dd { position:relative; }
+.emp-dd-trigger { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:150px; width:100%; cursor:pointer; text-align:left; }
+.emp-dd-trigger i { font-size:11px; color:var(--text-muted); transition:transform .2s; }
+.emp-dd.open .emp-dd-trigger i { transform:rotate(180deg); }
+.emp-dd.open .emp-dd-trigger { border-color:rgba(209,144,75,.45); }
+.emp-dd-panel { position:absolute; top:calc(100% + 6px); left:0; z-index:60; width:240px; max-width:82vw; background:#161616; border:1px solid var(--border-hover,#333); border-radius:10px; box-shadow:0 14px 36px rgba(0,0,0,.55); padding:6px; display:none; }
+.emp-dd.open .emp-dd-panel { display:block; animation:empIn .15s ease; }
+@keyframes empIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+.emp-dd-search { display:flex; align-items:center; gap:7px; padding:6px 9px; border:1px solid var(--border); border-radius:8px; background:rgba(255,255,255,.03); margin-bottom:6px; }
+.emp-dd-search i { font-size:11px; color:var(--text-muted); flex-shrink:0; }
+.emp-dd-search input { flex:1; min-width:0; background:transparent; border:none; outline:none; color:var(--text); font-size:13px; font-family:'Poppins',sans-serif; }
+.emp-dd-list { max-height:240px; overflow-y:auto; }
+.emp-dd-opt { padding:8px 11px; border-radius:7px; font-size:13px; color:var(--text); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.emp-dd-opt:hover { background:rgba(209,144,75,.12); color:var(--accent); }
+.emp-dd-opt.sel { background:rgba(209,144,75,.16); color:var(--accent); font-weight:600; }
+.emp-dd-empty { padding:12px; text-align:center; color:var(--text-muted); font-size:12px; }
 .date-label {
     font-size:15px; font-weight:700;
     color:var(--text);
@@ -339,14 +357,30 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
         </div>
         <div class="fb-field">
             <label class="fb-label">Employee</label>
-            <select name="emp" class="date-input" onchange="document.getElementById('filtersForm').submit()">
-                <option value="all"<?= $emp === 0 ? ' selected' : '' ?>>All staff</option>
-                <?php foreach ($emp_list as $e): ?>
-                <option value="<?= (int)$e['user_id'] ?>"<?= $emp === (int)$e['user_id'] ? ' selected' : '' ?>>
-                    <?= htmlspecialchars($e['name']) ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
+            <?php
+                $emp_selected_name = 'All staff';
+                foreach ($emp_list as $e) { if ($emp === (int)$e['user_id']) { $emp_selected_name = $e['name']; break; } }
+            ?>
+            <div class="emp-dd" id="empDD">
+                <input type="hidden" name="emp" id="empInput" value="<?= $emp === 0 ? 'all' : (int)$emp ?>">
+                <button type="button" class="date-input emp-dd-trigger" id="empTrigger" onclick="empToggle(event)">
+                    <span id="empLabel"><?= htmlspecialchars($emp_selected_name) ?></span>
+                    <i class="fa-solid fa-chevron-down"></i>
+                </button>
+                <div class="emp-dd-panel" id="empPanel">
+                    <div class="emp-dd-search">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="empSearch" placeholder="Search staff…" autocomplete="off" oninput="empFilter(this.value)">
+                    </div>
+                    <div class="emp-dd-list" id="empList">
+                        <div class="emp-dd-opt<?= $emp === 0 ? ' sel' : '' ?>" data-value="all" data-label="All staff" onclick="empPick(this)">All staff</div>
+                        <?php foreach ($emp_list as $e): ?>
+                        <div class="emp-dd-opt<?= $emp === (int)$e['user_id'] ? ' sel' : '' ?>" data-value="<?= (int)$e['user_id'] ?>" data-label="<?= htmlspecialchars($e['name']) ?>" onclick="empPick(this)"><?= htmlspecialchars($e['name']) ?></div>
+                        <?php endforeach; ?>
+                        <div class="emp-dd-empty" id="empEmpty" style="display:none">No staff found</div>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="fb-field">
             <label class="fb-label">Quick range</label>
@@ -467,5 +501,39 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
     </div>
 
 </div>
+<script>
+function empToggle(e) {
+    e.stopPropagation();
+    const dd = document.getElementById('empDD');
+    const wasOpen = dd.classList.toggle('open');
+    if (wasOpen) {
+        const s = document.getElementById('empSearch');
+        s.value = ''; empFilter('');
+        setTimeout(() => s.focus(), 30);
+    }
+}
+function empFilter(q) {
+    q = q.toLowerCase().trim();
+    let any = false;
+    document.querySelectorAll('#empList .emp-dd-opt').forEach(o => {
+        const m = o.dataset.label.toLowerCase().includes(q);
+        o.style.display = m ? '' : 'none';
+        if (m) any = true;
+    });
+    document.getElementById('empEmpty').style.display = any ? 'none' : 'block';
+}
+function empPick(el) {
+    document.getElementById('empInput').value = el.dataset.value;
+    document.getElementById('empLabel').textContent = el.dataset.label;
+    document.getElementById('filtersForm').submit();
+}
+document.addEventListener('click', e => {
+    const dd = document.getElementById('empDD');
+    if (dd && !dd.contains(e.target)) dd.classList.remove('open');
+});
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.getElementById('empDD')?.classList.remove('open');
+});
+</script>
 </body>
 </html>
