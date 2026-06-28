@@ -90,6 +90,31 @@ if ($order_ids) {
     $total_drinks = array_sum(array_column($drinks, 'qty'));
 }
 
+// ── Inventory-clerk shift summary (stock activity instead of orders) ──
+$is_clerk      = ($role === 'inventory_clerk');
+$stock_actions = [];
+$restock_count = 0; $adjust_count = 0; $items_touched = 0; $sc_status = 'none';
+if ($is_clerk) {
+    $sa = $conn->prepare("
+        SELECT ih.change_type, ih.amount, ih.created_at, i.ingredient_name
+        FROM ingredient_history ih
+        JOIN ingredients i ON i.ingredient_id = ih.ingredient_id
+        WHERE ih.created_by = ? AND DATE(ih.created_at) = CURDATE()
+          AND ih.change_type IN ('quick_restock','po_received','manual_adjust')
+        ORDER BY ih.created_at ASC
+    ");
+    $sa->bind_param("s", $uname);
+    $sa->execute();
+    $stock_actions = $sa->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($stock_actions as $a) {
+        if ($a['change_type'] === 'manual_adjust') $adjust_count++; else $restock_count++;
+    }
+    $items_touched = count(array_unique(array_column($stock_actions, 'ingredient_name')));
+    $scq    = $conn->query("SELECT status FROM stock_counts WHERE business_date = CURDATE() LIMIT 1");
+    $scrow  = $scq ? $scq->fetch_assoc() : null;
+    $sc_status = $scrow['status'] ?? 'none';
+}
+
 // ── AJAX: save cash reconciliation ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['actual_cash'])) {
     header('Content-Type: application/json');
@@ -323,10 +348,19 @@ a{text-decoration:none;}
 
 <!-- Stat cards -->
 <div class="stat-grid">
+<?php if ($is_clerk):
+    $sc_txt = $sc_status === 'submitted' ? 'Done' : ($sc_status === 'draft' ? 'Open' : '—');
+?>
+    <div class="stat-card orders"><div class="val"><?= $restock_count ?></div><div class="lbl">Restocks</div></div>
+    <div class="stat-card revenue"><div class="val"><?= $items_touched ?></div><div class="lbl">Items Updated</div></div>
+    <div class="stat-card avg"><div class="val"><?= $adjust_count ?></div><div class="lbl">Adjustments</div></div>
+    <div class="stat-card cancels"><div class="val" style="font-size:20px"><?= $sc_txt ?></div><div class="lbl">Stock Count</div></div>
+<?php else: ?>
     <div class="stat-card orders"><div class="val"><?= $total_orders ?></div><div class="lbl">Total Orders</div></div>
     <div class="stat-card revenue"><div class="val">$<?= number_format($total_revenue,2) ?></div><div class="lbl">Revenue</div></div>
     <div class="stat-card avg"><div class="val">$<?= number_format($avg_value,2) ?></div><div class="lbl">Avg Order</div></div>
     <div class="stat-card cancels"><div class="val"><?= $cancelled_count ?></div><div class="lbl">Cancelled</div></div>
+<?php endif; ?>
 </div>
 
 <?php if ($pay_breakdown): ?>
@@ -370,6 +404,26 @@ a{text-decoration:none;}
 <?php endif; ?>
 
 <div class="section s3" style="animation-delay:.56s">
+<?php if ($is_clerk): ?>
+    <div class="section-title"><i class="fa-solid fa-boxes-stacked"></i> Stock Activity This Shift</div>
+    <?php if ($stock_actions): ?>
+    <div class="order-rows">
+        <?php foreach (array_reverse($stock_actions) as $a):
+            $tlabel = match($a['change_type']) { 'quick_restock'=>'Restock','po_received'=>'PO Received','manual_adjust'=>'Adjust', default=>$a['change_type'] };
+            $amt = rtrim(rtrim(number_format((float)$a['amount'],2),'0'),'.');
+        ?>
+        <div class="order-row">
+            <span class="no"><i class="fa-solid fa-box" style="font-size:9px"></i></span>
+            <span class="customer"><?= h($a['ingredient_name']) ?></span>
+            <span class="amount"><?= h($amt) ?></span>
+            <span class="status-pill" style="background:rgba(209,144,75,.14);color:#d1904b"><?= h($tlabel) ?></span>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php else: ?>
+    <div class="empty-msg"><i class="fa-regular fa-face-meh"></i> No stock changes logged this shift yet.</div>
+    <?php endif; ?>
+<?php else: ?>
     <div class="section-title"><i class="fa-solid fa-list-ul"></i> Orders This Shift</div>
     <?php if ($orders): ?>
     <div class="order-rows">
@@ -395,6 +449,7 @@ a{text-decoration:none;}
     <?php else: ?>
     <div class="empty-msg"><i class="fa-regular fa-face-meh"></i> No orders taken this shift yet.</div>
     <?php endif; ?>
+<?php endif; ?>
 </div>
 
 <?php
