@@ -520,13 +520,26 @@ tbody tr:hover .avatar, tbody tr:hover .avatar-img { border-color:var(--accent);
 
 /* ── ROW ACTIONS ── */
 .row-actions { display:flex; gap:5px; }
-.btn-row { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:7px; font-size:11px; font-weight:600; cursor:pointer; text-decoration:none; transition:var(--transition); border:1px solid transparent; font-family:'Poppins',sans-serif; }
-.btn-row.view { background:rgba(52,152,219,.08);  color:var(--blue);   border-color:rgba(52,152,219,.2); }
-.btn-row.edit { background:rgba(209,144,75,.08);  color:var(--accent); border-color:rgba(209,144,75,.2); }
-.btn-row.del  { background:rgba(255,95,95,.06);   color:var(--danger); border-color:rgba(255,95,95,.15); padding:4px 8px; }
-.btn-row.view:hover { background:var(--blue);   color:#fff; }
-.btn-row.edit:hover { background:var(--accent); color:#000; }
-.btn-row.del:hover  { background:var(--danger); color:#fff; }
+.btn-row { display:inline-flex; align-items:center; justify-content:center; gap:5px; padding:5px 9px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; text-decoration:none; transition:var(--transition); border:1px solid transparent; font-family:'Poppins',sans-serif; }
+/* View = ghost text */
+.btn-row.view { background:transparent; color:var(--text-muted); }
+.btn-row.view:hover { background:rgba(255,255,255,.06); color:var(--text-light); }
+[data-theme="light"] .btn-row.view:hover { background:rgba(0,0,0,.05); }
+/* Edit = subtle icon square */
+.btn-row.edit { background:rgba(255,255,255,.04); border-color:var(--border); color:var(--text-muted); width:30px; height:28px; padding:0; }
+[data-theme="light"] .btn-row.edit { background:rgba(0,0,0,.03); }
+.btn-row.edit:hover { background:rgba(209,144,75,.12); border-color:var(--accent); color:var(--accent); }
+/* Delete = ghost icon, separated to prevent mis-click */
+.btn-row.del  { background:transparent; color:var(--text-muted); width:30px; height:28px; padding:0; margin-left:8px; }
+.btn-row.del:hover  { background:rgba(255,95,95,.12); color:var(--danger); }
+
+/* ── INACTIVE TAG ── */
+.inactive-tag { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; color:var(--text-muted); padding:2px 8px; border-radius:20px; background:rgba(255,255,255,.04); border:1px solid var(--border); }
+[data-theme="light"] .inactive-tag { background:rgba(0,0,0,.03); }
+.inactive-tag::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--text-muted); opacity:.6; }
+
+/* ── TABULAR FIGURES for scannable numeric columns ── */
+.revenue, .perf-num, .num-cell, .lead-m b, .foot-val, .perf-sub, .stat-num { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
 
 /* ── EMPTY STATE ── */
 .empty-state { text-align:center; padding:60px 20px; }
@@ -597,11 +610,13 @@ tbody tr:hover .avatar, tbody tr:hover .avatar-img { border-color:var(--accent);
 .filter-pill.shift-active i { color:inherit; }
 .shift-sep { width:1px; height:20px; background:var(--border); margin:0 4px; flex-shrink:0; }
 
-/* ── INLINE ROLE SELECTOR ── */
-.role-wrap { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:50px; font-size:10px; font-weight:700; background:var(--rb-bg,rgba(255,255,255,.07)); border:1px solid var(--rb-border,rgba(255,255,255,.12)); transition:var(--transition); white-space:nowrap; }
-.role-wrap.editable:hover { filter:brightness(1.18); cursor:pointer; }
+/* ── INLINE ROLE SELECTOR (dot + text) ── */
+.role-wrap { display:inline-flex; align-items:center; gap:7px; padding:4px 11px 4px 10px; border-radius:50px; font-size:11px; font-weight:600; background:rgba(255,255,255,.035); border:1px solid var(--border); color:var(--text); transition:var(--transition); white-space:nowrap; }
+[data-theme="light"] .role-wrap { background:rgba(0,0,0,.03); }
+.role-wrap.editable:hover { border-color:var(--rb-color,var(--border-hover)); cursor:pointer; }
+.role-dot { width:7px; height:7px; border-radius:50%; background:var(--rb-color,#888); box-shadow:0 0 0 3px color-mix(in srgb,var(--rb-color,#888) 22%,transparent); flex-shrink:0; }
 .role-wrap i { pointer-events:none; }
-.role-select { background:transparent; border:none; outline:none; color:var(--rb-color,#aaa); font-size:10px; font-weight:700; font-family:'Poppins',sans-serif; cursor:pointer; max-width:88px; }
+.role-select { background:transparent; border:none; outline:none; color:var(--text); font-size:11px; font-weight:600; font-family:'Poppins',sans-serif; cursor:pointer; max-width:90px; }
 .role-select option { background:#1a1a1a; color:#f5f5f5; font-weight:600; font-size:12px; }
 [data-theme="light"] .role-select option { background:#fff; color:#1a1410; }
 
@@ -779,7 +794,7 @@ textarea.em-input { resize:vertical; min-height:62px; line-height:1.5; }
 <?php if (!empty($leaderboard) && $total_orders_all > 0): ?>
 <!-- ── TOP PERFORMERS (compact strip) ── -->
 <div class="lead-strip">
-    <div class="lead-strip-hd"><i class="fa-solid fa-ranking-star"></i> Top Performers</div>
+    <div class="lead-strip-hd"><i class="fa-solid fa-ranking-star"></i> Top Performers <span style="font-weight:500;text-transform:none;letter-spacing:0;opacity:.65;margin-left:2px">· ranked by all-time orders</span></div>
     <div class="lead-cards">
 <?php
 $rmeta = [['fa-crown','var(--gold)'], ['fa-medal','var(--silver)'], ['fa-medal','var(--bronze)']];
@@ -963,7 +978,7 @@ foreach ($sorted_employees as $idx => $emp):
                         <?php if (!$_role_exists && $empRole !== 'admin'): ?>
                         <div class="role-wrap editable" data-eid="<?= $eid ?>" data-current="<?= h($empRole) ?>"
                              style="--rb-bg:#e74c3c1a;--rb-color:#e74c3c;--rb-border:#e74c3c33" title="Role '<?= h($empRole) ?>' no longer exists — please reassign">
-                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span class="role-dot"></span>
                             <select class="role-select" onchange="updateRole(<?= $eid ?>, this)" title="Reassign role" style="color:#e74c3c">
                                 <option value="" disabled selected>Reassign…</option>
                                 <?php foreach ($_roles_db as $_rs => $_ri): if ($_rs === 'admin' && ($_SESSION['role'] ?? '') !== 'admin') continue; ?>
@@ -973,13 +988,13 @@ foreach ($sorted_employees as $idx => $emp):
                         </div>
                         <?php elseif ($empRole === 'admin'): ?>
                         <span class="role-wrap" style="--rb-bg:<?= $_rbcol ?>1a;--rb-color:<?= $_rbcol ?>;--rb-border:<?= $_rbcol ?>33">
-                            <i class="fa-solid <?= htmlspecialchars($_rinfo['icon']) ?>"></i>
+                            <span class="role-dot"></span>
                             <?= htmlspecialchars($_rinfo['name']) ?>
                         </span>
                         <?php else: ?>
                         <div class="role-wrap editable" data-eid="<?= $eid ?>" data-current="<?= h($empRole) ?>"
                              style="--rb-bg:<?= $_rbcol ?>1a;--rb-color:<?= $_rbcol ?>;--rb-border:<?= $_rbcol ?>33">
-                            <i class="fa-solid <?= htmlspecialchars($_rinfo['icon']) ?>"></i>
+                            <span class="role-dot"></span>
                             <select class="role-select" onchange="updateRole(<?= $eid ?>, this)" title="Change role">
                                 <?php foreach ($_roles_db as $_rs => $_ri): if ($_rs === 'admin' && ($_SESSION['role'] ?? '') !== 'admin') continue; ?>
                                 <option value="<?= h($_rs) ?>" <?= $empRole === $_rs ? 'selected' : '' ?>><?= h($_ri['name']) ?></option>
@@ -992,12 +1007,11 @@ foreach ($sorted_employees as $idx => $emp):
                         <div class="perf-cell">
                             <div class="perf-top">
                                 <span class="perf-num <?= !$hasOrders ? 'num-zero' : '' ?>"><?= fmtnum($emp['total_orders']) ?></span>
+                                <?php if (!$hasOrders): ?><span class="inactive-tag">Inactive</span><?php endif; ?>
                             </div>
-                            <div class="perf-bar"><div class="perf-fill" style="width:<?= $pct ?>%"></div></div>
                             <?php if ($hasOrders): ?>
+                            <div class="perf-bar"><div class="perf-fill" style="width:<?= $pct ?>%"></div></div>
                             <div class="perf-sub">avg $<?= money($emp['avg_order_value']) ?> / order</div>
-                            <?php else: ?>
-                            <div class="perf-sub">No orders yet</div>
                             <?php endif; ?>
                         </div>
                     </td>
@@ -1012,7 +1026,7 @@ foreach ($sorted_employees as $idx => $emp):
                     <?php if ($sess_role === 'admin'): ?>
                     <td data-val="<?= round((float)$emp['total_revenue'], 2) ?>" data-stat-rev="<?= $eid ?>" class="hide-mob">
                         <span class="revenue <?= (float)$emp['total_revenue'] <= 0 ? 'num-zero' : '' ?>">
-                            $<?= money($emp['total_revenue']) ?>
+                            <?= (float)$emp['total_revenue'] > 0 ? '$'.money($emp['total_revenue']) : '—' ?>
                         </span>
                     </td>
                     <?php endif; ?>
@@ -1027,8 +1041,8 @@ foreach ($sorted_employees as $idx => $emp):
                             <a class="btn-row view" href="employee_view.php?id=<?= $eid ?>">
                                 <i class="fa-regular fa-eye"></i> View
                             </a>
-                            <button class="btn-row edit" onclick="openEditModal(<?= $eid ?>)">
-                                <i class="fa-solid fa-pen-to-square"></i> Edit
+                            <button class="btn-row edit" onclick="openEditModal(<?= $eid ?>)" title="Edit employee">
+                                <i class="fa-solid fa-pen-to-square"></i>
                             </button>
                             <?php if ($sess_role === 'admin'): ?>
                             <button class="btn-row del" onclick="confirmDelete(<?= $eid ?>,'<?= h($emp['name']) ?>')" title="Delete">
@@ -1875,7 +1889,7 @@ async function refreshStats() {
             const revTd = document.querySelector(`[data-stat-rev="${eid}"]`);
             if (revTd) {
                 const numEl = revTd.querySelector('.revenue');
-                if (numEl) { numEl.textContent = `$${s.total_revenue.toFixed(2)}`; numEl.classList.toggle('num-zero', s.total_revenue <= 0); }
+                if (numEl) { numEl.textContent = s.total_revenue > 0 ? `$${s.total_revenue.toFixed(2)}` : '—'; numEl.classList.toggle('num-zero', s.total_revenue <= 0); }
                 revTd.dataset.val = s.total_revenue.toFixed(2);
             }
 
