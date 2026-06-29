@@ -604,7 +604,7 @@ body {
         <?php if ($paid_date): ?>
         <div class="footer-meta anim-5">
             <span><i class="fa-regular fa-calendar"></i><?= htmlspecialchars($paid_date) ?></span>
-            <span>Order #<?= (int)$order['order_id'] ?></span>
+            <span>Order #<?= (int)$order['daily_order_no'] ?></span>
         </div>
         <?php endif; ?>
 

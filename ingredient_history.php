@@ -17,6 +17,15 @@ if (!in_array($filter_type, $valid_types)) $filter_type = '';
 $per_page = 10;
 $page     = max(1, (int)($_GET['page'] ?? 1));
 
+/* Display reference: show the customer-facing order number (daily_order_no),
+   not the raw internal order_id. Falls back to the stored reference text. */
+function _hist_ref(array $r): string {
+    if (!empty($r['order_id']) && !empty($r['daily_order_no'])) {
+        return 'Order #' . (int)$r['daily_order_no'];
+    }
+    return ($r['reference'] ?? '') !== '' ? $r['reference'] : '—';
+}
+
 /* ══════════════════════════════════════════
    AJAX POLL — returns new rows as JSON
 ══════════════════════════════════════════ */
@@ -34,9 +43,11 @@ if (($_GET['ajax'] ?? '') === '1') {
 
     $stmt = $conn->prepare("
         SELECT h.id, h.ingredient_id, h.change_type, h.amount, h.order_id,
-               h.reference, h.created_by, h.created_at, i.ingredient_name, i.unit
+               h.reference, h.created_by, h.created_at, i.ingredient_name, i.unit,
+               o.daily_order_no
         FROM ingredient_history h
         JOIN ingredients i ON i.ingredient_id = h.ingredient_id
+        LEFT JOIN orders o ON o.order_id = h.order_id
         WHERE " . implode(' AND ', $where) . "
         ORDER BY h.created_at DESC
         LIMIT 50
@@ -44,6 +55,8 @@ if (($_GET['ajax'] ?? '') === '1') {
     $stmt->bind_param($types, ...$params);
     $stmt->execute();
     $new_rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($new_rows as &$_nr) { $_nr['display_ref'] = _hist_ref($_nr); }
+    unset($_nr);
     echo json_encode(['rows' => $new_rows]);
     exit;
 }
@@ -111,9 +124,10 @@ $offset         = ($page - 1) * $per_page;
 /* ── paginated rows ── */
 $paged_sql = "
     SELECT h.id, h.ingredient_id, h.change_type, h.amount, h.order_id, h.reference, h.created_by, h.created_at,
-           i.ingredient_name, i.unit
+           i.ingredient_name, i.unit, o.daily_order_no
     FROM ingredient_history h
     JOIN ingredients i ON i.ingredient_id = h.ingredient_id
+    LEFT JOIN orders o ON o.order_id = h.order_id
 " . ($where ? 'WHERE ' . implode(' AND ', $where) : '') . "
     ORDER BY h.created_at DESC
     LIMIT ? OFFSET ?
@@ -509,7 +523,7 @@ tr.hidden { display:none !important; }
                 };
                 $amtDisplay = ($isDeduct ? '−' : '+') . fmtQ(abs($rawAmt)) . ($r['unit'] ? ' ' . h($r['unit']) : '');
                 $ts = date('d M Y, H:i', strtotime($r['created_at']));
-                $ref = h($r['reference'] ?? '—');
+                $ref = h(_hist_ref($r));
             ?>
             <tr data-id="<?= (int)$r['id'] ?>" data-search="<?= h(strtolower($r['ingredient_name'] . ' ' . ($r['reference'] ?? '') . ' ' . ($r['created_by'] ?? ''))) ?>">
                 <td style="color:var(--text-muted);font-size:12px"><?= $ts ?></td>
@@ -635,7 +649,7 @@ function buildRow(r) {
     const ts       = new Date(r.created_at.replace(' ', 'T'));
     const tsStr    = ts.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
                    + ', ' + ts.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
-    const ref      = r.reference || '—';
+    const ref      = r.display_ref || r.reference || '—';
     const by       = r.created_by
         ? `<span style="display:inline-flex;align-items:center;gap:5px"><i class="fa-solid fa-user" style="font-size:10px;color:var(--text-muted)"></i>${esc(r.created_by)}</span>`
         : `<span style="color:var(--border-hover)">—</span>`;
