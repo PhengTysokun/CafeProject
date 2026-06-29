@@ -14,11 +14,15 @@ if ($stand === '') {
     exit;
 }
 
+// Token-driven: a stand is in use until released (table_number cleared), not
+// until paid. Mirrors get_stands.php / the confirm_order duplicate guard.
 $stmt = $conn->prepare("
     SELECT order_id, daily_order_no, customer_name, status
     FROM orders
     WHERE UPPER(table_number) = UPPER(?)
-      AND status IN ('Pending','Processing','Preparing','PendingPayment')
+      AND status NOT IN ('Cancelled','Refunded','Void')
+      AND business_date = CURDATE()
+    ORDER BY order_date DESC
     LIMIT 1
 ");
 $stmt->bind_param("s", $stand);

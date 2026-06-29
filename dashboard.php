@@ -1071,7 +1071,8 @@ body.no-sidebar{--sidebar-w:0px;}
         <?php endif; ?>
 
         <!-- OPERATIONS -->
-        <?php if (can('barista_station') || can('customer_display')): ?>
+        <?php $_can_stands = in_array($_SESSION['role'] ?? '', ['admin','manager','staff'], true); ?>
+        <?php if (can('barista_station') || can('customer_display') || $_can_stands): ?>
         <div class="nav-group-label" onclick="toggleGroup(this)" data-group="operations">
             <span>Operations</span><i class="fa-solid fa-chevron-right nav-chevron"></i>
         </div>
@@ -1086,6 +1087,12 @@ body.no-sidebar{--sidebar-w:0px;}
             <a class="nav-item" href="customer_display.php">
                 <i class="fa-solid fa-display"></i>
                 <span class="nav-label">Customer Display</span>
+            </a>
+            <?php endif; ?>
+            <?php if ($_can_stands): ?>
+            <a class="nav-item" href="stands.php">
+                <i class="fa-solid fa-table-cells-large"></i>
+                <span class="nav-label">Stand Numbers</span>
             </a>
             <?php endif; ?>
         </div>

@@ -34,7 +34,9 @@ $table_number  = ($order_type === 'drink_in') ? (substr(trim($_POST['table_numbe
 
 // ── STAND DUPLICATE BLOCK ──
 if (!empty($table_number)) {
-    $s = $conn->prepare("SELECT daily_order_no, customer_name, status FROM orders WHERE UPPER(table_number) = UPPER(?) AND status IN ('Pending','Processing','Preparing','PendingPayment') LIMIT 1");
+    // Token-driven: a stand is taken until its placard is returned (released),
+    // so block reuse while any non-cancelled order today still holds it.
+    $s = $conn->prepare("SELECT daily_order_no, customer_name, status FROM orders WHERE UPPER(table_number) = UPPER(?) AND status NOT IN ('Cancelled','Refunded','Void') AND business_date = CURDATE() LIMIT 1");
     $s->bind_param("s", $table_number);
     $s->execute();
     $dup = $s->get_result()->fetch_assoc();
