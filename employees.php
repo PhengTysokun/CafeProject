@@ -939,6 +939,28 @@ foreach ($leaderboard as $i => $emp):
     </div>
 </div>
 
+<?php
+// Distinct positions among display-only (non-POS) staff, for the General sub-filter.
+$general_positions = [];
+foreach ($employees as $_ge) {
+    if (($_ge['emp_role'] ?? '') === 'general') {
+        $jt = trim($_ge['job_title'] ?? '') ?: '—';
+        $general_positions[$jt] = ($general_positions[$jt] ?? 0) + 1;
+    }
+}
+ksort($general_positions);
+?>
+<!-- Position sub-filter (only shown when the General role filter is active) -->
+<div id="positionFilter" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:0 2px 10px">
+    <span class="fg-label" style="margin-right:2px">Position</span>
+    <button class="filter-pill active-general" data-position="" onclick="setPosition(this,'')">All</button>
+    <?php foreach ($general_positions as $pt => $pc): ?>
+    <button class="filter-pill" data-position="<?= h(strtolower($pt)) ?>" onclick="setPosition(this,'<?= h(strtolower($pt)) ?>')">
+        <?= h($pt) ?> <span class="pill-count"><?= (int)$pc ?></span>
+    </button>
+    <?php endforeach; ?>
+</div>
+
 <!-- ── TABLE ── -->
 <div class="table-card">
     <div class="table-wrap">
@@ -1234,15 +1256,34 @@ function resetFilters() {
 
 /* ── FILTER ── */
 const ROLE_FILTERS = <?= json_encode(array_merge(array_keys($_roles_db), ['general'])) ?>;
+let currentPositionFilter = '';
 function setFilter(btn, filter) {
     currentFilter = filter;
-    document.querySelectorAll('.filter-pill:not(.shift-pill)').forEach(p => {
+    document.querySelectorAll('.filter-pill:not(.shift-pill):not(#positionFilter .filter-pill)').forEach(p => {
         p.className = 'filter-pill';
         if (p.dataset.filter === filter) {
             if (filter === 'all') p.classList.add('active');
             else p.classList.add('active-' + filter);
         }
     });
+    // Show the position sub-filter only for the General category; reset it otherwise.
+    const pf = document.getElementById('positionFilter');
+    currentPositionFilter = '';
+    if (pf) {
+        if (filter === 'general') {
+            pf.style.display = 'flex';
+            pf.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active', 'active-general'));
+            const allp = pf.querySelector('[data-position=""]'); if (allp) allp.classList.add('active-general');
+        } else {
+            pf.style.display = 'none';
+        }
+    }
+    applyFilters();
+}
+function setPosition(btn, pos) {
+    currentPositionFilter = pos;
+    document.querySelectorAll('#positionFilter .filter-pill').forEach(p => p.classList.remove('active', 'active-general'));
+    btn.classList.add('active-general');
     applyFilters();
 }
 function setShiftFilter(btn, shift) {
@@ -1268,7 +1309,8 @@ function applyFilters() {
         else if (ROLE_FILTERS.includes(currentFilter)) filtOk = row.dataset.role === currentFilter;
         else filtOk = true;
         const shiftOk = !currentShiftFilter || row.dataset.shift === currentShiftFilter;
-        const show = nameOk && filtOk && shiftOk;
+        const posOk   = !currentPositionFilter || row.dataset.title === currentPositionFilter;
+        const show = nameOk && filtOk && shiftOk && posOk;
         row.classList.toggle('hidden', !show);
         if (show) {
             shown++;
