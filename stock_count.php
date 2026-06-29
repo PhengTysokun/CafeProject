@@ -167,6 +167,7 @@ $day_label = ($bdate === $today) ? 'Today' : (($bdate === date('Y-m-d', strtotim
 <title>Stock Count — <?= h($date_fmt) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}})();</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -374,6 +375,12 @@ a{text-decoration:none;}
 .pg-btn:disabled{opacity:.28;cursor:not-allowed;}
 .pg-btn.active{background:var(--amber);color:#000;border-color:var(--amber);}
 .pg-ellipsis{color:var(--muted);font-size:13px;padding:0 4px;line-height:34px;}
+/* Light theme (follows shared localStorage theme) */
+[data-theme="light"]{--bg:#ECEEF2;--surface:#FFFFFF;--surface2:#F5F7FA;--border:#E2E5EA;--text:#111827;--muted:#5A6373;--muted2:#5A6373;}
+[data-theme="light"] .topbar{background:rgba(255,255,255,.92);}
+[data-theme="light"] body{background:radial-gradient(ellipse 80% 40% at 50% 0%,rgba(209,144,75,.05) 0%,transparent 100%),#ECEEF2;}
+[data-theme="light"] .filter-group select option,
+[data-theme="light"] select option{background:#FFFFFF;}
 </style>
 </head>
 <body>

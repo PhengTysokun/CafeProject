@@ -134,6 +134,7 @@ function he($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 <title>Suppliers | Bird's Nest Coffee</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}})();</script>
 <style>
 :root{
     --bg:#0b0b0b; --bg-card:#131313; --bg-input:#1a1a1a;
@@ -280,6 +281,9 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
     thead th:nth-child(3),thead th:nth-child(4),
     tbody td:nth-child(3),tbody td:nth-child(4){display:none;}
 }
+/* Light theme (follows shared localStorage theme) */
+[data-theme="light"]{--bg:#ECEEF2;--bg-card:#FFFFFF;--bg-input:#F5F7FA;--border:#E2E5EA;--border-hover:#CDD0D8;--text:#111827;--text-muted:#5A6373;--text-light:#0B0F19;}
+[data-theme="light"] .topbar{background:rgba(255,255,255,.92);}
 </style>
 </head>
 <body>

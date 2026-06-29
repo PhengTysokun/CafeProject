@@ -107,6 +107,7 @@ function fmt_hour(int $h): string {
 <title>Promotion Settings | Bird's Nest Coffee</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
 <style>
 :root {
     --accent: #d1904b;
@@ -126,6 +127,43 @@ function fmt_hour(int $h): string {
     --transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
     --glow: 0 0 40px rgba(209,144,75,0.08);
 }
+/* ── Light theme (follows shared localStorage 'theme'; palette matches dashboard) ── */
+[data-theme="light"] {
+    --bg: #ECEEF2;
+    --bg-card: #FFFFFF;
+    --border: #E2E5EA;
+    --border-hover: #CDD0D8;
+    --text: #111827;
+    --text-muted: #5A6373;
+    --shadow-lg: 0 4px 20px rgba(0,0,0,.09), 0 1px 4px rgba(0,0,0,.05);
+    --shadow-accent: 0 6px 22px rgba(209,144,75,0.18);
+    --glow: none;
+}
+/* gradient title would clip white-on-white in light mode */
+[data-theme="light"] .hero h1 {
+    background: linear-gradient(135deg, #1f2937 25%, var(--accent-dark) 115%);
+    -webkit-background-clip: text; background-clip: text;
+}
+/* native dropdown options need a light surface */
+[data-theme="light"] .field select option { background: #FFFFFF; }
+/* hardcoded dark surfaces → light equivalents */
+[data-theme="light"] .card {
+    background: var(--bg-card);
+    border-color: var(--border);
+    box-shadow: var(--shadow-lg);
+}
+[data-theme="light"] .toggle-row,
+[data-theme="light"] .field input,
+[data-theme="light"] .field select,
+[data-theme="light"] .field textarea {
+    background: #F5F7FA;
+    border-color: var(--border);
+}
+[data-theme="light"] .field input:focus,
+[data-theme="light"] .field select:focus,
+[data-theme="light"] .field textarea:focus { background: #FFFFFF; }
+[data-theme="light"] .btn-cancel { background: #F5F7FA; }
+[data-theme="light"] .btn-cancel:hover { background: #ECEEF2; }
 
 *{box-sizing:border-box;margin:0;padding:0;}
 html{height:100%;}

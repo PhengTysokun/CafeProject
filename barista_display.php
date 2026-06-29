@@ -68,6 +68,7 @@ if (isset($_GET['ajax'])) {
 <title>Barista Station</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}})();</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 
@@ -233,6 +234,10 @@ body{
 .empty i{font-size:56px;color:rgba(255,255,255,.06);}
 .empty h2{font-size:20px;font-weight:600;color:rgba(255,255,255,.15);}
 .empty p{font-size:13px;}
+/* Light theme (follows shared localStorage theme) */
+[data-theme="light"]{--bg:#ECEEF2;--surface:#FFFFFF;--border:#E2E5EA;--text:#111827;--muted:#5A6373;}
+[data-theme="light"] .empty i{color:rgba(0,0,0,.10);}
+[data-theme="light"] .empty h2{color:rgba(0,0,0,.34);}
 </style>
 </head>
 <body>

@@ -42,6 +42,7 @@ $is_today       = $date === date('Y-m-d');
 <title>Attendance | Bird's Nest Coffee</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}})();</script>
 <style>
 :root {
     --accent:       #d1904b;
@@ -217,6 +218,9 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
 .report-pager .rp-btn.active { background:var(--accent); border-color:var(--accent); color:#1a1410; }
 .report-pager .rp-btn:disabled { opacity:.35; cursor:not-allowed; }
 .report-pager .rp-ellipsis { color:var(--text-muted); padding:0 4px; }
+/* Light theme (follows shared localStorage theme) */
+[data-theme="light"]{--bg:#ECEEF2;--card:#FFFFFF;--card2:#F5F7FA;--border:#E2E5EA;--text:#111827;--text-muted:#5A6373;}
+[data-theme="light"] .topbar{background:rgba(255,255,255,.92);}
 </style>
 </head>
 <body>

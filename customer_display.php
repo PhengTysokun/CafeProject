@@ -39,6 +39,7 @@ if (isset($_GET['ajax'])) {
 <title>Order Status — Bird's Nest Coffee</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}})();</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -234,6 +235,8 @@ body{
   grid-column:1/-1;min-height:40vh;
 }
 .spinner i{font-size:28px;color:var(--amber);animation:spin 1s linear infinite;}
+/* Light theme (follows shared localStorage theme) */
+[data-theme="light"]{--bg:#ECEEF2;--surface:#FFFFFF;--border:#E2E5EA;--text:#111827;--muted:#5A6373;--muted2:#5A6373;}
 </style>
 </head>
 <body>

@@ -106,6 +106,7 @@ $home_url = ($role === 'barista') ? 'view_order.php' : 'dashboard.php';
 <title>My Profile | Bird's Nest Coffee</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}})();</script>
 <style>
 :root {
     --accent:       #d1904b;
@@ -361,6 +362,9 @@ body {
     .profile-stats { grid-template-columns:1fr 1fr; }
     .page-wrap { padding:20px 14px 50px; }
 }
+/* Light theme (follows shared localStorage theme) */
+[data-theme="light"]{--bg:#ECEEF2;--card:#FFFFFF;--card2:#F5F7FA;--border:#E2E5EA;--text:#111827;--text-muted:#5A6373;}
+[data-theme="light"] .topbar{background:rgba(255,255,255,.92);}
 </style>
 </head>
 <body>

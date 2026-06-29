@@ -70,6 +70,7 @@ if ($action === ""):
     <title>Bird's Nest Coffee — Orders</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}})();</script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
     
     <style>
@@ -1191,6 +1192,32 @@ if ($action === ""):
             padding: 12px;
         }
     }
+/* Light theme (follows shared localStorage theme) */
+[data-theme="light"]{--bg:#ECEEF2;--bg-card:#FFFFFF;--bg-card-hover:#F5F7FA;--border:#E2E5EA;--border-hover:#CDD0D8;--text:#111827;--text-muted:#5A6373;--text-light:#0B0F19;}
+[data-theme="light"] body{
+    background-color:#ECEEF2;
+    background-image:
+        radial-gradient(ellipse 90% 60% at 15% -10%, rgba(120,120,160,0.06) 0%, transparent 55%),
+        radial-gradient(ellipse 70% 60% at 85% 110%, rgba(100,100,140,0.05) 0%, transparent 55%),
+        linear-gradient(rgba(0,0,0,0.028) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.028) 1px, transparent 1px);
+    background-size:auto, auto, 72px 72px, 72px 72px;
+}
+[data-theme="light"] .order-card{
+    background:#FFFFFF; border-color:#E2E5EA;
+    box-shadow:0 4px 20px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.05);
+    backdrop-filter:none; -webkit-backdrop-filter:none;
+}
+[data-theme="light"] .order-card:hover{ border-color:#CDD0D8; box-shadow:0 12px 34px rgba(0,0,0,.12); }
+[data-theme="light"] .back,
+[data-theme="light"] .status-tab,
+[data-theme="light"] .toggle-btn,
+[data-theme="light"] .toggle-container{ background:#FFFFFF; border-color:#E2E5EA; }
+[data-theme="light"] .status-tab .badge{ background:#ECEEF2; color:#5A6373; }
+[data-theme="light"] .order-item,
+[data-theme="light"] .customizations,
+[data-theme="light"] .custom-chip,
+[data-theme="light"] .chip{ background:#F5F7FA; border-color:#E2E5EA; }
     </style>
 </head>
 <body>
@@ -1225,7 +1252,7 @@ if ($action === ""):
         <?php endif; ?>
     </div>
     <div style="padding-left:4px;">
-        <div style="font-size:16px;font-weight:700;color:#f5f5f5;line-height:1.3;margin-bottom:3px;">
+        <div style="font-size:16px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:3px;">
             <?= $_greeting ?>, <span style="color:var(--accent);"><?= $_vo_username ?></span>
         </div>
         <div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px;margin-bottom:7px;">
