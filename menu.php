@@ -1206,7 +1206,7 @@ var CSRF        = '<?= e($_SESSION['csrf_token']) ?>';
 var BUY_X_COUNT = <?= (int)BUY_X_COUNT ?>;
 var ADD_TO_ORDER_MODE = <?= (int)$add_to_order_mode ?>;
 var CAFE_TABLES = [];
-var CP_STAND_MAX = 20;
+var CP_STAND_MAX = <?= STAND_COUNT ?>;
 var CP_TAX_RATE  = <?= TAX_RATE ?>;
 
 // ── Escape HTML for JS-built elements ──

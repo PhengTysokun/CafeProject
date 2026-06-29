@@ -42,7 +42,7 @@ while ($row = $res->fetch_assoc()) {
     $k = trim($row['table_number']);
     if ($k !== '' && !isset($occ[$k])) $occ[$k] = $row;
 }
-$STAND_MAX = 20;
+$STAND_MAX = STAND_COUNT;
 // Any occupied stand outside the 1..20 grid (free-form numbers).
 // Note: PHP coerces numeric string array keys to int, so test with is_numeric
 // (ctype_digit on an int reads it as an ASCII codepoint — wrong).

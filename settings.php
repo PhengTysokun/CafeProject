@@ -35,6 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'target' => [
             'daily_sales_target' => (string)max(0, round((float)($_POST['daily_sales_target'] ?? 500), 2)),
         ],
+        'stands' => [
+            'stand_count' => (string)max(1, min(100, (int)($_POST['stand_count'] ?? 20))),
+        ],
         default => [],
     };
 
@@ -81,6 +84,7 @@ $bx_end_date     = $s['buy_x_end_date']   ?? '';
 $khr_rate        = (int)($s['khr_exchange_rate']   ?? 4100);
 $tax_rate        = (float)($s['tax_rate']          ?? 10);
 $daily_target    = (float)($s['daily_sales_target'] ?? 500);
+$stand_count     = (int)($s['stand_count'] ?? 20);
 
 $_today      = date('Y-m-d');
 $hh_expired  = $hh_end_date !== '' && $_today > $hh_end_date;
@@ -589,6 +593,7 @@ body::after {
             'currency'   => 'Currency Settings',
             'tax'        => 'Tax Settings',
             'target'     => 'Sales Target',
+            'stands'     => 'Stand Numbers',
             default      => 'Settings',
         };
     ?>
@@ -888,6 +893,46 @@ body::after {
                 <div class="form-actions-info">
                     <i class="fa-solid fa-circle-info"></i>
                     Saves Sales Target only
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <a href="dashboard.php" class="btn btn-cancel">
+                        <i class="fa-solid fa-xmark"></i> Dashboard
+                    </a>
+                    <button type="submit" class="btn btn-save" style="padding:10px 22px;font-size:13px;">
+                        <i class="fa-solid fa-floppy-disk"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <!-- ── STAND NUMBERS ── -->
+    <form method="POST">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon"><i class="fa-solid fa-table-cells-large"></i></div>
+                <div>
+                    <div class="card-title">Stand Numbers</div>
+                    <div class="card-sub">How many metal stand numbers you hand out (the order picker &amp; Stand Numbers page show 1&hellip;N)</div>
+                </div>
+            </div>
+
+            <div class="card-inner">
+                <div class="fields-grid single">
+                    <div class="field">
+                        <label><i class="fa-solid fa-hashtag"></i> Number of stands</label>
+                        <input type="number" name="stand_count" id="standCount"
+                               value="<?= $stand_count ?>" min="1" max="100" step="1">
+                        <span class="field-hint">Set 1&ndash;100. Reducing it won't free stands already in use.</span>
+                    </div>
+                </div>
+            </div>
+
+            <input type="hidden" name="_section" value="stands">
+            <div class="form-actions">
+                <div class="form-actions-info">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Saves Stand Numbers only
                 </div>
                 <div style="display:flex;gap:10px;">
                     <a href="dashboard.php" class="btn btn-cancel">

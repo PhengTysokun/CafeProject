@@ -2237,7 +2237,7 @@ async function redeemReward(rewardName, pointsRequired) {
 }
 
 // ── Stand occupancy grid ──
-var STAND_MAX = 20;
+var STAND_MAX = <?= STAND_COUNT ?>;
 
 function toggleStandGrid(gridId, inputId, warnId, warnTextId) {
     var grid = document.getElementById(gridId);
