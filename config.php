@@ -91,6 +91,10 @@ _migrate($conn, 'employees_user_id', function($db) {
 _migrate($conn, 'employees_shift_v1', function($db) {
     $db->query("ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift ENUM('morning','afternoon','night') NULL DEFAULT NULL");
 });
+// Display-only / non-POS staff (cleaner, waiter, etc.): is_pos=0 means no login, no role.
+_migrate($conn, 'employees_is_pos_v1', function($db) {
+    $db->query("ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_pos TINYINT(1) NOT NULL DEFAULT 1");
+});
 _migrate($conn, 'products_badge_text', function($db) {
     $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_text VARCHAR(40) NULL DEFAULT NULL");
 });

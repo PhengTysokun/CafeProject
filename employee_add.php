@@ -4,8 +4,10 @@ require 'config.php';
 
 // Ensure employees table has user_id link column
 $conn->query("ALTER TABLE employees ADD COLUMN IF NOT EXISTS user_id INT NULL");
-// Backfill existing rows that predate this column (best-effort using old ID assumption)
-$conn->query("UPDATE employees e JOIN users u ON u.user_id = e.employee_id SET e.user_id = u.user_id WHERE e.user_id IS NULL");
+// Backfill existing rows that predate this column (best-effort using old ID assumption).
+// Scoped to is_pos=1 only — display-only/non-POS staff legitimately have a NULL user_id
+// and must never be auto-linked to a random user.
+$conn->query("UPDATE employees e JOIN users u ON u.user_id = e.employee_id SET e.user_id = u.user_id WHERE e.user_id IS NULL AND e.is_pos = 1");
 
 // AJAX: username availability check
 if (isset($_GET['check_username'])) {
@@ -39,6 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $confirm  = $_POST['confirm_password'] ?? '';
     $roleRaw  = $_POST['role'] ?? 'staff';
+    // POS access: ON = real login + role; OFF = display-only staff (cleaner, waiter…), no account.
+    $is_pos   = isset($_POST['pos_access']) ? 1 : 0;
     // Validate against DB roles
     $_vrole = $conn->prepare("SELECT slug FROM roles WHERE slug=?");
     $_vrole->bind_param("s", $roleRaw); $_vrole->execute();
@@ -47,19 +51,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $old = ['name'=>$name,'phone'=>$phone,'job'=>$job,'salary'=>$salary,'dob'=>$dob,'hire'=>$hire,'address'=>$address,'username'=>$username,'role'=>$roleRaw];
 
     if (!$name)    $errors[] = 'Full name is required.';
-    if (!$username) $errors[] = 'Username is required.';
-    elseif (strlen($username) < 3) $errors[] = 'Username must be at least 3 characters.';
-    if (!$password) $errors[] = 'Password is required.';
-    elseif (strlen($password) < 8)            $errors[] = 'Password must be at least 8 characters.';
-    elseif (!preg_match('/[A-Z]/', $password)) $errors[] = 'Password must contain at least one uppercase letter.';
-    elseif (!preg_match('/[0-9]/', $password)) $errors[] = 'Password must contain at least one number.';
-    elseif (!preg_match('/[^A-Za-z0-9]/', $password)) $errors[] = 'Password must contain at least one symbol (e.g. !@#$).';
-    if ($password !== $confirm) $errors[] = 'Passwords do not match.';
+    if (!$job)     $errors[] = 'Job title is required.';
+    // Account/role checks only apply to POS staff. Display-only staff have no login.
+    if ($is_pos) {
+        if (!$username) $errors[] = 'Username is required.';
+        elseif (strlen($username) < 3) $errors[] = 'Username must be at least 3 characters.';
+        if (!$password) $errors[] = 'Password is required.';
+        elseif (strlen($password) < 8)            $errors[] = 'Password must be at least 8 characters.';
+        elseif (!preg_match('/[A-Z]/', $password)) $errors[] = 'Password must contain at least one uppercase letter.';
+        elseif (!preg_match('/[0-9]/', $password)) $errors[] = 'Password must contain at least one number.';
+        elseif (!preg_match('/[^A-Za-z0-9]/', $password)) $errors[] = 'Password must contain at least one symbol (e.g. !@#$).';
+        if ($password !== $confirm) $errors[] = 'Passwords do not match.';
 
-    if (empty($errors)) {
-        $q = $conn->prepare("SELECT user_id FROM users WHERE username=? LIMIT 1");
-        $q->bind_param('s',$username); $q->execute(); $q->store_result();
-        if ($q->num_rows > 0) $errors[] = 'Username is already taken.';
+        if (empty($errors)) {
+            $q = $conn->prepare("SELECT user_id FROM users WHERE username=? LIMIT 1");
+            $q->bind_param('s',$username); $q->execute(); $q->store_result();
+            if ($q->num_rows > 0) $errors[] = 'Username is already taken.';
+        }
     }
 
     if (empty($errors)) {
@@ -73,21 +81,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 move_uploaded_file($_FILES['photo']['tmp_name'], $photo);
             }
         }
-        $s1 = $conn->prepare("INSERT INTO employees (name,phone,job_title,salary,date_of_birth,hire_date,address,photo) VALUES (?,?,?,?,?,?,?,?)");
-        $s1->bind_param("sssdssss",$name,$phone,$job,$salary,$dob,$hire,$address,$photo);
+        $s1 = $conn->prepare("INSERT INTO employees (name,phone,job_title,salary,date_of_birth,hire_date,address,photo,is_pos) VALUES (?,?,?,?,?,?,?,?,?)");
+        $s1->bind_param("sssdssssi",$name,$phone,$job,$salary,$dob,$hire,$address,$photo,$is_pos);
         $s1->execute();
         $emp_id = $conn->insert_id;
 
-        $hp = password_hash($password, PASSWORD_DEFAULT);
-        $s2 = $conn->prepare("INSERT INTO users (username,password,role_id) VALUES (?,?,(SELECT id FROM roles WHERE slug=?))");
-        $s2->bind_param("sss",$username,$hp,$role);
-        $s2->execute();
-        $usr_id = $conn->insert_id;
+        // POS staff get a login + role; display-only staff get neither (user_id stays NULL).
+        if ($is_pos) {
+            $hp = password_hash($password, PASSWORD_DEFAULT);
+            $s2 = $conn->prepare("INSERT INTO users (username,password,role_id) VALUES (?,?,(SELECT id FROM roles WHERE slug=?))");
+            $s2->bind_param("sss",$username,$hp,$role);
+            $s2->execute();
+            $usr_id = $conn->insert_id;
 
-        // Store the real user_id link on the employee row
-        $s3 = $conn->prepare("UPDATE employees SET user_id = ? WHERE employee_id = ?");
-        $s3->bind_param("ii", $usr_id, $emp_id);
-        $s3->execute();
+            // Store the real user_id link on the employee row
+            $s3 = $conn->prepare("UPDATE employees SET user_id = ? WHERE employee_id = ?");
+            $s3->bind_param("ii", $usr_id, $emp_id);
+            $s3->execute();
+        }
 
         header("Location: employees.php?added=1");
         exit;
@@ -958,8 +969,16 @@ kbd {
                         <div class="form-group">
                             <label>Job Title <span class="req">*</span></label>
                             <?php
-                            // Job titles are derived directly from the roles in DB
+                            // POS job titles come from the roles; plus common non-POS positions.
                             $job_titles = array_map(fn($r) => ['value' => $r['name'], 'icon' => $r['icon'], 'slug' => $r['slug']], $_all_roles);
+                            $job_titles = array_merge($job_titles, [
+                                ['value' => 'Cleaner',    'icon' => 'fa-broom',         'slug' => ''],
+                                ['value' => 'Waiter',     'icon' => 'fa-utensils',      'slug' => ''],
+                                ['value' => 'Security',   'icon' => 'fa-shield-halved', 'slug' => ''],
+                                ['value' => 'Cook',       'icon' => 'fa-kitchen-set',   'slug' => ''],
+                                ['value' => 'Dishwasher', 'icon' => 'fa-sink',          'slug' => ''],
+                                ['value' => 'Helper',     'icon' => 'fa-hands-helping', 'slug' => ''],
+                            ]);
                             $old_job = $old['job'] ?? '';
                             $display_label = $old_job;
                             $display_icon  = '';
@@ -988,6 +1007,11 @@ kbd {
                                         <?php if ($old_job === $jt['value']): ?><i class="fa-solid fa-check cdd-opt-check"></i><?php endif; ?>
                                     </div>
                                     <?php endforeach; ?>
+                                    <div class="cdd-option cdd-other" data-value="__other__" data-icon="fa-plus" data-slug=""
+                                         style="color:var(--accent);border-top:1px solid rgba(255,255,255,0.06)">
+                                        <i class="fa-solid fa-plus cdd-opt-icon"></i>
+                                        <span>Other (type your own)</span>
+                                    </div>
                                 </div>
                             </div>
                             <input type="text" name="job_title_custom" id="jobCustomInput"
@@ -1037,6 +1061,24 @@ kbd {
                 </div>
 
                 <!-- Account & Security -->
+                <!-- Staff type: POS access toggle -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <i class="fa-solid fa-id-badge"></i> Staff Type
+                    </div>
+                    <div class="section-body" style="grid-template-columns:1fr">
+                        <label for="posToggle" style="display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:pointer;margin:0">
+                            <span>
+                                <strong style="display:block;color:var(--text)">POS Access</strong>
+                                <small style="color:var(--text-muted)">On = can log in &amp; take orders (needs role + password). Off = display-only staff like cleaner or waiter — no login, no POS.</small>
+                            </span>
+                            <input type="checkbox" name="pos_access" id="posToggle" value="1" checked onchange="togglePOS()"
+                                   style="width:22px;height:22px;flex:none;accent-color:var(--accent);cursor:pointer">
+                        </label>
+                    </div>
+                </div>
+
+                <div id="posSection">
                 <div class="section-card">
                     <div class="section-header">
                         <i class="fa-solid fa-shield-halved"></i> Account &amp; Security
@@ -1127,6 +1169,7 @@ kbd {
                         </div>
                     </div>
                 </div>
+                </div><!-- /#posSection -->
 
                 <!-- Submit -->
                 <button type="submit" class="submit-btn" id="submitBtn">
@@ -1292,6 +1335,22 @@ document.querySelectorAll('.cdd-option').forEach(function(opt) {
         chk.className = 'fa-solid fa-check cdd-opt-check';
         this.appendChild(chk);
 
+        // "Other" → reveal the free-text field so any custom position can be typed.
+        if (val === '__other__') {
+            jobInput.value = '__other__';
+            jobInput.setAttribute('required', '');
+            cddTriggerText.textContent = 'Custom position';
+            cddTriggerIcon.className = 'fa-solid fa-plus cdd-trigger-icon';
+            cddTrigger.classList.add('has-value');
+            jobCustomInput.style.display = '';
+            jobCustomInput.required = true;
+            jobCustomInput.value = '';
+            previewJob.textContent = 'Custom';
+            cddClose();
+            jobCustomInput.focus();
+            return;
+        }
+
         jobInput.value = val;
         jobInput.setAttribute('required', '');
         cddTriggerText.textContent = label;
@@ -1314,6 +1373,11 @@ document.querySelectorAll('.cdd-option').forEach(function(opt) {
 
         cddClose();
     });
+});
+
+// Live-preview the custom job title as it's typed.
+jobCustomInput.addEventListener('input', function() {
+    previewJob.textContent = this.value.trim() || 'Job Title';
 });
 
 // ── Address char counter ──
@@ -1364,6 +1428,42 @@ function cddSelectByValue(value) {
     jobCustomInput.value = '';
     previewJob.textContent = label;
 }
+
+// ── POS access toggle: show/hide the login+role section for display-only staff ──
+function togglePOS() {
+    var on = document.getElementById('posToggle').checked;
+    var sec = document.getElementById('posSection');
+    if (sec) sec.style.display = on ? '' : 'none';
+    ['usernameInput', 'passInput', 'confirmPass'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) { el.required = on; el.disabled = !on; }
+    });
+    // Job-title options follow the toggle: POS staff pick a role-based title
+    // (Admin/Manager/Cashier…) which also sets their role; display-only staff
+    // pick a general one (Cleaner/Waiter…) and get no role.
+    var clearedSelected = false;
+    document.querySelectorAll('.cdd-option').forEach(function(opt) {
+        var isRole = (opt.getAttribute('data-slug') || '') !== '';
+        var show   = on ? isRole : !isRole;
+        opt.style.display = show ? '' : 'none';
+        if (!show && opt.classList.contains('selected')) clearedSelected = true;
+    });
+    // If the chosen job title is no longer valid for this mode, reset it.
+    if (clearedSelected) {
+        document.querySelectorAll('.cdd-option').forEach(function(o) {
+            o.classList.remove('selected');
+            var chk = o.querySelector('.cdd-opt-check'); if (chk) chk.remove();
+        });
+        var ji = document.getElementById('jobInput'); if (ji) ji.value = '';
+        var tt = document.getElementById('cddTriggerText');
+        if (tt) tt.innerHTML = '<span style="color:var(--text-dim)">— Select a position —</span>';
+        var ti = document.getElementById('cddTriggerIcon');
+        if (ti) ti.className = 'fa-solid fa-briefcase cdd-trigger-icon';
+        var jc = document.getElementById('jobCustomInput');
+        if (jc) { jc.style.display = 'none'; jc.required = false; jc.value = ''; }
+    }
+}
+document.addEventListener('DOMContentLoaded', togglePOS);
 
 function selectRole(role) {
     document.querySelectorAll('.role-pill').forEach(function(p) { p.classList.remove('selected'); });

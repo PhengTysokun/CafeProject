@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'get_emp
     header('Content-Type: application/json');
     $eid = intval($_GET['eid'] ?? 0);
     if ($eid > 0) {
-        $s = $conn->prepare("SELECT e.*, COALESCE(r.slug,'staff') AS emp_role FROM employees e LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id) LEFT JOIN roles r ON r.id = u.role_id WHERE e.employee_id=?");
+        $s = $conn->prepare("SELECT e.*, CASE WHEN e.is_pos = 0 THEN 'general' ELSE COALESCE(r.slug,'staff') END AS emp_role FROM employees e LEFT JOIN users u ON u.user_id = e.user_id LEFT JOIN roles r ON r.id = u.role_id WHERE e.employee_id=?");
         $s->bind_param("i", $eid); $s->execute();
         $emp = $s->get_result()->fetch_assoc();
         if ($emp) { ob_end_clean(); echo json_encode(['ok' => true, 'emp' => $emp]); exit; }
@@ -149,11 +149,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick
         $vr = $conn->prepare($_cur_is_admin ? "SELECT slug FROM roles WHERE slug=?" : "SELECT slug FROM roles WHERE slug=? AND slug!='admin'");
         $vr->bind_param("s", $new_role); $vr->execute();
         if ($vr->get_result()->fetch_assoc()) {
-            $se = $conn->prepare("SELECT COALESCE(user_id, employee_id) AS uid FROM employees WHERE employee_id=?");
+            $se = $conn->prepare("SELECT user_id, is_pos FROM employees WHERE employee_id=?");
             $se->bind_param("i", $eid); $se->execute();
             $er = $se->get_result()->fetch_assoc();
-            if ($er) {
-                $uid = intval($er['uid']);
+            // Only POS staff with a real login can have their role changed.
+            if ($er && (int)$er['is_pos'] === 1 && !empty($er['user_id'])) {
+                $uid = intval($er['user_id']);
                 $ru  = $conn->prepare("UPDATE users SET role_id=(SELECT id FROM roles WHERE slug=?) WHERE user_id=?");
                 $ru->bind_param("si", $new_role, $uid); $ru->execute();
                 if ($conn->affected_rows >= 0) {
@@ -189,7 +190,7 @@ if ($has_orders) {
     $emp_sql = "
         SELECT
             e.*,
-            COALESCE(r.slug, 'staff') AS emp_role,
+            CASE WHEN e.is_pos = 0 THEN 'general' ELSE COALESCE(r.slug, 'staff') END AS emp_role,
             COALESCE(s.total_orders,      0)    AS total_orders,
             COALESCE(s.total_revenue,     0)    AS total_revenue,
             COALESCE(s.orders_this_month, 0)    AS orders_this_month,
@@ -197,7 +198,7 @@ if ($has_orders) {
             COALESCE(s.avg_order_value,   0)    AS avg_order_value,
             s.last_order_date
         FROM employees e
-        LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id)
+        LEFT JOIN users u ON u.user_id = e.user_id
         LEFT JOIN roles r ON r.id = u.role_id
         LEFT JOIN (
             SELECT
@@ -216,12 +217,12 @@ if ($has_orders) {
     ";
 } else {
     $emp_sql = "
-        SELECT e.*, COALESCE(r.slug,'staff') AS emp_role,
+        SELECT e.*, CASE WHEN e.is_pos = 0 THEN 'general' ELSE COALESCE(r.slug,'staff') END AS emp_role,
                0 AS total_orders, 0 AS total_revenue,
                0 AS orders_this_month, 0 AS orders_today,
                0 AS avg_order_value, NULL AS last_order_date
         FROM employees e
-        LEFT JOIN users u ON u.user_id = COALESCE(e.user_id, e.employee_id)
+        LEFT JOIN users u ON u.user_id = e.user_id
         LEFT JOIN roles r ON r.id = u.role_id
         ORDER BY e.name ASC
     ";
@@ -461,6 +462,7 @@ body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); 
     $rc = $rinfo['color'] ?? '#888'; ?>
 .filter-pill.active-<?= $rslug ?> { background:<?= $rc ?>; color:#000; border-color:<?= $rc ?>; }
 <?php endforeach; ?>
+.filter-pill.active-general { background:#14b8a6; color:#000; border-color:#14b8a6; }
 .pill-count { font-size:10px; font-weight:700; padding:1px 5px; border-radius:20px; background:rgba(255,255,255,.2); }
 .ctrl-right { display:flex; align-items:center; gap:8px; margin-left:auto; }
 .row-count  { font-size:12px; color:var(--text-muted); white-space:nowrap; }
@@ -644,9 +646,7 @@ tbody tr:hover .avatar, tbody tr:hover .avatar-img { border-color:var(--accent);
 /* ── SHIFT BADGE ── */
 .shift-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; color:var(--sb-c,#888); margin-top:3px; }
 .shift-badge i { font-size:9px; }
-.shift-pill[data-shift-filter="morning"]  i { color:#f39c12; }
-.shift-pill[data-shift-filter="afternoon"] i { color:#3498db; }
-.shift-pill[data-shift-filter="night"]    i { color:#9b59b6; }
+.shift-pill i { color:inherit; }
 .filter-pill.shift-active { background:var(--sb-active,var(--accent)); color:#000; border-color:var(--sb-active,var(--accent)); }
 .filter-pill.shift-active i { color:inherit; }
 .shift-sep { width:1px; height:20px; background:var(--border); margin:0 4px; flex-shrink:0; }
@@ -908,6 +908,12 @@ foreach ($leaderboard as $i => $emp):
         <span class="pill-count"><?= $rc ?></span>
     </button>
     <?php endforeach; ?>
+    <?php $general_count = 0; foreach ($employees as $_ge) { if (($_ge['emp_role'] ?? '') === 'general') $general_count++; } ?>
+    <button class="filter-pill <?= $general_count === 0 ? 'role-empty' : '' ?>" data-filter="general" onclick="setFilter(this,'general')" title="Display-only / non-POS staff">
+        <i class="fa-solid fa-user"></i>
+        General
+        <span class="pill-count"><?= $general_count ?></span>
+    </button>
     </div>
     <div class="fg-sep"></div>
     <div class="filter-group">
@@ -964,7 +970,7 @@ foreach ($sorted_employees as $idx => $emp):
     $hasOrders = (int)$emp['total_orders'] > 0;
     if ($currentGroup !== $empRole):
         $currentGroup = $empRole;
-        $_grInfo = $_roles_db[$empRole] ?? ['icon' => 'fa-user', 'name' => ucfirst($empRole), 'color' => '#888'];
+        $_grInfo = $_roles_db[$empRole] ?? ['icon' => 'fa-user', 'name' => ucfirst($empRole), 'color' => $empRole === 'general' ? '#14b8a6' : '#888'];
         $gIcon   = $_grInfo['icon'];
         $gName   = $_grInfo['name'];
         $gColor  = $_grInfo['color'] ?? '#888';
@@ -1022,7 +1028,12 @@ foreach ($sorted_employees as $idx => $emp):
                             $_rinfo  = $_roles_db[$empRole] ?? ['name' => ucfirst($empRole), 'icon' => 'fa-user', 'color' => '#888'];
                             $_rbcol  = $_rinfo['color'] ?? '#888';
                         ?>
-                        <?php if (!$_role_exists && $empRole !== 'admin'): ?>
+                        <?php if ((int)($emp['is_pos'] ?? 1) === 0): ?>
+                        <span class="role-wrap" style="--rb-bg:#14b8a61a;--rb-color:#14b8a6;--rb-border:#14b8a633" title="Display-only staff — no POS login or role">
+                            <span class="role-dot"></span>
+                            General
+                        </span>
+                        <?php elseif (!$_role_exists && $empRole !== 'admin'): ?>
                         <div class="role-wrap editable" data-eid="<?= $eid ?>" data-current="<?= h($empRole) ?>"
                              style="--rb-bg:#e74c3c1a;--rb-color:#e74c3c;--rb-border:#e74c3c33" title="Role '<?= h($empRole) ?>' no longer exists — please reassign">
                             <span class="role-dot"></span>
@@ -1222,7 +1233,7 @@ function resetFilters() {
 }
 
 /* ── FILTER ── */
-const ROLE_FILTERS = <?= json_encode(array_keys($_roles_db)) ?>;
+const ROLE_FILTERS = <?= json_encode(array_merge(array_keys($_roles_db), ['general'])) ?>;
 function setFilter(btn, filter) {
     currentFilter = filter;
     document.querySelectorAll('.filter-pill:not(.shift-pill)').forEach(p => {
@@ -1634,7 +1645,7 @@ window.addEventListener('resize', resizeTable);
           <input class="em-input" type="text" name="phone" id="emPhone" placeholder="Phone number">
         </div>
         <div class="em-tile">
-          <div class="em-label"><i class="fa-solid fa-briefcase"></i> Job Title <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:.6">(set by role)</span></div>
+          <div class="em-label"><i class="fa-solid fa-briefcase"></i> Job Title <span id="emJobHint" style="font-weight:400;text-transform:none;letter-spacing:0;opacity:.6">(set by role)</span></div>
           <input class="em-input" type="text" name="job_title" id="emJob" readonly
                  style="cursor:not-allowed;opacity:.75" placeholder="Pick a role below" title="Job title follows the selected role">
         </div>
@@ -1766,12 +1777,30 @@ function openEditModal(eid) {
             document.getElementById('emTitle').textContent   = emp.name || 'Edit Employee';
             document.getElementById('emSubtitle').textContent= emp.job_title || '';
 
+            // POS vs display-only staff
+            const isPos    = Number(emp.is_pos ?? 1) === 1;
+            const jobEl    = document.getElementById('emJob');
+            const roleTile = document.getElementById('emRoleGrid').closest('.em-tile');
+
             // Role
             const role = emp.emp_role || 'staff';
             const rb = document.querySelector(`#emRoleGrid input[value="${role}"]`);
             if (rb) rb.checked = true;
             else document.querySelectorAll('#emRoleGrid input[type="radio"]').forEach(r => r.checked = false);
-            syncJobTitle();   // job title follows the role
+
+            const jobHint = document.getElementById('emJobHint');
+            if (isPos) {
+                // POS staff: job title follows the role (locked)
+                jobEl.readOnly = true;
+                if (roleTile) roleTile.style.display = '';
+                if (jobHint) jobHint.textContent = '(set by role)';
+                syncJobTitle();
+            } else {
+                // Display-only staff: no role, free-edit job title
+                jobEl.readOnly = false;
+                if (roleTile) roleTile.style.display = 'none';
+                if (jobHint) jobHint.textContent = '(editable)';
+            }
 
             // Shift
             const shift = emp.shift || '';
