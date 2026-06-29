@@ -7,10 +7,17 @@ if (!in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'staff'])) {
     exit;
 }
 
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
 // ── AJAX: release a stand (placard returned) ──
 // Clears the stand from any non-cancelled order today, freeing it for reuse.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'release') {
     header('Content-Type: application/json');
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Invalid session token']);
+        exit;
+    }
     $stand = trim($_POST['stand'] ?? '');
     if ($stand === '') { echo json_encode(['ok' => false, 'error' => 'No stand']); exit; }
     $st = $conn->prepare("UPDATE orders SET table_number = NULL
@@ -135,7 +142,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
             <?php if ($o): ?>
             <div class="state">In Use</div>
             <div class="meta">#<?= (int)$o['daily_order_no'] ?><?= $o['customer_name'] ? ' &middot; <b>'.h($o['customer_name']).'</b>' : '' ?></div>
-            <button class="release" onclick="releaseStand(<?= $i ?>)"><i class="fa-solid fa-rotate-left"></i> Release</button>
+            <button class="release" data-stand="<?= $i ?>"><i class="fa-solid fa-rotate-left"></i> Release</button>
             <?php else: ?>
             <div class="state">Free</div>
             <?php endif; ?>
@@ -150,7 +157,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
         <span class="extra-chip" id="extra-<?= h($k) ?>">
             <span class="k"><?= h($k) ?></span>
             <span class="meta">#<?= (int)$v['daily_order_no'] ?><?= $v['customer_name'] ? ' &middot; '.h($v['customer_name']) : '' ?></span>
-            <button class="release" onclick="releaseStand('<?= h($k) ?>')"><i class="fa-solid fa-rotate-left"></i> Release</button>
+            <button class="release" data-stand="<?= h($k) ?>"><i class="fa-solid fa-rotate-left"></i> Release</button>
         </span>
         <?php endforeach; ?>
     </div>
@@ -161,6 +168,14 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 
 <script>
 const STAND_MAX = <?= $STAND_MAX ?>;
+const CSRF = <?= json_encode($_SESSION['csrf_token'], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP) ?>;
+
+// Delegated binding — works for server-rendered and live-repainted buttons,
+// and avoids interpolating stand values into inline JS.
+document.addEventListener('click', function(e){
+    const b = e.target.closest('.release');
+    if (b && b.dataset.stand) releaseStand(b.dataset.stand);
+});
 
 function showToast(msg, type){
     const t = document.getElementById('toast');
@@ -169,7 +184,7 @@ function showToast(msg, type){
 }
 
 async function releaseStand(stand){
-    const body = new URLSearchParams({ action:'release', stand: stand });
+    const body = new URLSearchParams({ action:'release', stand: stand, csrf_token: CSRF });
     try{
         const r = await fetch('stands.php', { method:'POST', body });
         const j = await r.json();
@@ -188,7 +203,7 @@ function paintCell(i, info){
         cell.innerHTML = '<div class="num">' + i + '</div>'
             + '<div class="state">In Use</div>'
             + '<div class="meta">#' + (info.order_no || '') + cust + '</div>'
-            + '<button class="release" onclick="releaseStand(' + i + ')"><i class="fa-solid fa-rotate-left"></i> Release</button>';
+            + '<button class="release" data-stand="' + i + '"><i class="fa-solid fa-rotate-left"></i> Release</button>';
     } else {
         cell.className = 'stand free';
         cell.innerHTML = '<div class="num">' + i + '</div><div class="state">Free</div>';
