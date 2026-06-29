@@ -453,6 +453,11 @@ body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); 
 /* ── CONTROLS BAR ── */
 .controls-bar { display:flex; align-items:center; gap:8px; padding:14px 24px 0; flex-wrap:wrap; }
 .filter-pill { display:inline-flex; align-items:center; gap:6px; padding:6px 13px; border-radius:50px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-muted); font-size:12px; font-weight:600; cursor:pointer; transition:var(--transition); user-select:none; }
+.filter-select { appearance:none; -webkit-appearance:none; padding:6px 30px 6px 14px; border-radius:50px; border:1px solid var(--border); background:var(--bg-card); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; transition:var(--transition); font-family:inherit;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat:no-repeat; background-position:right 11px center; }
+.filter-select:hover { border-color:var(--accent); color:var(--accent); }
+.filter-select:focus { outline:none; border-color:var(--accent); }
+.filter-select option { background:var(--bg-card); color:var(--text); }
 .filter-pill:hover { border-color:var(--accent); color:var(--accent); }
 .filter-pill.role-empty { opacity:.45; }
 .filter-pill.active { background:var(--accent); color:#000; border-color:var(--accent); }
@@ -898,22 +903,16 @@ foreach ($leaderboard as $i => $emp):
     </button>
     </div>
     <div class="fg-sep"></div>
+    <?php $general_count = 0; foreach ($employees as $_ge) { if (($_ge['emp_role'] ?? '') === 'general') $general_count++; } ?>
     <div class="filter-group">
     <span class="fg-label">Role</span>
-    <?php foreach ($_roles_db as $rslug => $rdata):
-        $rc = $role_counts_emp[$rslug] ?? 0; ?>
-    <button class="filter-pill <?= $rc === 0 ? 'role-empty' : '' ?>" data-filter="<?= $rslug ?>" onclick="setFilter(this,'<?= $rslug ?>')">
-        <i class="fa-solid <?= htmlspecialchars($rdata['icon']) ?>"></i>
-        <?= htmlspecialchars($rdata['name']) ?>
-        <span class="pill-count"><?= $rc ?></span>
-    </button>
-    <?php endforeach; ?>
-    <?php $general_count = 0; foreach ($employees as $_ge) { if (($_ge['emp_role'] ?? '') === 'general') $general_count++; } ?>
-    <button class="filter-pill <?= $general_count === 0 ? 'role-empty' : '' ?>" data-filter="general" onclick="setFilter(this,'general')" title="Display-only / non-POS staff">
-        <i class="fa-solid fa-user"></i>
-        General
-        <span class="pill-count"><?= $general_count ?></span>
-    </button>
+    <select class="filter-select" id="roleFilter" onchange="roleFilterChange(this)" aria-label="Filter by role">
+        <option value="__allroles__">All roles (<?= $total_staff ?>)</option>
+        <?php foreach ($_roles_db as $rslug => $rdata): $rc = $role_counts_emp[$rslug] ?? 0; ?>
+        <option value="<?= h($rslug) ?>"><?= htmlspecialchars($rdata['name']) ?> (<?= $rc ?>)</option>
+        <?php endforeach; ?>
+        <option value="general">General &mdash; non-POS (<?= $general_count ?>)</option>
+    </select>
     </div>
     <div class="fg-sep"></div>
     <div class="filter-group">
@@ -950,15 +949,15 @@ foreach ($employees as $_ge) {
 }
 ksort($general_positions);
 ?>
-<!-- Position sub-filter (only shown when the General role filter is active) -->
+<!-- Position sub-filter (only shown when Role = General) -->
 <div id="positionFilter" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:0 2px 10px">
     <span class="fg-label" style="margin-right:2px">Position</span>
-    <button class="filter-pill active-general" data-position="" onclick="setPosition(this,'')">All</button>
-    <?php foreach ($general_positions as $pt => $pc): ?>
-    <button class="filter-pill" data-position="<?= h(strtolower($pt)) ?>" onclick="setPosition(this,'<?= h(strtolower($pt)) ?>')">
-        <?= h($pt) ?> <span class="pill-count"><?= (int)$pc ?></span>
-    </button>
-    <?php endforeach; ?>
+    <select class="filter-select" id="posFilter" onchange="setPosition(this.value)" aria-label="Filter by position">
+        <option value="">All positions (<?= $general_count ?>)</option>
+        <?php foreach ($general_positions as $pt => $pc): ?>
+        <option value="<?= h(strtolower($pt)) ?>"><?= htmlspecialchars($pt) ?> (<?= (int)$pc ?>)</option>
+        <?php endforeach; ?>
+    </select>
 </div>
 
 <!-- ── TABLE ── -->
@@ -1257,33 +1256,38 @@ function resetFilters() {
 /* ── FILTER ── */
 const ROLE_FILTERS = <?= json_encode(array_merge(array_keys($_roles_db), ['general'])) ?>;
 let currentPositionFilter = '';
+// Status pills (All / Active / No Orders) share the primary dimension with the Role dropdown.
 function setFilter(btn, filter) {
     currentFilter = filter;
-    document.querySelectorAll('.filter-pill:not(.shift-pill):not(#positionFilter .filter-pill)').forEach(p => {
+    document.querySelectorAll('.controls-bar .filter-pill:not(.shift-pill)').forEach(p => {
         p.className = 'filter-pill';
-        if (p.dataset.filter === filter) {
-            if (filter === 'all') p.classList.add('active');
-            else p.classList.add('active-' + filter);
-        }
+        if (p.dataset.filter === filter) p.classList.add(filter === 'all' ? 'active' : 'active-' + filter);
     });
-    // Show the position sub-filter only for the General category; reset it otherwise.
+    const rf = document.getElementById('roleFilter'); if (rf) rf.value = '__allroles__';
+    const pf = document.getElementById('positionFilter'); if (pf) pf.style.display = 'none';
+    currentPositionFilter = '';
+    applyFilters();
+}
+function roleFilterChange(sel) {
+    const val = sel.value;
+    document.querySelectorAll('.controls-bar .filter-pill:not(.shift-pill)').forEach(p => p.className = 'filter-pill');
     const pf = document.getElementById('positionFilter');
     currentPositionFilter = '';
-    if (pf) {
-        if (filter === 'general') {
-            pf.style.display = 'flex';
-            pf.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active', 'active-general'));
-            const allp = pf.querySelector('[data-position=""]'); if (allp) allp.classList.add('active-general');
-        } else {
-            pf.style.display = 'none';
+    if (val === '__allroles__') {
+        currentFilter = 'all';
+        const allp = document.querySelector('.filter-pill[data-filter="all"]'); if (allp) allp.classList.add('active');
+        if (pf) pf.style.display = 'none';
+    } else {
+        currentFilter = val;
+        if (pf) {
+            if (val === 'general') { pf.style.display = 'flex'; const ps = document.getElementById('posFilter'); if (ps) ps.value = ''; }
+            else pf.style.display = 'none';
         }
     }
     applyFilters();
 }
-function setPosition(btn, pos) {
+function setPosition(pos) {
     currentPositionFilter = pos;
-    document.querySelectorAll('#positionFilter .filter-pill').forEach(p => p.classList.remove('active', 'active-general'));
-    btn.classList.add('active-general');
     applyFilters();
 }
 function setShiftFilter(btn, shift) {
