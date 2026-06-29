@@ -90,7 +90,7 @@ $existing_order_id = ($is_add_to_order && isset($_SESSION['add_to_order_id']))
 
 if ($existing_order_id > 0) {
     $stmt = $conn->prepare("
-        SELECT order_id, customer_name, total, promotion_discount, is_open, order_date, loyalty_card_id, points_earned
+        SELECT order_id, customer_name, total, promotion_discount, manual_discount, is_open, order_date, loyalty_card_id, points_earned
         FROM orders
         WHERE order_id = ?
           AND is_open = 1
@@ -140,8 +140,12 @@ if ($existing_order_id > 0) {
     if ($was_happy_hour && HAPPY_HOUR_ENABLED) {
         $happy_hour = ($subtotal - $buy3) * (HAPPY_HOUR_DISCOUNT / 100);
     }
-    $final_discount = $buy3 + $happy_hour;
-    $after          = $subtotal - $final_discount;
+    // Re-apply the manual discount the order already had — otherwise adding items
+    // silently drops it and the customer's total jumps back up.
+    $manual_existing = (float)($existing_order['manual_discount'] ?? 0);
+    $final_discount = $buy3 + $happy_hour;                       // promotions (stored in promotion_discount)
+    $after          = $subtotal - $final_discount - $manual_existing;
+    if ($after < 0) $after = 0;
     $final_total    = round($after + ($after * (TAX_RATE / 100)), 2);
 
     $conn->begin_transaction();
@@ -185,6 +189,7 @@ if ($existing_order_id > 0) {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
+        $stock_warnings = [];
         foreach ($_SESSION['cart'] as $item) {
             $qty        = max(1, (int)($item['qty'] ?? 1));
             $price      = (float)($item['price'] ?? 0.0);
@@ -202,11 +207,12 @@ if ($existing_order_id > 0) {
 
             // ── STOCK: deduct at order creation time ──
             if ($product_id > 0) {
-                _deduct_stock($conn, $product_id, $qty, $milk, $existing_order_id, $sfactor);
+                $stock_warnings = array_merge($stock_warnings, _deduct_stock($conn, $product_id, $qty, $milk, $existing_order_id, $sfactor));
             }
         }
 
         $conn->commit();
+        _stash_stock_warning($stock_warnings);
         $_SESSION['cart'] = [];
         unset($_SESSION['add_to_order_id'], $_SESSION['add_to_daily_no'], $_SESSION['paylater_reopen']);
 
@@ -407,6 +413,7 @@ try {
         INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
+    $stock_warnings = [];
     foreach ($_SESSION['cart'] as $item) {
         $qty        = max(1, (int)($item['qty'] ?? 1));
         $price      = (float)($item['price'] ?? 0.0);
@@ -423,7 +430,7 @@ try {
         $stmt_item->execute();
 
         if ($product_id > 0) {
-            _deduct_stock($conn, $product_id, $qty, $milk, $order_id, $sfactor);
+            $stock_warnings = array_merge($stock_warnings, _deduct_stock($conn, $product_id, $qty, $milk, $order_id, $sfactor));
         }
     }
 
@@ -488,6 +495,7 @@ try {
     }
 
     $conn->commit();
+    _stash_stock_warning($stock_warnings);
     unset($_SESSION['csrf_token']);
     $_SESSION['cart'] = [];
     unset($_SESSION['manual_discount']);
@@ -549,7 +557,36 @@ try {
 }
 
 // ── HELPER: deduct ingredients, respecting milk substitution ──
-function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_choice, int $order_id = 0, float $size_factor = 1.0): void {
+/**
+ * Persist a one-shot stock-shortfall notice for staff. Shown (and cleared) on the
+ * next page that renders it (menu.php). No-op when nothing ran short.
+ */
+function _stash_stock_warning(array $shortfalls): void {
+    if (empty($shortfalls)) return;
+    // Collapse to one line per ingredient ("Milk: needed 3, had 1").
+    $byName = [];
+    foreach ($shortfalls as $s) {
+        $n = $s['name'];
+        if (!isset($byName[$n])) $byName[$n] = ['need' => 0.0, 'had' => $s['had']];
+        $byName[$n]['need'] += $s['need'];
+        $byName[$n]['had']   = min($byName[$n]['had'], $s['had']);
+    }
+    $msgs = [];
+    foreach ($byName as $n => $v) {
+        $msgs[] = $n . ': needed ' . rtrim(rtrim(number_format($v['need'], 2), '0'), '.')
+                . ', had ' . rtrim(rtrim(number_format($v['had'], 2), '0'), '.');
+    }
+    $_SESSION['stock_warning'] = $msgs;
+}
+
+/**
+ * Deduct ingredient stock for one ordered drink.
+ * Deducts and logs only what is actually on hand (never goes negative, never logs
+ * a phantom full deduction when short). Returns a list of shortfalls so the caller
+ * can warn staff: each ['name' => ingredient, 'need' => required, 'had' => available].
+ */
+function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_choice, int $order_id = 0, float $size_factor = 1.0): array {
+    $shortfalls = [];
     $stmt = $conn->prepare("
         SELECT pi.ingredient_id, pi.amount_used, i.ingredient_name
         FROM product_ingredients pi
@@ -563,30 +600,50 @@ function _deduct_stock(mysqli $conn, int $product_id, int $qty, string $milk_cho
     $created_by = $_SESSION['username'] ?? null;
 
     while ($row = $rows->fetch_assoc()) {
-        $ing_id   = (int)$row['ingredient_id'];
-        $amount   = (float)$row['amount_used'] * $qty * $size_factor;
-        $ing_name = strtolower(trim($row['ingredient_name']));
+        $ing_id    = (int)$row['ingredient_id'];
+        $amount    = (float)$row['amount_used'] * $qty * $size_factor;
+        $ing_name  = strtolower(trim($row['ingredient_name']));
+        $disp_name = trim($row['ingredient_name']);
 
         // Substitute milk ingredient if customer chose a different milk
         if (strpos($ing_name, 'milk') !== false && !empty($milk_choice)) {
-            $stmt_milk = $conn->prepare("SELECT ingredient_id FROM ingredients WHERE LOWER(ingredient_name) = LOWER(?) LIMIT 1");
+            $stmt_milk = $conn->prepare("SELECT ingredient_id, ingredient_name FROM ingredients WHERE LOWER(ingredient_name) = LOWER(?) LIMIT 1");
             $stmt_milk->bind_param("s", $milk_choice);
             $stmt_milk->execute();
             $milk_row = $stmt_milk->get_result()->fetch_assoc();
             if ($milk_row) {
-                $ing_id = (int)$milk_row['ingredient_id'];
+                $ing_id    = (int)$milk_row['ingredient_id'];
+                $disp_name = trim($milk_row['ingredient_name']);
             }
         }
 
-        $stmt_upd = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity - ? WHERE ingredient_id = ? AND stock_quantity >= ?");
-        $stmt_upd->bind_param("dii", $amount, $ing_id, $amount);
+        // Read current stock so we deduct (and log) only what's really on hand.
+        $cs = $conn->prepare("SELECT stock_quantity FROM ingredients WHERE ingredient_id = ?");
+        $cs->bind_param("i", $ing_id);
+        $cs->execute();
+        $have = (float)($cs->get_result()->fetch_assoc()['stock_quantity'] ?? 0);
+
+        $deducted = $amount;
+        if ($have < $amount) {
+            // Oversell: take what's left and flag it. (Order still completes.)
+            $deducted     = max(0, $have);
+            $shortfalls[] = ['name' => $disp_name, 'need' => $amount, 'had' => max(0, $have)];
+        }
+
+        // GREATEST(0, …) keeps stock from going negative even under concurrent edits.
+        $stmt_upd = $conn->prepare("UPDATE ingredients SET stock_quantity = GREATEST(0, stock_quantity - ?) WHERE ingredient_id = ?");
+        $stmt_upd->bind_param("di", $amount, $ing_id);
         $stmt_upd->execute();
 
-        $oid = $order_id > 0 ? $order_id : null;
-        $ref = $oid ? "Order #$order_id" : null;
-        $sh  = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, order_id, reference, created_by) VALUES (?, 'order_deduct', ?, ?, ?, ?)");
-        $sh->bind_param("idiss", $ing_id, $amount, $oid, $ref, $created_by);
-        $sh->execute();
+        // Log the amount actually removed, not the phantom full amount.
+        if ($deducted > 0) {
+            $oid = $order_id > 0 ? $order_id : null;
+            $ref = $oid ? "Order #$order_id" : null;
+            $sh  = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, order_id, reference, created_by) VALUES (?, 'order_deduct', ?, ?, ?, ?)");
+            $sh->bind_param("idiss", $ing_id, $deducted, $oid, $ref, $created_by);
+            $sh->execute();
+        }
     }
+    return $shortfalls;
 }
 ?>

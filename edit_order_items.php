@@ -5,6 +5,79 @@ if (!in_array($_SESSION['role'], ['admin', 'manager', 'staff'])) { header("Locat
 $order_id = (int)($_GET['order_id'] ?? 0);
 if ($order_id <= 0) { header("Location: find_order.php"); exit; }
 
+/**
+ * Keep ingredient stock in sync when an order is edited.
+ * $delta_qty > 0  → more drinks: deduct (honest — floors at 0, logs actual, returns shortfalls).
+ * $delta_qty < 0  → fewer/removed drinks: restore the difference.
+ * Mirrors confirm_order's deduction and cancel_order's restore. Returns shortfalls
+ * (['name','need','had']) when a deduction ran short so the caller can warn staff.
+ */
+function _sync_item_stock(mysqli $conn, int $product_id, int $delta_qty, string $milk_choice, int $order_id): array {
+    $shortfalls = [];
+    if ($delta_qty === 0 || $product_id <= 0) return $shortfalls;
+
+    $stmt = $conn->prepare("
+        SELECT pi.ingredient_id, pi.amount_used, i.ingredient_name
+        FROM product_ingredients pi
+        JOIN ingredients i ON i.ingredient_id = pi.ingredient_id
+        WHERE pi.product_id = ?
+    ");
+    $stmt->bind_param("i", $product_id);
+    $stmt->execute();
+    $rows = $stmt->get_result();
+
+    $created_by = $_SESSION['username'] ?? null;
+    $ref        = "Order #$order_id (edited)";
+    $units      = abs($delta_qty);
+    $isDeduct   = $delta_qty > 0;
+
+    while ($row = $rows->fetch_assoc()) {
+        $ing_id    = (int)$row['ingredient_id'];
+        $amount    = (float)$row['amount_used'] * $units;
+        $ing_name  = strtolower(trim($row['ingredient_name']));
+        $disp_name = trim($row['ingredient_name']);
+
+        if (strpos($ing_name, 'milk') !== false && !empty($milk_choice)) {
+            $m = $conn->prepare("SELECT ingredient_id, ingredient_name FROM ingredients WHERE LOWER(ingredient_name) = LOWER(?) LIMIT 1");
+            $m->bind_param("s", $milk_choice);
+            $m->execute();
+            $mr = $m->get_result()->fetch_assoc();
+            if ($mr) { $ing_id = (int)$mr['ingredient_id']; $disp_name = trim($mr['ingredient_name']); }
+        }
+
+        if ($isDeduct) {
+            $cs = $conn->prepare("SELECT stock_quantity FROM ingredients WHERE ingredient_id = ?");
+            $cs->bind_param("i", $ing_id);
+            $cs->execute();
+            $have = (float)($cs->get_result()->fetch_assoc()['stock_quantity'] ?? 0);
+
+            $deducted = $amount;
+            if ($have < $amount) {
+                $deducted     = max(0, $have);
+                $shortfalls[] = ['name' => $disp_name, 'need' => $amount, 'had' => max(0, $have)];
+            }
+            $u = $conn->prepare("UPDATE ingredients SET stock_quantity = GREATEST(0, stock_quantity - ?) WHERE ingredient_id = ?");
+            $u->bind_param("di", $amount, $ing_id);
+            $u->execute();
+
+            if ($deducted > 0) {
+                $h = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, order_id, reference, created_by) VALUES (?, 'order_deduct', ?, ?, ?, ?)");
+                $h->bind_param("idiss", $ing_id, $deducted, $order_id, $ref, $created_by);
+                $h->execute();
+            }
+        } else {
+            $u = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity + ? WHERE ingredient_id = ?");
+            $u->bind_param("di", $amount, $ing_id);
+            $u->execute();
+
+            $h = $conn->prepare("INSERT INTO ingredient_history (ingredient_id, change_type, amount, order_id, reference, created_by) VALUES (?, 'order_restore', ?, ?, ?, ?)");
+            $h->bind_param("idiss", $ing_id, $amount, $order_id, $ref, $created_by);
+            $h->execute();
+        }
+    }
+    return $shortfalls;
+}
+
 // ── AJAX: Save changes ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save') {
     header('Content-Type: application/json');
@@ -30,6 +103,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     $conn->begin_transaction();
     try {
+        // ── STOCK SYNC: restore/deduct ingredient stock for the edit delta ──
+        // Snapshot current quantities BEFORE mutating, then for each item compute
+        // new-vs-old: removed → restore full, reduced → restore diff, increased → deduct diff.
+        $pre = [];
+        $stmt_pre = $conn->prepare("SELECT item_id, product_id, quantity, milk FROM order_items WHERE order_id = ?");
+        $stmt_pre->bind_param("i", $order_id);
+        $stmt_pre->execute();
+        $pre_res = $stmt_pre->get_result();
+        while ($r = $pre_res->fetch_assoc()) { $pre[(int)$r['item_id']] = $r; }
+
+        $stock_warnings = [];
+        foreach ($pre as $iid => $r) {
+            $pid  = (int)$r['product_id'];
+            $oldQ = (int)$r['quantity'];
+            $milk = (string)$r['milk'];
+            if ($pid <= 0) continue;                       // loyalty gifts have no recipe
+            if (in_array($iid, $remove_ids)) {
+                $newQ = 0;
+            } elseif (isset($qtys[$iid])) {
+                $newQ = max(1, (int)$qtys[$iid]);
+            } else {
+                $newQ = $oldQ;                             // untouched
+            }
+            $delta = $newQ - $oldQ;
+            if ($delta !== 0) {
+                $stock_warnings = array_merge($stock_warnings, _sync_item_stock($conn, $pid, $delta, $milk, $order_id));
+            }
+        }
+
         // Delete removed items
         if (!empty($remove_ids)) {
             $stmt_del = $conn->prepare("DELETE FROM order_items WHERE item_id = ? AND order_id = ?");
@@ -118,6 +220,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         $conn->commit();
+
+        // Build a one-line low-stock notice if any added drink ran short.
+        $warning = '';
+        if (!empty($stock_warnings)) {
+            $names = array_values(array_unique(array_map(fn($s) => $s['name'], $stock_warnings)));
+            $warning = 'Low stock — ' . implode(', ', $names) . ' ran short. Restock soon.';
+        }
+
         echo json_encode([
             'success'     => true,
             'total'       => number_format($total, 2),
@@ -125,6 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'discount'    => number_format($total_discount, 2),
             'tax'         => number_format($tax, 2),
             'items_left'  => count($remaining),
+            'warning'     => $warning,
         ]);
     } catch (Exception $e) {
         $conn->rollback();
@@ -607,7 +718,12 @@ async function saveChanges() {
             }
 
             updateItemCount();
-            showToast('Order updated — new total $' + data.total, 'success');
+            if (data.warning) {
+                showToast('Order updated — new total $' + data.total, 'success');
+                setTimeout(() => showToast(data.warning, 'error'), 1400);
+            } else {
+                showToast('Order updated — new total $' + data.total, 'success');
+            }
         } else {
             showToast(data.error || 'Save failed. Try again.', 'error');
         }

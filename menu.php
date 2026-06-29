@@ -537,6 +537,23 @@ if (!empty($flat_products)) {
 </head>
 <body>
 
+<?php if (!empty($_SESSION['stock_warning'])): $__sw = $_SESSION['stock_warning']; unset($_SESSION['stock_warning']); ?>
+<div id="stockWarn" style="max-width:1200px;margin:14px auto 0;padding:13px 16px;display:flex;gap:12px;align-items:flex-start;
+     background:rgba(209,144,75,.10);border:1px solid rgba(209,144,75,.40);border-radius:12px;color:#d1904b;font-size:13.5px;line-height:1.5;">
+  <i class="fa-solid fa-triangle-exclamation" style="margin-top:2px;"></i>
+  <div style="flex:1;">
+    <strong>Low stock on the last order.</strong> It was completed, but these ingredients ran short — restock soon:
+    <ul style="margin:6px 0 0;padding-left:18px;">
+      <?php foreach ($__sw as $line): ?>
+      <li><?= htmlspecialchars($line) ?></li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+  <button type="button" onclick="this.parentElement.remove()" aria-label="Dismiss"
+          style="background:none;border:none;color:#d1904b;cursor:pointer;font-size:15px;line-height:1;">&times;</button>
+</div>
+<?php endif; ?>
+
 <!-- HEADER -->
 <header class="menu-header">
   <div class="header-left">

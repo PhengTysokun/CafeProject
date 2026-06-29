@@ -96,7 +96,9 @@ _migrate($conn, 'products_badge_text', function($db) {
 });
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
 
-$conn->query("CREATE TABLE IF NOT EXISTS cash_reconciliations (
+// Canonical table is cash_counts (renamed from the legacy cash_reconciliations).
+// Create it under the real name so we never recreate the old zombie every load.
+$conn->query("CREATE TABLE IF NOT EXISTS cash_counts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     username VARCHAR(100) NOT NULL,
@@ -479,9 +481,23 @@ _migrate($conn, 'products_category_fk_v1', function($db) {
     $db->query("ALTER TABLE products ADD CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(category_id) ON DELETE SET NULL");
 });
 
-// ── Rename cash_reconciliations → cash_counts ──
+// ── Rename cash_reconciliations → cash_counts (legacy installs only) ──
 _migrate($conn, 'rename_cash_reconciliations_to_cash_counts_v1', function($db) {
-    $db->query("RENAME TABLE cash_reconciliations TO cash_counts");
+    // Only rename when the old table still exists and the new one doesn't.
+    // Fresh installs already create cash_counts directly above, so this is a no-op there.
+    $hasOld = $db->query("SHOW TABLES LIKE 'cash_reconciliations'")->num_rows > 0;
+    $hasNew = $db->query("SHOW TABLES LIKE 'cash_counts'")->num_rows > 0;
+    if ($hasOld && !$hasNew) {
+        $db->query("RENAME TABLE cash_reconciliations TO cash_counts");
+    }
+});
+
+// ── Drop the zombie cash_reconciliations table ──
+// A stale CREATE used to recreate it (empty) on every page load after the rename
+// above had already moved real data to cash_counts. The CREATE now targets
+// cash_counts, so this one-time drop sticks. Safe: no code writes the old table.
+_migrate($conn, 'drop_zombie_cash_reconciliations_v1', function($db) {
+    $db->query("DROP TABLE IF EXISTS cash_reconciliations");
 });
 
 // ── Rename permission display name ──
