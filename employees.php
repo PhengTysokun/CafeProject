@@ -85,6 +85,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $shift_raw = trim($_POST['shift'] ?? '');
     $shift    = in_array($shift_raw, ['morning','afternoon','night']) ? $shift_raw : null;
 
+    // Job title is derived from the chosen role (single source of truth) — the posted
+    // value is ignored so the title can never drift from the role.
+    $_cur_is_admin = ($_SESSION['role'] ?? '') === 'admin';
+    if ($new_role !== '' && ($_cur_is_admin || $new_role !== 'admin')) {
+        $rn = $conn->prepare("SELECT name FROM roles WHERE slug=?");
+        $rn->bind_param("s", $new_role); $rn->execute();
+        if ($rnr = $rn->get_result()->fetch_assoc()) $job = $rnr['name'];
+    }
+
     if ($eid <= 0 || $name === '') {
         ob_end_clean(); echo json_encode(['ok' => false, 'msg' => 'Invalid data']); exit;
     }
@@ -148,8 +157,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick
                 $ru  = $conn->prepare("UPDATE users SET role_id=(SELECT id FROM roles WHERE slug=?) WHERE user_id=?");
                 $ru->bind_param("si", $new_role, $uid); $ru->execute();
                 if ($conn->affected_rows >= 0) {
+                    // Keep job title in sync — it follows the role.
+                    $newJob = '';
+                    $rn = $conn->prepare("SELECT name FROM roles WHERE slug=?");
+                    $rn->bind_param("s", $new_role); $rn->execute();
+                    if ($rnr = $rn->get_result()->fetch_assoc()) {
+                        $newJob = $rnr['name'];
+                        $ju = $conn->prepare("UPDATE employees SET job_title=? WHERE employee_id=?");
+                        $ju->bind_param("si", $newJob, $eid); $ju->execute();
+                    }
                     ob_end_clean();
-                    echo json_encode(['ok' => true]);
+                    echo json_encode(['ok' => true, 'job' => $newJob]);
                     exit;
                 }
             }
@@ -521,8 +539,8 @@ tbody tr:hover .avatar, tbody tr:hover .avatar-img { border-color:var(--accent);
 /* ── ROW ACTIONS ── */
 .row-actions { display:flex; gap:5px; }
 .btn-row { display:inline-flex; align-items:center; justify-content:center; gap:5px; padding:5px 9px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; text-decoration:none; transition:var(--transition); border:1px solid transparent; font-family:'Inter',sans-serif; }
-/* View = ghost text */
-.btn-row.view { background:transparent; color:var(--text-muted); }
+/* View = ghost text — hidden for now (kept in DOM; delete the display line to restore) */
+.btn-row.view { display:none; background:transparent; color:var(--text-muted); }
 .btn-row.view:hover { background:rgba(255,255,255,.06); color:var(--text-light); }
 [data-theme="light"] .btn-row.view:hover { background:rgba(0,0,0,.05); }
 /* Edit = subtle labelled button */
@@ -1513,6 +1531,16 @@ async function updateRole(eid, sel) {
             const row = wrap.closest('tr[data-role]');
             if (row) {
                 row.dataset.role = newRole;
+                // Job title follows the role — update the title text, keep the shift chip.
+                if (j.job) {
+                    const titleEl = row.querySelector('.emp-title');
+                    if (titleEl) {
+                        const shiftSpan = titleEl.querySelector('.shift-inline');
+                        titleEl.textContent = j.job + ' ';
+                        if (shiftSpan) titleEl.appendChild(shiftSpan);
+                        row.dataset.title = j.job.toLowerCase();
+                    }
+                }
                 moveRowToGroup(row, prev, newRole, info);
             }
             // Update filter pill counts
@@ -1606,8 +1634,9 @@ window.addEventListener('resize', resizeTable);
           <input class="em-input" type="text" name="phone" id="emPhone" placeholder="Phone number">
         </div>
         <div class="em-tile">
-          <div class="em-label"><i class="fa-solid fa-briefcase"></i> Job Title</div>
-          <input class="em-input" type="text" name="job_title" id="emJob" required placeholder="e.g. Barista">
+          <div class="em-label"><i class="fa-solid fa-briefcase"></i> Job Title <span style="font-weight:400;text-transform:none;letter-spacing:0;opacity:.6">(set by role)</span></div>
+          <input class="em-input" type="text" name="job_title" id="emJob" readonly
+                 style="cursor:not-allowed;opacity:.75" placeholder="Pick a role below" title="Job title follows the selected role">
         </div>
         <div class="em-tile">
           <div class="em-label"><i class="fa-solid fa-dollar-sign"></i> Salary</div>
@@ -1687,6 +1716,16 @@ window.addEventListener('resize', resizeTable);
 /* ── EDIT MODAL ── */
 let _emPhotoFile = null;
 
+/* Job title follows the selected role (single source of truth). */
+const ROLE_TITLES = <?= json_encode(array_map(fn($r) => $r['name'], $_roles_db)) ?>;
+function syncJobTitle() {
+    const sel = document.querySelector('#emRoleGrid input[name="emp_role"]:checked');
+    const job = document.getElementById('emJob');
+    if (sel && ROLE_TITLES[sel.value]) job.value = ROLE_TITLES[sel.value];
+}
+document.querySelectorAll('#emRoleGrid input[name="emp_role"]').forEach(r =>
+    r.addEventListener('change', syncJobTitle));
+
 function openEditModal(eid) {
     _emPhotoFile = null;
     document.getElementById('emPhotoPill').style.display = 'none';
@@ -1732,6 +1771,7 @@ function openEditModal(eid) {
             const rb = document.querySelector(`#emRoleGrid input[value="${role}"]`);
             if (rb) rb.checked = true;
             else document.querySelectorAll('#emRoleGrid input[type="radio"]').forEach(r => r.checked = false);
+            syncJobTitle();   // job title follows the role
 
             // Shift
             const shift = emp.shift || '';
