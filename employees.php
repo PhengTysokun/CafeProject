@@ -903,7 +903,18 @@ foreach ($leaderboard as $i => $emp):
     </button>
     </div>
     <div class="fg-sep"></div>
-    <?php $general_count = 0; foreach ($employees as $_ge) { if (($_ge['emp_role'] ?? '') === 'general') $general_count++; } ?>
+    <?php
+    // Non-POS staff count + distinct positions, for the Role/Position dropdowns.
+    $general_count = 0; $general_positions = [];
+    foreach ($employees as $_ge) {
+        if (($_ge['emp_role'] ?? '') === 'general') {
+            $general_count++;
+            $jt = trim($_ge['job_title'] ?? '') ?: '—';
+            $general_positions[$jt] = ($general_positions[$jt] ?? 0) + 1;
+        }
+    }
+    ksort($general_positions);
+    ?>
     <div class="filter-group">
     <span class="fg-label">Role</span>
     <select class="filter-select" id="roleFilter" onchange="roleFilterChange(this)" aria-label="Filter by role">
@@ -912,6 +923,12 @@ foreach ($leaderboard as $i => $emp):
         <option value="<?= h($rslug) ?>"><?= htmlspecialchars($rdata['name']) ?> (<?= $rc ?>)</option>
         <?php endforeach; ?>
         <option value="general">General &mdash; non-POS (<?= $general_count ?>)</option>
+    </select>
+    <select class="filter-select" id="posFilter" onchange="setPosition(this.value)" aria-label="Filter by position" style="display:none;margin-left:8px">
+        <option value="">All positions (<?= $general_count ?>)</option>
+        <?php foreach ($general_positions as $pt => $pc): ?>
+        <option value="<?= h(strtolower($pt)) ?>"><?= htmlspecialchars($pt) ?> (<?= (int)$pc ?>)</option>
+        <?php endforeach; ?>
     </select>
     </div>
     <div class="fg-sep"></div>
@@ -936,28 +953,6 @@ foreach ($leaderboard as $i => $emp):
             <i class="fa-solid fa-bars"></i> Compact
         </button>
     </div>
-</div>
-
-<?php
-// Distinct positions among display-only (non-POS) staff, for the General sub-filter.
-$general_positions = [];
-foreach ($employees as $_ge) {
-    if (($_ge['emp_role'] ?? '') === 'general') {
-        $jt = trim($_ge['job_title'] ?? '') ?: '—';
-        $general_positions[$jt] = ($general_positions[$jt] ?? 0) + 1;
-    }
-}
-ksort($general_positions);
-?>
-<!-- Position sub-filter (only shown when Role = General) -->
-<div id="positionFilter" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:0 2px 10px">
-    <span class="fg-label" style="margin-right:2px">Position</span>
-    <select class="filter-select" id="posFilter" onchange="setPosition(this.value)" aria-label="Filter by position">
-        <option value="">All positions (<?= $general_count ?>)</option>
-        <?php foreach ($general_positions as $pt => $pc): ?>
-        <option value="<?= h(strtolower($pt)) ?>"><?= htmlspecialchars($pt) ?> (<?= (int)$pc ?>)</option>
-        <?php endforeach; ?>
-    </select>
 </div>
 
 <!-- ── TABLE ── -->
@@ -1264,25 +1259,23 @@ function setFilter(btn, filter) {
         if (p.dataset.filter === filter) p.classList.add(filter === 'all' ? 'active' : 'active-' + filter);
     });
     const rf = document.getElementById('roleFilter'); if (rf) rf.value = '__allroles__';
-    const pf = document.getElementById('positionFilter'); if (pf) pf.style.display = 'none';
+    const pf = document.getElementById('posFilter'); if (pf) { pf.style.display = 'none'; pf.value = ''; }
     currentPositionFilter = '';
     applyFilters();
 }
 function roleFilterChange(sel) {
     const val = sel.value;
     document.querySelectorAll('.controls-bar .filter-pill:not(.shift-pill)').forEach(p => p.className = 'filter-pill');
-    const pf = document.getElementById('positionFilter');
+    const pf = document.getElementById('posFilter');
     currentPositionFilter = '';
+    if (pf) { pf.value = ''; }
     if (val === '__allroles__') {
         currentFilter = 'all';
         const allp = document.querySelector('.filter-pill[data-filter="all"]'); if (allp) allp.classList.add('active');
         if (pf) pf.style.display = 'none';
     } else {
         currentFilter = val;
-        if (pf) {
-            if (val === 'general') { pf.style.display = 'flex'; const ps = document.getElementById('posFilter'); if (ps) ps.value = ''; }
-            else pf.style.display = 'none';
-        }
+        if (pf) pf.style.display = (val === 'general') ? '' : 'none';
     }
     applyFilters();
 }
