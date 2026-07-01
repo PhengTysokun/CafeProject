@@ -862,18 +862,15 @@ body.no-sidebar{--sidebar-w:0px;}
 
 .qx-hero{
     display:flex;align-items:center;justify-content:center;gap:12px;
-    align-self:center;width:100%;max-width:320px;min-height:54px;padding:13px 22px;
+    align-self:center;width:100%;max-width:320px;min-height:78px;padding:22px;
     background:linear-gradient(135deg,var(--amber-light) 0%,var(--amber) 100%);
     color:#000;text-decoration:none;
     border:1px solid rgba(255,255,255,.22);
     border-radius:var(--r);
     font-size:15px;font-weight:600;letter-spacing:.01em;
     box-shadow:0 4px 16px rgba(209,144,75,.3);
-    transition:transform .15s var(--ease),box-shadow .2s var(--ease),filter .15s var(--ease);
     -webkit-tap-highlight-color:transparent;
 }
-.qx-hero:hover{transform:translateY(-1px);box-shadow:0 6px 20px var(--amber-glow);}
-.qx-hero:active{transform:scale(.99);filter:brightness(1.05);}
 .qx-hero i{font-size:15px;width:30px;height:30px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:9px;background:rgba(0,0,0,.10);}
 
 .qx-group{display:flex;flex-direction:column;gap:12px;}
