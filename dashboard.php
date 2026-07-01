@@ -862,7 +862,7 @@ body.no-sidebar{--sidebar-w:0px;}
 
 .qx-hero{
     display:flex;align-items:center;justify-content:center;gap:12px;
-    width:100%;min-height:54px;padding:13px 22px;
+    align-self:center;width:100%;max-width:320px;min-height:54px;padding:13px 22px;
     background:linear-gradient(135deg,var(--amber-light) 0%,var(--amber) 100%);
     color:#000;text-decoration:none;
     border:1px solid rgba(255,255,255,.22);
@@ -979,7 +979,7 @@ body.no-sidebar{--sidebar-w:0px;}
     .qx-tiles{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
     .qx-tile{min-height:84px;padding:14px 16px;gap:12px;}
     .qx-tile i{width:42px;height:42px;font-size:20px;}
-    .qx-hero{font-size:15px;min-height:54px;padding:14px 20px;}
+    .qx-hero{font-size:15px;min-height:54px;padding:14px 20px;max-width:none;}
 }
 </style>
 </head>
