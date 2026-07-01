@@ -1583,13 +1583,23 @@ body.no-sidebar{--sidebar-w:0px;}
         $_focus = $_focus_barista;                        // prep-only roles
     }
     ?>
+    <?php
+    // Depth/hierarchy pass (icon size, count weight) applies to the redesigned
+    // cashier/inventory layout only — barista keeps the original legacy sizing.
+    $_iconBox   = $_redesign ? 64 : 56;
+    $_iconRad   = $_redesign ? 16 : 14;
+    $_iconFont  = $_redesign ? 28 : 25;
+    $_countFont = $_redesign ? 29 : 26;
+    $_countWt   = $_redesign ? 800 : 700;
+    ?>
     <?php if ($_focus): ?>
+    <?php $_iconShadow = $_redesign ? "box-shadow:0 0 0 1px {$_focus['color']}33 inset;" : ''; ?>
     <a href="<?= htmlspecialchars($_focus['href']) ?>" class="fu" style="animation-delay:.06s;display:flex;align-items:center;gap:18px;text-decoration:none;background:var(--surface-2);border:1px solid var(--border);border-left:4px solid <?= $_focus['color'] ?>;border-radius:16px;padding:18px 22px;margin-bottom:22px;transition:transform .15s ease,border-color .15s ease;" onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='var(--border-hi)'" onmouseout="this.style.transform='';this.style.borderColor='var(--border)'">
-        <div style="flex:0 0 auto;width:64px;height:64px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px;color:<?= $_focus['color'] ?>;background:<?= $_focus['color'] ?>2e;box-shadow:0 0 0 1px <?= $_focus['color'] ?>33 inset;">
+        <div style="flex:0 0 auto;width:<?= $_iconBox ?>px;height:<?= $_iconBox ?>px;border-radius:<?= $_iconRad ?>px;display:flex;align-items:center;justify-content:center;font-size:<?= $_iconFont ?>px;color:<?= $_focus['color'] ?>;background:<?= $_focus['color'] ?>2e;<?= $_iconShadow ?>">
             <i class="fa-solid <?= $_focus['icon'] ?>"></i>
         </div>
         <div style="flex:1 1 auto;min-width:0;">
-            <div style="font-size:29px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;">
+            <div style="font-size:<?= $_countFont ?>px;font-weight:<?= $_countWt ?>;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;">
                 <?= (int)$_focus['count'] ?> <span style="font-size:15px;font-weight:500;color:var(--text-muted);"><?= htmlspecialchars($_focus['label']) ?></span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-top:4px;"><?= htmlspecialchars($_focus['sub']) ?></div>
