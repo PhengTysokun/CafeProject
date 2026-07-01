@@ -858,7 +858,7 @@ body.no-sidebar{--sidebar-w:0px;}
 }
 
 /* ── REDESIGN: compact pro layout (cashier / inventory only) ── */
-.qx-grid{display:flex;flex-direction:column;gap:22px;max-width:1180px;width:100%;margin:0 auto;}
+.qx-grid{display:flex;flex-direction:column;gap:16px;max-width:1180px;width:100%;margin:0 auto;}
 
 .qx-hero{
     display:flex;align-items:center;justify-content:center;gap:12px;
