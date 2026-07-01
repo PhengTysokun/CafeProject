@@ -82,7 +82,7 @@ if (can('announcements')) {
     $_ar->close();
 }
 
-$unpaid_result = mysqli_query($conn, "SELECT COUNT(*) AS unpaid_count FROM orders WHERE status='PendingPayment'");
+$unpaid_result = mysqli_query($conn, "SELECT COUNT(*) AS unpaid_count FROM orders WHERE status='PendingPayment' AND DATE(order_date)=CURDATE()");
 $unpaid_count  = mysqli_fetch_assoc($unpaid_result)['unpaid_count'];
 
 $paylater_result = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM orders WHERE payment_method='paylater' AND status IN ('Preparing','PendingPayment','Completed')");
