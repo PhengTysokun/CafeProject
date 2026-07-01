@@ -1589,13 +1589,14 @@ body.no-sidebar{--sidebar-w:0px;}
     $_iconBox   = $_redesign ? 64 : 56;
     $_iconRad   = $_redesign ? 16 : 14;
     $_iconFont  = $_redesign ? 28 : 25;
+    $_iconBg    = $_redesign ? '2e' : '22';
     $_countFont = $_redesign ? 29 : 26;
     $_countWt   = $_redesign ? 800 : 700;
     ?>
     <?php if ($_focus): ?>
     <?php $_iconShadow = $_redesign ? "box-shadow:0 0 0 1px {$_focus['color']}33 inset;" : ''; ?>
     <a href="<?= htmlspecialchars($_focus['href']) ?>" class="fu" style="animation-delay:.06s;display:flex;align-items:center;gap:18px;text-decoration:none;background:var(--surface-2);border:1px solid var(--border);border-left:4px solid <?= $_focus['color'] ?>;border-radius:16px;padding:18px 22px;margin-bottom:22px;transition:transform .15s ease,border-color .15s ease;" onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='var(--border-hi)'" onmouseout="this.style.transform='';this.style.borderColor='var(--border)'">
-        <div style="flex:0 0 auto;width:<?= $_iconBox ?>px;height:<?= $_iconBox ?>px;border-radius:<?= $_iconRad ?>px;display:flex;align-items:center;justify-content:center;font-size:<?= $_iconFont ?>px;color:<?= $_focus['color'] ?>;background:<?= $_focus['color'] ?>2e;<?= $_iconShadow ?>">
+        <div style="flex:0 0 auto;width:<?= $_iconBox ?>px;height:<?= $_iconBox ?>px;border-radius:<?= $_iconRad ?>px;display:flex;align-items:center;justify-content:center;font-size:<?= $_iconFont ?>px;color:<?= $_focus['color'] ?>;background:<?= $_focus['color'] ?><?= $_iconBg ?>;<?= $_iconShadow ?>">
             <i class="fa-solid <?= $_focus['icon'] ?>"></i>
         </div>
         <div style="flex:1 1 auto;min-width:0;">
