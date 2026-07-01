@@ -865,10 +865,10 @@ body.no-sidebar{--sidebar-w:0px;}
     width:100%;min-height:54px;padding:13px 22px;
     background:linear-gradient(135deg,var(--amber-light) 0%,var(--amber) 100%);
     color:#000;text-decoration:none;
-    border:1px solid rgba(255,255,255,.18);
+    border:1px solid rgba(255,255,255,.22);
     border-radius:var(--r);
     font-size:15px;font-weight:600;letter-spacing:.01em;
-    box-shadow:0 2px 12px rgba(209,144,75,.18);
+    box-shadow:0 4px 16px rgba(209,144,75,.3);
     transition:transform .15s var(--ease),box-shadow .2s var(--ease),filter .15s var(--ease);
     -webkit-tap-highlight-color:transparent;
 }
@@ -878,7 +878,7 @@ body.no-sidebar{--sidebar-w:0px;}
 
 .qx-group{display:flex;flex-direction:column;gap:12px;}
 .qx-group-label{
-    font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+    font-size:12px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;
     color:var(--text-muted);display:flex;align-items:center;gap:7px;
     padding-bottom:8px;border-bottom:1px solid var(--border);
 }
@@ -891,17 +891,17 @@ body.no-sidebar{--sidebar-w:0px;}
     padding:18px 20px;min-height:96px;
     background:var(--surface);border:1px solid var(--border);
     border-radius:var(--r);color:var(--text);text-decoration:none;
-    box-shadow:0 1px 2px rgba(0,0,0,.18);
+    box-shadow:0 2px 8px rgba(0,0,0,.22);
     transition:background .2s var(--ease),border-color .2s var(--ease),transform .12s var(--ease),box-shadow .2s var(--ease);
     -webkit-tap-highlight-color:transparent;
 }
-.qx-tile:hover{background:var(--surface-2);border-color:var(--border-hi);transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.28);}
+.qx-tile:hover{background:var(--surface-2);border-color:var(--border-hi);transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.3);}
 .qx-tile:active{transform:scale(.98);filter:brightness(1.06);}
 .qx-tile i{
     font-size:22px;color:var(--accent);
     width:48px;height:48px;flex:0 0 auto;
     display:flex;align-items:center;justify-content:center;
-    border-radius:13px;background:var(--amber-dim);
+    border-radius:13px;background:linear-gradient(135deg,var(--amber-dim) 0%,rgba(209,144,75,.28) 100%);
     transition:transform .2s var(--spring);
 }
 .qx-tile:hover i{transform:scale(1.06);}
@@ -1585,11 +1585,11 @@ body.no-sidebar{--sidebar-w:0px;}
     ?>
     <?php if ($_focus): ?>
     <a href="<?= htmlspecialchars($_focus['href']) ?>" class="fu" style="animation-delay:.06s;display:flex;align-items:center;gap:18px;text-decoration:none;background:var(--surface-2);border:1px solid var(--border);border-left:4px solid <?= $_focus['color'] ?>;border-radius:16px;padding:18px 22px;margin-bottom:22px;transition:transform .15s ease,border-color .15s ease;" onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='var(--border-hi)'" onmouseout="this.style.transform='';this.style.borderColor='var(--border)'">
-        <div style="flex:0 0 auto;width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:25px;color:<?= $_focus['color'] ?>;background:<?= $_focus['color'] ?>22;">
+        <div style="flex:0 0 auto;width:64px;height:64px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px;color:<?= $_focus['color'] ?>;background:<?= $_focus['color'] ?>2e;box-shadow:0 0 0 1px <?= $_focus['color'] ?>33 inset;">
             <i class="fa-solid <?= $_focus['icon'] ?>"></i>
         </div>
         <div style="flex:1 1 auto;min-width:0;">
-            <div style="font-size:26px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;">
+            <div style="font-size:29px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;">
                 <?= (int)$_focus['count'] ?> <span style="font-size:15px;font-weight:500;color:var(--text-muted);"><?= htmlspecialchars($_focus['label']) ?></span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-top:4px;"><?= htmlspecialchars($_focus['sub']) ?></div>
