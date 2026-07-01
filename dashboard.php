@@ -915,6 +915,27 @@ body.no-sidebar{--sidebar-w:0px;}
     box-shadow:0 2px 8px rgba(0,0,0,.3);
 }
 
+.qx-snapshot{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.qx-snap-card{
+    display:flex;align-items:center;gap:12px;
+    padding:14px 16px;
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--r);
+    box-shadow:0 1px 2px rgba(0,0,0,.18);
+}
+.qx-snap-icon{
+    width:38px;height:38px;flex:0 0 auto;border-radius:11px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;color:var(--sc,var(--amber));
+    background:var(--sg,var(--amber-dim));
+}
+.qx-snap-card.c-amber   { --sc:var(--amber);   --sg:var(--amber-dim);   }
+.qx-snap-card.c-emerald { --sc:var(--emerald); --sg:var(--emerald-dim); }
+.qx-snap-card.c-blue    { --sc:var(--blue);    --sg:var(--blue-dim);    }
+.qx-snap-body{flex:1 1 auto;min-width:0;}
+.qx-snap-value{font-size:19px;font-weight:700;color:var(--text);line-height:1.15;font-variant-numeric:tabular-nums;}
+.qx-snap-label{font-size:11.5px;color:var(--text-muted);margin-top:1px;}
+
 /* ── TOAST ── */
 .toast-container{position:fixed;bottom:22px;right:22px;z-index:9999;display:flex;flex-direction:column;gap:9px;}
 .toast{
@@ -980,6 +1001,7 @@ body.no-sidebar{--sidebar-w:0px;}
     .qx-tile{min-height:84px;padding:14px 16px;gap:12px;}
     .qx-tile i{width:42px;height:42px;font-size:20px;}
     .qx-hero{font-size:15px;min-height:54px;padding:14px 20px;}
+    .qx-snapshot{grid-template-columns:1fr;gap:10px;}
 }
 </style>
 </head>
