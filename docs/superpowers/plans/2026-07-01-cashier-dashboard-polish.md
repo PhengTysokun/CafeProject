@@ -212,19 +212,25 @@ Replace with:
             <div style="font-size:29px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;">
 ```
 
-- [ ] **Step 2: Deepen the Take New Order CTA**
+- [ ] **Step 2: Deepen the Take New Order CTA shadow**
 
-Find:
+> AMENDMENT (post-plan, commit `d083b0a`): the CTA was already shrunk to
+> tile-height weight per user feedback — `min-height:54px`, `padding:13px 22px`,
+> `font-size:15px`, `font-weight:600`, icon `30x30px`. This step now only
+> deepens the border/shadow on top of that sizing — do NOT reintroduce the
+> old `60px`/`16px`/`700` values.
+
+Find (current state, already reflects the `d083b0a` shrink):
 
 ```css
 .qx-hero{
-    display:flex;align-items:center;justify-content:center;gap:14px;
-    width:100%;min-height:60px;padding:16px 26px;
+    display:flex;align-items:center;justify-content:center;gap:12px;
+    width:100%;min-height:54px;padding:13px 22px;
     background:linear-gradient(135deg,var(--amber-light) 0%,var(--amber) 100%);
     color:#000;text-decoration:none;
     border:1px solid rgba(255,255,255,.18);
     border-radius:var(--r);
-    font-size:16px;font-weight:700;letter-spacing:.01em;
+    font-size:15px;font-weight:600;letter-spacing:.01em;
     box-shadow:0 2px 12px rgba(209,144,75,.18);
     transition:transform .15s var(--ease),box-shadow .2s var(--ease),filter .15s var(--ease);
     -webkit-tap-highlight-color:transparent;
@@ -235,14 +241,14 @@ Replace with:
 
 ```css
 .qx-hero{
-    display:flex;align-items:center;justify-content:center;gap:14px;
-    width:100%;min-height:60px;padding:16px 26px;
+    display:flex;align-items:center;justify-content:center;gap:12px;
+    width:100%;min-height:54px;padding:13px 22px;
     background:linear-gradient(135deg,var(--amber-light) 0%,var(--amber) 100%);
     color:#000;text-decoration:none;
     border:1px solid rgba(255,255,255,.22);
     border-radius:var(--r);
-    font-size:16px;font-weight:700;letter-spacing:.01em;
-    box-shadow:0 4px 18px rgba(209,144,75,.32);
+    font-size:15px;font-weight:600;letter-spacing:.01em;
+    box-shadow:0 4px 16px rgba(209,144,75,.3);
     transition:transform .15s var(--ease),box-shadow .2s var(--ease),filter .15s var(--ease);
     -webkit-tap-highlight-color:transparent;
 }
