@@ -1622,6 +1622,37 @@ body.no-sidebar{--sidebar-w:0px;}
     </a>
     <?php endif; ?>
 
+    <?php if ($_redesign && $_focus === $_focus_cashier): ?>
+    <div class="qx-snapshot fu" style="animation-delay:.08s">
+        <div class="qx-snap-card c-amber">
+            <div class="qx-snap-icon"><i class="fa-solid fa-dollar-sign"></i></div>
+            <div class="qx-snap-body">
+                <div class="qx-snap-value">$<?= number_format($sales, 2) ?></div>
+                <div class="qx-snap-label">
+                    Today's Sales
+                    <?php if ($sales_trend != 0): ?>
+                    · <span class="kpi-pill <?= $trend_class ?>" style="margin-left:2px;"><i class="fa-solid <?= $trend_icon ?>"></i> <?= abs($sales_trend) ?>%</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <div class="qx-snap-card c-emerald">
+            <div class="qx-snap-icon"><i class="fa-solid fa-receipt"></i></div>
+            <div class="qx-snap-body">
+                <div class="qx-snap-value"><?= (int)$total_orders ?></div>
+                <div class="qx-snap-label">Orders Today · <?= (int)$completed_count ?> completed</div>
+            </div>
+        </div>
+        <div class="qx-snap-card c-blue">
+            <div class="qx-snap-icon"><i class="fa-solid fa-mug-hot"></i></div>
+            <div class="qx-snap-body">
+                <div class="qx-snap-value"><?= (int)$items_sold ?></div>
+                <div class="qx-snap-label">Items Sold</div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- QUICK ACCESS GRID -->
     <div class="<?= $_redesign ? 'qx-grid' : 'qa-grid' ?> fu" style="animation-delay:.1s">
         <?php if (can('find_orders')): ?>
