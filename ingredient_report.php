@@ -229,6 +229,17 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
 .toast.success { border-left:3px solid var(--ok); }
 .toast.error   { border-left:3px solid var(--danger); }
 
+/* PAGINATION */
+tr.hidden { display:none !important; }
+.pg-wrap { padding:14px 18px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.pg-nav { display:flex; gap:4px; flex-wrap:wrap; }
+.pg-btn { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; text-decoration:none; transition:var(--transition); }
+.pg-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pg-active { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; background:var(--accent); border:1px solid var(--accent); color:#000; font-size:13px; font-weight:700; }
+.pg-disabled { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); color:var(--text-muted); font-size:13px; opacity:.35; cursor:default; }
+.pg-ellipsis { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; color:var(--text-muted); font-size:13px; }
+.pg-info { font-size:12px; color:var(--text-muted); }
+
 /* EMPTY */
 .empty-state { text-align:center; padding:60px 20px; }
 .empty-state .ei { font-size:42px; color:var(--border-hover); margin-bottom:14px; }
@@ -436,6 +447,12 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
         </table>
         <?php endif; ?>
     </div>
+    <?php if (!empty($rows)): ?>
+    <div class="pg-wrap" id="pgWrap" style="display:none">
+        <span id="pgInfo" class="pg-info"></span>
+        <nav id="pgNav" class="pg-nav"></nav>
+    </div>
+    <?php endif; ?>
 </div>
 
 <div id="toast-cnt"></div>
@@ -449,6 +466,64 @@ function setRange(days) {
     document.querySelector('input[name="from"]').value = fmt(from);
     document.querySelector('input[name="to"]').value   = fmt(to);
     document.querySelector('form').submit();
+}
+
+/* ── CLIENT-SIDE PAGINATION ── */
+const PER_PAGE = 12;
+let currentPage  = 1;
+let lastFiltered = [];
+
+function rebuildFiltered() {
+    const q = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+    lastFiltered = [...document.querySelectorAll('#reportBody tr[data-name]')]
+        .filter(tr => !q || tr.dataset.name.includes(q));
+}
+
+function renderPage() {
+    const total      = lastFiltered.length;
+    const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+    currentPage      = Math.min(currentPage, totalPages);
+    const start      = (currentPage - 1) * PER_PAGE;
+    const pageRows   = lastFiltered.slice(start, start + PER_PAGE);
+
+    document.querySelectorAll('#reportBody tr[data-name]').forEach(r => r.classList.add('hidden'));
+    pageRows.forEach(r => r.classList.remove('hidden'));
+
+    document.getElementById('rowCount').textContent = total + ' ingredient' + (total !== 1 ? 's' : '');
+    renderPagination(total, totalPages);
+}
+
+function renderPagination(total, totalPages) {
+    const wrap = document.getElementById('pgWrap');
+    if (!wrap) return;
+    if (totalPages <= 1) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'flex';
+    document.getElementById('pgInfo').textContent =
+        `Page ${currentPage} of ${totalPages} · ${total} shown`;
+    const nav = document.getElementById('pgNav');
+    let html = currentPage > 1
+        ? `<a href="#" class="pg-btn" onclick="goPage(1);return false;">«</a><a href="#" class="pg-btn" onclick="goPage(${currentPage - 1});return false;">‹</a>`
+        : `<span class="pg-disabled">«</span><span class="pg-disabled">‹</span>`;
+    const ws = Math.max(1, currentPage - 2);
+    const we = Math.min(totalPages, currentPage + 2);
+    if (ws > 1) html += `<span class="pg-ellipsis">…</span>`;
+    for (let i = ws; i <= we; i++) {
+        html += i === currentPage
+            ? `<span class="pg-active">${i}</span>`
+            : `<a href="#" class="pg-btn" onclick="goPage(${i});return false;">${i}</a>`;
+    }
+    if (we < totalPages) html += `<span class="pg-ellipsis">…</span>`;
+    html += currentPage < totalPages
+        ? `<a href="#" class="pg-btn" onclick="goPage(${currentPage + 1});return false;">›</a><a href="#" class="pg-btn" onclick="goPage(${totalPages});return false;">»</a>`
+        : `<span class="pg-disabled">›</span><span class="pg-disabled">»</span>`;
+    nav.innerHTML = html;
+}
+
+function goPage(p) {
+    currentPage = p;
+    renderPage();
+    const tw = document.querySelector('.table-wrap');
+    if (tw) tw.scrollTop = 0;
 }
 
 /* ── SORT ── */
@@ -476,26 +551,27 @@ function sortTable(col) {
         return asc ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     rows.forEach(r => tbody.appendChild(r));
+
+    // Re-apply the current search filter (in the new order) and re-paginate
+    rebuildFiltered();
+    renderPage();
 }
 
 /* ── LIVE SEARCH ── */
 function liveSearch(q) {
-    q = q.toLowerCase().trim();
-    let shown = 0;
-    document.querySelectorAll('#reportBody tr[data-name]').forEach(tr => {
-        const match = !q || tr.dataset.name.includes(q);
-        tr.style.display = match ? '' : 'none';
-        if (match) shown++;
-    });
-    document.getElementById('rowCount').textContent = shown + ' ingredient' + (shown !== 1 ? 's' : '');
+    currentPage = 1;
+    rebuildFiltered();
+    renderPage();
 }
 
 /* ── EXPORT CSV ── */
 function exportCSV() {
     const headers = ['Ingredient','Unit','Consumed','Added','Net Change','Avg/Day','Days Left','Events'];
     const rows = [];
-    document.querySelectorAll('#reportBody tr[data-name]').forEach(tr => {
-        if (tr.style.display === 'none') return;
+    // Export every row matching the current search (all pages), not just the visible page
+    const source = lastFiltered.length ? lastFiltered
+                 : [...document.querySelectorAll('#reportBody tr[data-name]')];
+    source.forEach(tr => {
         rows.push([
             tr.dataset[0] || '',
             tr.dataset[1] || '',
@@ -542,6 +618,11 @@ function showToast(msg, type = 'success') {
 document.addEventListener('DOMContentLoaded', () => {
     if (localStorage.getItem('theme') === 'light')
         document.getElementById('themeIcon').className = 'fa-solid fa-sun';
+    // Initial pagination render
+    if (document.getElementById('reportBody')) {
+        rebuildFiltered();
+        renderPage();
+    }
 });
 </script>
 </body>
