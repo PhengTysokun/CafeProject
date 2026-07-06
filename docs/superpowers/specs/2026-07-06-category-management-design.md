@@ -23,11 +23,20 @@ key wired across the app. Therefore:
 - **slug is immutable after creation.** Renaming a category changes only its display
   `name` / `icon` / `display_order` / `is_active` — never the slug — so no product link
   can break.
-- On **add**, the slug is derived from the entered Name (trimmed; collapse internal
-  whitespace to single spaces; reject if the derived slug collides with an existing
-  slug, case-insensitive).
+- On **add**, the slug is derived from the entered Name by trimming and collapsing
+  internal whitespace to single spaces **only** — it is NOT lowercased and NOT
+  hyphenated. This is deliberate: existing slugs are Title Case with spaces (`Iced`,
+  `Hot`, `Milk Tea`), `products.category` stores that exact string, and it is rendered
+  to users as the category badge (`products.php`, the `.category-badge` span). A web-style
+  `milk-tea` slug would both mismatch existing data and show ugly badges. The "slug" here
+  is effectively a stable Title-Case display key, not a URL slug. Reject creation if the
+  derived slug collides with an existing slug, compared case-insensitively.
 - Because slug is immutable and delete is blocked while in use (below), `products.category`
   and `products.category_id` can never be orphaned or desynced by this feature.
+- The slug↔category_id coupling is already enforced on every product save:
+  `add_product.php` and `edit_product.php` both `SELECT category_id FROM categories
+  WHERE slug = ?` from the selected slug before writing. This feature does not change
+  that; it only manages the rows those lookups resolve against.
 
 ## Scope
 
@@ -60,22 +69,28 @@ clerk / admin / manager can).
 
 **Add** — a form (inline card at top of the list, or a small modal) with:
 - Name (text, required)
-- Icon (text input pre-filled `fa-circle`, with a short hint linking to Font Awesome
+- Icon (text input pre-filled `fa-tag`, with a short hint linking to Font Awesome
   names; free text is acceptable — no icon picker widget in Phase 1)
 - Active (checkbox, default checked)
 
-On submit (`action=create`): derive slug from Name; reject empty Name or duplicate slug
-(case-insensitive) with an error message; `display_order` = `MAX(display_order)+1`;
-`INSERT INTO categories (slug, name, icon, display_order, is_active) VALUES (...)`.
+On submit (`action=create`): derive slug from Name (per Identity model); reject empty
+Name or duplicate slug (case-insensitive) with an error message; `display_order` =
+`COALESCE(MAX(display_order), 0) + 1` (note: a bare `MAX(...)+1` yields NULL on an empty
+table); `INSERT INTO categories (slug, name, icon, display_order, is_active) VALUES (...)`.
 
-**Edit** (`action=update`) — same fields as Add (Name, Icon, Active); slug shown
-read-only. Updates `name`, `icon`, `is_active` for the given `category_id`.
+**Edit** (`action=update`) — same fields as Add (Name, Icon, Active). The slug is shown
+read-only next to a short help note: "Slug is permanent — it links existing products and
+cannot be changed." Updates `name`, `icon`, `is_active` for the given `category_id`.
 
 **Delete** (`action=delete`) — first `SELECT COUNT(*) FROM products WHERE category_id = ?`.
-If count > 0, refuse with "N product(s) use this category — move or delete them first."
-Otherwise `DELETE FROM categories WHERE category_id = ?`. The Delete control is also
-visually disabled in the list when the product count > 0, so the block is obvious before
-the click.
+If count > 0, refuse with "N product(s) use this category — reassign them (via each
+product's Edit page) or delete them first." Otherwise `DELETE FROM categories WHERE
+category_id = ?`. The Delete control is also visually disabled in the list when the
+product count > 0, with a tooltip stating the blocking count, so the block is obvious
+before the click.
+
+**Inactive rows** are rendered visually muted (dimmed text + an "Inactive" pill) in the
+list so it is obvious at a glance which categories are hidden from the pickers.
 
 All mutating actions are POST and CSRF-guarded using the same pattern as the recently
 hardened `stands.php`: at the top of the page,
