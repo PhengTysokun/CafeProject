@@ -68,9 +68,12 @@ clerk / admin / manager can).
 | Actions | Edit, Delete |
 
 **Add** — a form (inline card at top of the list, or a small modal) with:
-- Name (text, required)
-- Icon (text input pre-filled `fa-tag`, with a short hint linking to Font Awesome
-  names; free text is acceptable — no icon picker widget in Phase 1)
+- Name (text, required). A live, read-only "Slug will be: `<derived>`" preview updates
+  as the user types (client-side, mirrors the server derivation) so the permanent key is
+  visible before submit.
+- Icon (text input pre-filled `fa-tag`, with a short hint showing a few example names —
+  e.g. `fa-mug-hot`, `fa-leaf`, `fa-blender` — and linking to the Font Awesome gallery;
+  free text is acceptable — no icon picker widget in Phase 1)
 - Active (checkbox, default checked)
 
 On submit (`action=create`): derive slug from Name (per Identity model); reject empty
@@ -89,8 +92,9 @@ category_id = ?`. The Delete control is also visually disabled in the list when 
 product count > 0, with a tooltip stating the blocking count, so the block is obvious
 before the click.
 
-**Inactive rows** are rendered visually muted (dimmed text + an "Inactive" pill) in the
-list so it is obvious at a glance which categories are hidden from the pickers.
+**Inactive rows** are rendered visually muted (dimmed text + a subtle grayed row
+background + an "Inactive" pill) in the list so it is obvious at a glance which categories
+are hidden from the pickers.
 
 All mutating actions are POST and CSRF-guarded using the same pattern as the recently
 hardened `stands.php`: at the top of the page,
@@ -106,9 +110,27 @@ by pages like `ingredients.php` so it visually matches.
 Currently `products.php` builds its category filter chips from `array_unique` of the
 distinct `products.category` strings (lines ~86-95), so a newly created but still-empty
 category would not appear as a filter option. Change the filter source to read from the
-`categories` table (`WHERE is_active = 1 ORDER BY display_order`), falling back to
-"Uncategorized" for products whose `category` is empty. Product cards keep their existing
-`data-category` (the slug) so client-side filtering is unaffected.
+`categories` table (`WHERE is_active = 1 ORDER BY display_order`). Each chip shows its
+product count, e.g. `Smoothies (0)`, computed from a `category_id → COUNT(*)` map over
+`products` — so an empty category is visibly empty rather than mysteriously yielding
+nothing. Any product whose `category` slug is empty/unknown is bucketed under an
+"Uncategorized" chip (defensive; see Data integrity below). Product cards keep their
+existing `data-category` (the slug) so client-side filtering is unaffected.
+
+## Data integrity (verified against live DB, 2026-07-07)
+
+The `products`↔`categories` relationship is currently fully consistent, so this feature
+starts from clean data:
+
+- Distinct `products.category` strings `[Frappe, Hot, Iced, Juice, Milk Tea]` match
+  `categories.slug` exactly.
+- Products with `category_id` NULL: 0. Products with empty/NULL `category`: 0.
+- Products whose slug has no matching `categories` row: 0.
+- Products where `category_id`'s row slug disagrees with the `category` string
+  (desync): 0.
+
+The "Uncategorized" fallback in the filter is therefore a defensive path that no current
+row exercises; it exists so the page stays correct if drift is ever introduced elsewhere.
 
 ## Data flow
 
