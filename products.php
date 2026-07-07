@@ -94,6 +94,24 @@ $top   = array_key_first($catCounts) ?? '';
 $realCategories = array_keys($realCategories);
 sort($realCategories);
 
+// Category filter chips are sourced from the categories table so that a newly created
+// but still-empty category still appears. $catCounts (slug => product count) is already
+// built above from the product rows.
+$filterCats = [];
+$activeCatRes = $conn->query("SELECT slug FROM categories WHERE is_active = 1 ORDER BY display_order, category_id");
+$knownSlugs = [];
+while ($cr = $activeCatRes->fetch_assoc()) {
+    $slug = $cr['slug'];
+    $knownSlugs[$slug] = true;
+    $filterCats[] = ['slug' => $slug, 'count' => $catCounts[$slug] ?? 0];
+}
+// Any products whose category isn't an active known slug (incl. empty => 'Uncategorized')
+$uncat = 0;
+foreach ($catCounts as $slug => $n) {
+    if ($slug === 'Uncategorized' || !isset($knownSlugs[$slug])) $uncat += $n;
+}
+if ($uncat > 0) $filterCats[] = ['slug' => 'Uncategorized', 'count' => $uncat];
+
 $availPct = $totalProducts > 0 ? round($availCount / $totalProducts * 100) : 0;
 
 ?>
@@ -1382,6 +1400,12 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <i class="fa-solid fa-plus"></i>
             <span class="hide-sm">Add Product</span>
         </a>
+
+        <!-- Manage Categories -->
+        <a href="manage_categories.php" class="btn-add" style="background:transparent;border:1px solid var(--border,#2a2a2a);color:var(--text,#f5f5f5);">
+            <i class="fa-solid fa-tags"></i>
+            <span class="hide-sm">Categories</span>
+        </a>
         <?php endif; ?>
 
         <!-- Theme -->
@@ -1450,9 +1474,9 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <button class="filter-tab active" data-filter="all">
                 All <span class="tab-count"><?= $totalProducts ?></span>
             </button>
-            <?php foreach (array_keys($catCounts) as $cat): ?>
-            <button class="filter-tab" data-filter="<?= htmlspecialchars($cat) ?>">
-                <?= htmlspecialchars($cat) ?> <span class="tab-count"><?= $catCounts[$cat] ?></span>
+            <?php foreach ($filterCats as $fc): ?>
+            <button class="filter-tab" data-filter="<?= htmlspecialchars($fc['slug']) ?>">
+                <?= htmlspecialchars($fc['slug']) ?> <span class="tab-count"><?= (int)$fc['count'] ?></span>
             </button>
             <?php endforeach; ?>
         </div>
