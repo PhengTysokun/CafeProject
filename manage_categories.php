@@ -63,6 +63,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = ['type'=>'success','msg'=>'Category deleted.'];
                 break;
             }
+            case 'reorder': {
+                $id  = (int)($_POST['category_id'] ?? 0);
+                $dir = ($_POST['dir'] ?? '') === 'up' ? 'up' : 'down';
+                if ($id > 0) {
+                    // current row
+                    $cur = $conn->query("SELECT category_id, display_order FROM categories WHERE category_id = " . $id)->fetch_assoc();
+                    if ($cur) {
+                        // neighbor in the chosen direction by display_order
+                        $cmp = $dir === 'up' ? '<' : '>';
+                        $ord = $dir === 'up' ? 'DESC' : 'ASC';
+                        $nb = $conn->query("SELECT category_id, display_order FROM categories WHERE display_order $cmp " . (int)$cur['display_order'] . " ORDER BY display_order $ord LIMIT 1")->fetch_assoc();
+                        if ($nb) {
+                            $a = (int)$cur['display_order']; $b = (int)$nb['display_order'];
+                            $ca = (int)$cur['category_id'];  $cb = (int)$nb['category_id'];
+                            $conn->query("UPDATE categories SET display_order = $b WHERE category_id = $ca");
+                            $conn->query("UPDATE categories SET display_order = $a WHERE category_id = $cb");
+                            $flash = ['type'=>'success','msg'=>'Order updated.'];
+                        }
+                    }
+                }
+                break;
+            }
         }
     }
 }
@@ -210,8 +232,20 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         <?php foreach ($categories as $i => $c): ?>
             <tr class="cat-row <?= $c['is_active'] ? '' : 'inactive' ?>">
                 <td>
-                    <button class="icon-btn" title="Move up"   <?= $i === 0 ? 'disabled' : '' ?>>&uarr;</button>
-                    <button class="icon-btn" title="Move down" <?= $i === count($categories) - 1 ? 'disabled' : '' ?>>&darr;</button>
+                    <form method="POST" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
+                        <input type="hidden" name="action" value="reorder">
+                        <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
+                        <input type="hidden" name="dir" value="up">
+                        <button type="submit" class="icon-btn" title="Move up" <?= $i === 0 ? 'disabled' : '' ?>>&uarr;</button>
+                    </form>
+                    <form method="POST" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
+                        <input type="hidden" name="action" value="reorder">
+                        <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
+                        <input type="hidden" name="dir" value="down">
+                        <button type="submit" class="icon-btn" title="Move down" <?= $i === count($categories) - 1 ? 'disabled' : '' ?>>&darr;</button>
+                    </form>
                 </td>
                 <td><span class="cat-icon"><i class="fa-solid <?= he($c['icon'] ?: 'fa-circle') ?>"></i></span></td>
                 <td><?= he($c['name']) ?><?php if (!$c['is_active']): ?> <span class="pill pill-inactive">Inactive</span><?php endif; ?></td>
