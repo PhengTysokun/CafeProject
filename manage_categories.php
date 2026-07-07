@@ -31,6 +31,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = ['type'=>'success','msg'=>"Category \"$slug\" added."];
                 break;
             }
+            case 'update': {
+                $id   = (int)($_POST['category_id'] ?? 0);
+                $name = trim((string)($_POST['name'] ?? ''));
+                $icon = trim((string)($_POST['icon'] ?? '')) ?: 'fa-circle';
+                $active = isset($_POST['is_active']) ? 1 : 0;
+                if ($id <= 0 || $name === '') { $flash = ['type'=>'error','msg'=>'Name is required.']; break; }
+                $u = $conn->prepare("UPDATE categories SET name=?, icon=?, is_active=? WHERE category_id=?");
+                $u->bind_param('ssii', $name, $icon, $active, $id);
+                $u->execute();
+                $flash = ['type'=>'success','msg'=>'Category updated.'];
+                break;
+            }
+            case 'toggle': {
+                $id = (int)($_POST['category_id'] ?? 0);
+                if ($id > 0) {
+                    $conn->query("UPDATE categories SET is_active = 1 - is_active WHERE category_id = " . $id);
+                    $flash = ['type'=>'success','msg'=>'Category visibility updated.'];
+                }
+                break;
+            }
         }
     }
 }
@@ -185,8 +205,43 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 <td><?= he($c['name']) ?><?php if (!$c['is_active']): ?> <span class="pill pill-inactive">Inactive</span><?php endif; ?></td>
                 <td class="slug-muted"><?= he($c['slug']) ?></td>
                 <td><?= (int)$c['product_count'] ?></td>
-                <td><?= $c['is_active'] ? 'Yes' : 'No' ?></td>
-                <td><!-- edit/delete/toggle controls added in Tasks 3-5 --></td>
+                <td>
+                    <form method="POST" style="margin:0;">
+                        <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
+                        <input type="hidden" name="action" value="toggle">
+                        <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
+                        <button type="submit" class="act-link"><?= $c['is_active'] ? 'On' : 'Off' ?></button>
+                    </form>
+                </td>
+                <td>
+                    <button type="button" class="act-link" onclick="toggleEdit(<?= (int)$c['category_id'] ?>)">Edit</button>
+                    <!-- Delete control added in Task 4 -->
+                </td>
+            </tr>
+            <tr id="edit-<?= (int)$c['category_id'] ?>" style="display:none;">
+                <td colspan="7" style="background:rgba(255,255,255,.02);">
+                    <form method="POST" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+                        <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
+                        <input type="hidden" name="action" value="update">
+                        <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
+                        <div style="display:flex;flex-direction:column;gap:4px;">
+                            <label class="slug-muted">Name</label>
+                            <input type="text" name="name" value="<?= he($c['name']) ?>" required style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);">
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:4px;">
+                            <label class="slug-muted">Icon</label>
+                            <input type="text" name="icon" value="<?= he($c['icon']) ?>" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);width:140px;">
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:4px;">
+                            <label class="slug-muted">Slug (permanent)</label>
+                            <input type="text" value="<?= he($c['slug']) ?>" readonly title="Slug is permanent — it links existing products and cannot be changed." style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-muted);width:140px;">
+                        </div>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);padding-bottom:6px;">
+                            <input type="checkbox" name="is_active" <?= $c['is_active'] ? 'checked' : '' ?>> Active
+                        </label>
+                        <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);padding-bottom:6px;">Save</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -194,6 +249,10 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 </div>
 
 <script>
+function toggleEdit(id) {
+    const row = document.getElementById('edit-' + id);
+    row.style.display = row.style.display === 'none' ? '' : 'none';
+}
 function updateSlugPreview() {
     const v = document.getElementById('catName').value.trim().replace(/\s+/g, ' ');
     document.getElementById('slugPreview').textContent = 'Slug will be: ' + (v || '—');
