@@ -15,6 +15,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         switch ($_POST['action'] ?? '') {
             // create / update / toggle / delete / reorder added in later tasks
+            case 'create': {
+                $name = trim((string)($_POST['name'] ?? ''));
+                $icon = trim((string)($_POST['icon'] ?? '')) ?: 'fa-circle';
+                $active = isset($_POST['is_active']) ? 1 : 0;
+                $slug = cat_slug($name);
+                if ($slug === '') { $flash = ['type'=>'error','msg'=>'Category name is required.']; break; }
+                $dup = $conn->prepare("SELECT category_id FROM categories WHERE LOWER(slug) = LOWER(?) LIMIT 1");
+                $dup->bind_param('s', $slug); $dup->execute();
+                if ($dup->get_result()->fetch_assoc()) { $flash = ['type'=>'error','msg'=>"A category named \"$slug\" already exists."]; break; }
+                $ord = (int)$conn->query("SELECT COALESCE(MAX(display_order),0)+1 AS n FROM categories")->fetch_assoc()['n'];
+                $ins = $conn->prepare("INSERT INTO categories (slug, name, icon, display_order, is_active) VALUES (?, ?, ?, ?, ?)");
+                $ins->bind_param('sssii', $slug, $name, $icon, $ord, $active);
+                $ins->execute();
+                $flash = ['type'=>'success','msg'=>"Category \"$slug\" added."];
+                break;
+            }
         }
     }
 }
@@ -127,7 +143,24 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     <div class="flash <?= he($flash['type']) ?>"><?= he($flash['msg']) ?></div>
     <?php endif; ?>
 
-    <!-- Add form placeholder — filled in Task 2 -->
+    <form method="POST" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
+        <input type="hidden" name="action" value="create">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Name</label>
+            <input type="text" name="name" id="catName" required placeholder="e.g. Smoothies" oninput="updateSlugPreview()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:13px;font-family:'Poppins',sans-serif;">
+            <span class="slug-muted" id="slugPreview">Slug will be: —</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Icon</label>
+            <input type="text" name="icon" value="fa-tag" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:13px;font-family:'Poppins',sans-serif;width:150px;">
+            <span class="slug-muted">e.g. fa-mug-hot, fa-leaf, fa-blender</span>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);padding-bottom:8px;">
+            <input type="checkbox" name="is_active" checked> Active
+        </label>
+        <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);padding-bottom:8px;"><i class="fa-solid fa-plus"></i> Add Category</button>
+    </form>
 
     <table class="cat-table">
         <thead>
@@ -161,6 +194,10 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 </div>
 
 <script>
+function updateSlugPreview() {
+    const v = document.getElementById('catName').value.trim().replace(/\s+/g, ' ');
+    document.getElementById('slugPreview').textContent = 'Slug will be: ' + (v || '—');
+}
 function toggleTheme() {
     const html = document.documentElement, icon = document.getElementById('themeIcon');
     if (html.getAttribute('data-theme') === 'light') { html.removeAttribute('data-theme'); icon.className = 'fa-solid fa-moon'; localStorage.setItem('theme','dark'); }
