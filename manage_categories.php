@@ -51,6 +51,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
             }
+            case 'delete': {
+                $id = (int)($_POST['category_id'] ?? 0);
+                if ($id <= 0) { $flash = ['type'=>'error','msg'=>'Invalid category.']; break; }
+                $chk = $conn->prepare("SELECT COUNT(*) AS n FROM products WHERE category_id = ?");
+                $chk->bind_param('i', $id); $chk->execute();
+                $n = (int)$chk->get_result()->fetch_assoc()['n'];
+                if ($n > 0) { $flash = ['type'=>'error','msg'=>"$n product(s) use this category — reassign them (via each product's Edit page) or delete them first."]; break; }
+                $d = $conn->prepare("DELETE FROM categories WHERE category_id = ?");
+                $d->bind_param('i', $id); $d->execute();
+                $flash = ['type'=>'success','msg'=>'Category deleted.'];
+                break;
+            }
         }
     }
 }
@@ -215,7 +227,16 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 </td>
                 <td>
                     <button type="button" class="act-link" onclick="toggleEdit(<?= (int)$c['category_id'] ?>)">Edit</button>
-                    <!-- Delete control added in Task 4 -->
+                    <?php if ((int)$c['product_count'] > 0): ?>
+                    <button type="button" class="act-link danger-link" disabled title="Cannot delete: <?= (int)$c['product_count'] ?> product(s) use this category">Delete</button>
+                    <?php else: ?>
+                    <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this category? This cannot be undone.');">
+                        <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
+                        <button type="submit" class="act-link danger-link">Delete</button>
+                    </form>
+                    <?php endif; ?>
                 </td>
             </tr>
             <tr id="edit-<?= (int)$c['category_id'] ?>" style="display:none;">
