@@ -99,17 +99,16 @@ sort($realCategories);
 // built above from the product rows.
 $filterCats = [];
 $activeCatRes = $conn->query("SELECT slug FROM categories WHERE is_active = 1 ORDER BY display_order, category_id");
-$knownSlugs = [];
 while ($cr = $activeCatRes->fetch_assoc()) {
     $slug = $cr['slug'];
-    $knownSlugs[$slug] = true;
     $filterCats[] = ['slug' => $slug, 'count' => $catCounts[$slug] ?? 0];
 }
-// Any products whose category isn't an active known slug (incl. empty => 'Uncategorized')
-$uncat = 0;
-foreach ($catCounts as $slug => $n) {
-    if ($slug === 'Uncategorized' || !isset($knownSlugs[$slug])) $uncat += $n;
-}
+// Only truly empty-category products bucket into the "Uncategorized" chip. Products whose
+// slug belongs to an inactive (or orphan) category are intentionally NOT counted here:
+// their cards keep their real slug in data-category, so a "Uncategorized" filter click would
+// not surface them — counting them would make the chip's number disagree with what it shows.
+// They remain reachable via the "All" chip. Keeps count == click for every chip.
+$uncat = $catCounts['Uncategorized'] ?? 0;
 if ($uncat > 0) $filterCats[] = ['slug' => 'Uncategorized', 'count' => $uncat];
 
 $availPct = $totalProducts > 0 ? round($availCount / $totalProducts * 100) : 0;
