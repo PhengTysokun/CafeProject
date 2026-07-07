@@ -51,9 +51,12 @@ per-category colors, bulk operations, slug renaming.
 
 ### 1. `manage_categories.php` (new)
 
-Access gate: `if (!can('products')) { header("Location: dashboard.php?denied=1"); exit; }`
-— same permission that guards product management (cashier `staff` cannot; inventory
-clerk / admin / manager can).
+Access gate: `require 'admin_only.php';` at the top — the exact same guard used by
+`add_product.php` and `edit_product.php`. `admin_only.php` allows **admin and manager
+roles only** (it redirects everyone else to `dashboard.php?denied=1`). This is what
+"same as product management" actually resolves to in this codebase — product creation is
+admin/manager, not a broad `can('products')` permission. Note this means inventory-clerk
+(who manages stock, not the product catalog) cannot manage categories, which is correct.
 
 **List view** — one table, ordered by `display_order`:
 
@@ -157,8 +160,8 @@ The `categories` table already exists with the needed columns.
 
 ## Testing (manual, browser)
 
-1. As inventory-clerk (has `products`): open `manage_categories.php` from the
-   "Manage Categories" button on `products.php`.
+1. As admin (or manager): open `manage_categories.php` from the "Manage Categories"
+   button on `products.php`.
 2. Add "Smoothies" → confirm it appears in `add_product.php` dropdown and `menu.php`
    category nav, and (empty) as a filter chip on `products.php`.
 3. Reorder a category up/down → order reflected in add_product dropdown + menu nav.
@@ -166,10 +169,14 @@ The `categories` table already exists with the needed columns.
    still visible (as inactive) in `manage_categories.php`.
 5. Attempt to delete a category that has products → blocked with count message.
 6. Delete the empty "Smoothies" → removed.
-7. As cashier (`staff`, no `products`): `manage_categories.php` redirects to dashboard.
+7. As cashier (`staff`) and as inventory-clerk: `manage_categories.php` redirects to
+   `dashboard.php?denied=1`, and the "Manage Categories" button is not shown on
+   `products.php`.
 8. Verify dark + light theme render correctly.
 
 ## Entry point
 
-A "Manage Categories" button/link on `products.php` (near the category filter row),
-visible to users with `can('products')`.
+A "Manage Categories" button/link on `products.php`, placed next to the existing "Add
+Product" button in the topbar and gated by the same `$_can_manage_products`
+(admin/manager) flag that already guards "Add Product" — so the entry point and the page
+gate match exactly.
