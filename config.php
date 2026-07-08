@@ -99,6 +99,37 @@ _migrate($conn, 'employees_is_pos_v1', function($db) {
 _migrate($conn, 'products_badge_text', function($db) {
     $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_text VARCHAR(40) NULL DEFAULT NULL");
 });
+
+// ── Add-ons (toppings) library + per-product mapping ──
+$conn->query("CREATE TABLE IF NOT EXISTS addons (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    display_order INT NOT NULL DEFAULT 0
+) DEFAULT CHARSET=utf8mb4");
+
+$conn->query("CREATE TABLE IF NOT EXISTS product_addons (
+    product_id INT NOT NULL,
+    addon_id INT NOT NULL,
+    PRIMARY KEY (product_id, addon_id),
+    INDEX idx_pa_addon (addon_id)
+) DEFAULT CHARSET=utf8mb4");
+
+$conn->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS addons_snapshot TEXT NULL");
+
+// Seed a starter set once (only if the library is empty)
+$__addon_n = (int)$conn->query("SELECT COUNT(*) AS n FROM addons")->fetch_assoc()['n'];
+if ($__addon_n === 0) {
+    $conn->query("INSERT INTO addons (name, price, is_active, display_order) VALUES
+        ('Boba', 0.50, 1, 1),
+        ('Jelly', 0.50, 1, 2),
+        ('Tapioca', 0.50, 1, 3),
+        ('Whipped Cream', 0.75, 1, 4),
+        ('Coffee Jelly', 1.00, 1, 5),
+        ('Extra Shot', 1.00, 1, 6)");
+}
+
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
 
 // Canonical table is cash_counts (renamed from the legacy cash_reconciliations).
