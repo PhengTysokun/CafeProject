@@ -116,19 +116,23 @@ $conn->query("CREATE TABLE IF NOT EXISTS product_addons (
     INDEX idx_pa_addon (addon_id)
 ) DEFAULT CHARSET=utf8mb4");
 
-$conn->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS addons_snapshot TEXT NULL");
+_migrate($conn, 'order_items_addons_snapshot_v1', function($db) {
+    $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS addons_snapshot TEXT NULL");
+});
 
 // Seed a starter set once (only if the library is empty)
-$__addon_n = (int)$conn->query("SELECT COUNT(*) AS n FROM addons")->fetch_assoc()['n'];
-if ($__addon_n === 0) {
-    $conn->query("INSERT INTO addons (name, price, is_active, display_order) VALUES
-        ('Boba', 0.50, 1, 1),
-        ('Jelly', 0.50, 1, 2),
-        ('Tapioca', 0.50, 1, 3),
-        ('Whipped Cream', 0.75, 1, 4),
-        ('Coffee Jelly', 1.00, 1, 5),
-        ('Extra Shot', 1.00, 1, 6)");
-}
+_migrate($conn, 'addons_seed_v1', function($db) {
+    $n = (int)$db->query("SELECT COUNT(*) AS n FROM addons")->fetch_assoc()['n'];
+    if ($n === 0) {
+        $db->query("INSERT INTO addons (name, price, is_active, display_order) VALUES
+            ('Boba', 0.50, 1, 1),
+            ('Jelly', 0.50, 1, 2),
+            ('Tapioca', 0.50, 1, 3),
+            ('Whipped Cream', 0.75, 1, 4),
+            ('Coffee Jelly', 1.00, 1, 5),
+            ('Extra Shot', 1.00, 1, 6)");
+    }
+});
 
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
 
