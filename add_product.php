@@ -351,6 +351,8 @@ body {
 }
 
 .addon-chip.on { border-color:var(--accent); background:rgba(209,144,75,.12); color:var(--accent); }
+/* Checkboxes must not inherit the full-width text-input styling */
+.input-group input[type="checkbox"] { width:auto; padding:0; margin:0; flex:0 0 auto; }
 </style>
 </head>
 
@@ -411,7 +413,7 @@ body {
             </div>
 
             <?php if (!empty($allAddons)): ?>
-            <div class="input-group" style="padding-left:0;margin-bottom:8px;">
+            <div class="input-group" style="display:flex;align-items:center;gap:8px;padding-left:0;margin-bottom:8px;">
                 <label class="form-check" for="has_addons" style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text-muted);font-size:14px;">
                     <input type="checkbox" id="has_addons" name="has_addons" value="1" <?= $hasAddons ? 'checked' : '' ?>
                         onchange="var b=document.getElementById('addonRows');b.style.display=this.checked?'block':'none';if(!this.checked){b.querySelectorAll('input[type=checkbox]').forEach(function(c){c.checked=false;c.closest('.addon-chip').classList.remove('on');});}">
