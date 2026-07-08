@@ -134,6 +134,17 @@ _migrate($conn, 'addons_seed_v1', function($db) {
     }
 });
 
+// ── Per-category option visibility (sweetness / ice / milk) ──
+_migrate($conn, 'categories_option_flags_v1', function($db) {
+    $db->query("ALTER TABLE categories
+        ADD COLUMN IF NOT EXISTS offer_sweetness TINYINT(1) NOT NULL DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS offer_ice       TINYINT(1) NOT NULL DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS offer_milk      TINYINT(1) NOT NULL DEFAULT 1");
+    // Preserve the prior hardcoded behavior: Juice offers none; Hot offers no ice.
+    $db->query("UPDATE categories SET offer_sweetness=0, offer_ice=0, offer_milk=0 WHERE slug='Juice'");
+    $db->query("UPDATE categories SET offer_ice=0 WHERE slug='Hot'");
+});
+
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
 
 // Canonical table is cash_counts (renamed from the legacy cash_reconciliations).

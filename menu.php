@@ -172,6 +172,19 @@ if ($ad_res) {
     }
 }
 
+/* ── PER-CATEGORY OPTION VISIBILITY (sweetness / ice / milk), keyed by slug ── */
+$categoryOpts = [];
+$co_res = $conn->query("SELECT slug, offer_sweetness, offer_ice, offer_milk FROM categories");
+if ($co_res) {
+    while ($co = $co_res->fetch_assoc()) {
+        $categoryOpts[$co['slug']] = [
+            'sweet' => (int)$co['offer_sweetness'],
+            'ice'   => (int)$co['offer_ice'],
+            'milk'  => (int)$co['offer_milk'],
+        ];
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1232,6 +1245,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ── Constants from PHP ──
 var CSRF        = '<?= e($_SESSION['csrf_token']) ?>';
+var CATEGORY_OPTS = <?= json_encode($categoryOpts, JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
 var BUY_X_COUNT = <?= (int)BUY_X_COUNT ?>;
 var ADD_TO_ORDER_MODE = <?= (int)$add_to_order_mode ?>;
 var CAFE_TABLES = [];
@@ -1257,10 +1271,11 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addo
   document.getElementById('modalDesc').textContent = desc || '';
   document.getElementById('modalPrice').textContent = '$' + p.toFixed(2);
   document.getElementById('modalQtyDisplay').textContent = '1';
-  var isJuice = cat === 'Juice', isHot = cat === 'Hot';
-  document.getElementById('optSweetness').style.display = isJuice ? 'none' : 'block';
-  document.getElementById('optIce').style.display       = (isHot || isJuice) ? 'none' : 'block';
-  document.getElementById('optMilk').style.display      = isJuice ? 'none' : 'block';
+  // Per-category option visibility (configured in Manage Categories); default = show all.
+  var co = CATEGORY_OPTS[cat] || { sweet: 1, ice: 1, milk: 1 };
+  document.getElementById('optSweetness').style.display = co.sweet ? 'block' : 'none';
+  document.getElementById('optIce').style.display       = co.ice   ? 'block' : 'none';
+  document.getElementById('optMilk').style.display      = co.milk  ? 'block' : 'none';
   document.querySelectorAll('#sweetnessPills .option-pill').forEach(function(pill) { pill.classList.toggle('active', pill.dataset.value === '50%'); });
   document.querySelectorAll('#icePills .option-pill').forEach(function(pill)      { pill.classList.toggle('active', pill.dataset.value === 'Normal Ice'); });
   document.querySelectorAll('#milkPills .option-pill').forEach(function(pill)     { pill.classList.toggle('active', pill.dataset.value === 'Fresh Milk'); });

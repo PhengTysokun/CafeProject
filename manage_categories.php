@@ -25,8 +25,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dup->bind_param('s', $slug); $dup->execute();
                 if ($dup->get_result()->fetch_assoc()) { $flash = ['type'=>'error','msg'=>"A category named \"$slug\" already exists."]; break; }
                 $ord = (int)$conn->query("SELECT COALESCE(MAX(display_order),0)+1 AS n FROM categories")->fetch_assoc()['n'];
-                $ins = $conn->prepare("INSERT INTO categories (slug, name, icon, display_order, is_active) VALUES (?, ?, ?, ?, ?)");
-                $ins->bind_param('sssii', $slug, $name, $icon, $ord, $active);
+                $os = isset($_POST['offer_sweetness']) ? 1 : 0;
+                $oi = isset($_POST['offer_ice'])       ? 1 : 0;
+                $om = isset($_POST['offer_milk'])      ? 1 : 0;
+                $ins = $conn->prepare("INSERT INTO categories (slug, name, icon, display_order, is_active, offer_sweetness, offer_ice, offer_milk) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $ins->bind_param('sssiiiii', $slug, $name, $icon, $ord, $active, $os, $oi, $om);
                 $ins->execute();
                 $flash = ['type'=>'success','msg'=>"Category \"$slug\" added."];
                 break;
@@ -37,8 +40,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $icon = trim((string)($_POST['icon'] ?? '')) ?: 'fa-circle';
                 $active = isset($_POST['is_active']) ? 1 : 0;
                 if ($id <= 0 || $name === '') { $flash = ['type'=>'error','msg'=>'Name is required.']; break; }
-                $u = $conn->prepare("UPDATE categories SET name=?, icon=?, is_active=? WHERE category_id=?");
-                $u->bind_param('ssii', $name, $icon, $active, $id);
+                $os = isset($_POST['offer_sweetness']) ? 1 : 0;
+                $oi = isset($_POST['offer_ice'])       ? 1 : 0;
+                $om = isset($_POST['offer_milk'])      ? 1 : 0;
+                $u = $conn->prepare("UPDATE categories SET name=?, icon=?, is_active=?, offer_sweetness=?, offer_ice=?, offer_milk=? WHERE category_id=?");
+                $u->bind_param('ssiiiii', $name, $icon, $active, $os, $oi, $om, $id);
                 $u->execute();
                 $flash = ['type'=>'success','msg'=>'Category updated.'];
                 break;
@@ -93,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $categories = [];
 $res = $conn->query("
     SELECT c.category_id, c.slug, c.name, c.icon, c.display_order, c.is_active,
+           c.offer_sweetness, c.offer_ice, c.offer_milk,
            (SELECT COUNT(*) FROM products p WHERE p.category_id = c.category_id) AS product_count
     FROM categories c
     ORDER BY c.display_order ASC, c.category_id ASC
@@ -213,6 +220,14 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);padding-bottom:8px;">
             <input type="checkbox" name="is_active" checked> Active
         </label>
+        <div style="display:flex;flex-direction:column;gap:2px;padding-bottom:6px;">
+            <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Offers</span>
+            <div style="display:flex;gap:10px;">
+                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_sweetness" checked> Sweet</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_ice" checked> Ice</label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_milk" checked> Milk</label>
+            </div>
+        </div>
         <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);padding-bottom:8px;"><i class="fa-solid fa-plus"></i> Add Category</button>
     </form>
 
@@ -294,6 +309,14 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);padding-bottom:6px;">
                             <input type="checkbox" name="is_active" <?= $c['is_active'] ? 'checked' : '' ?>> Active
                         </label>
+                        <div style="display:flex;flex-direction:column;gap:2px;padding-bottom:6px;">
+                            <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Offers</span>
+                            <div style="display:flex;gap:10px;">
+                                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_sweetness" <?= $c['offer_sweetness'] ? 'checked' : '' ?>> Sweet</label>
+                                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_ice" <?= $c['offer_ice'] ? 'checked' : '' ?>> Ice</label>
+                                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_milk" <?= $c['offer_milk'] ? 'checked' : '' ?>> Milk</label>
+                            </div>
+                        </div>
                         <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);padding-bottom:6px;">Save</button>
                     </form>
                 </td>
