@@ -26,8 +26,16 @@ its own price, mirrored on the customer product modal where selecting them raise
 - No per-add-on **quantity** ("2× boba"). Add-ons are on/off toggles.
 - No separate bilingual name column. Add-on `name` is a single field (Khmer can be typed inline,
   same as product names today).
-- No per-add-on **sales reporting**. Order storage is a denormalized text snapshot, not a child table.
+- No per-add-on **sales reporting**. Order storage is a denormalized JSON snapshot, not a child table.
 - No add-on-level inventory/recipe deduction. (Future work; out of scope.)
+- No **hard delete** of add-ons. Coffee menus are seasonal (a "Pumpkin Spice" add-on leaves in Jan,
+  returns in Oct); a hard delete would orphan every product mapping. Archive via `is_active=0` only.
+
+## Future (V2, out of scope)
+
+- **Add-on sets / presets** — e.g. "Make it vegan" = oat milk + no whip, applied in one tap. The library +
+  per-product model already supports doing this manually; a preset layer is a pure convenience add-on later.
+  Flag now so the data model stays compatible; do not build.
 
 ## Data Model
 
@@ -37,8 +45,8 @@ its own price, mirrored on the customer product modal where selecting them raise
 | `id` | INT PK AUTO_INCREMENT | |
 | `name` | VARCHAR(100) | e.g. "Boba", "Whipped Cream" |
 | `price` | DECIMAL(10,2) | added to line price when selected |
-| `is_active` | TINYINT(1) DEFAULT 1 | inactive = hidden from assignment + menu |
-| `display_order` | INT DEFAULT 0 | for reorder, mirrors `product_sizes.sort_order` style |
+| `is_active` | TINYINT(1) DEFAULT 1 | `0` = archived: hidden from assignment + menu, kept for reactivation |
+| `display_order` | INT DEFAULT 0 | render order everywhere (menu, chips, barista ticket); mirrors `product_sizes.sort_order` |
 
 ### New table: `product_addons` (mapping)
 | column | type | notes |
@@ -47,12 +55,17 @@ its own price, mirrored on the customer product modal where selecting them raise
 | `addon_id` | INT | FK → addons.id |
 | PRIMARY KEY (`product_id`, `addon_id`) | | dedupe pair |
 
-Deleting an add-on from the library removes its `product_addons` rows (app-level or ON DELETE CASCADE).
+Mappings **persist through archiving** — archiving an add-on (`is_active=0`) leaves its `product_addons`
+rows intact, so reactivating it in October restores all assignments with zero re-work. Rows are removed
+only when a product is unassigned in the editor, or the product itself is deleted.
 
 ### Altered table: `order_items`
-- Add `addons` TEXT NULL — denormalized snapshot at checkout, e.g. `"Boba +$0.50, Whipped Cream +$0.75"`.
-- The add-on prices are **already folded into** the existing `price` column (per-unit line price),
-  so all downstream math (totals, loyalty, change) is untouched. `addons` is display-only.
+- Add `addons` TEXT NULL — denormalized **JSON snapshot** at checkout, an ordered array:
+  `[{"id":5,"name":"Extra Shot","price":1.00},{"id":2,"name":"Oat Milk","price":0.75}]`.
+- JSON (not a "+$" string) so every display surface can render it its own way — barista ticket highlights
+  names, receipts show name+price — without parsing text. Array order = `display_order`, preserved end to end.
+- Add-on prices are **already folded into** the existing `price` column (per-unit line price),
+  so all downstream math (totals, loyalty, change) is untouched. The `addons` JSON is display-only.
 
 `config.php` schema-bootstrap block gets matching `CREATE TABLE IF NOT EXISTS` / `ALTER` guards
 so a fresh DB provisions correctly (follow existing bootstrap pattern; do NOT recreate zombie tables).
@@ -61,9 +74,9 @@ so a fresh DB provisions correctly (follow existing bootstrap pattern; do NOT re
 
 ### `manage_addons.php` (new) — library CRUD
 - Clone the structure and CSRF/uiConfirm patterns of `manage_categories.php`.
-- List rows with name, price, active toggle, up/down reorder (swap `display_order`), edit, delete.
-- Delete blocked or cascades cleanly re: `product_addons` references (mirror category delete-guard decision:
-  simplest = cascade the mapping rows and allow delete, since add-ons carry no order FKs — snapshot is text).
+- List rows with name, price, up/down reorder (swap `display_order`), edit, and an **Archive/Restore**
+  toggle (`is_active`). No hard-delete button.
+- Default list shows active add-ons; a "Show archived" toggle reveals inactive ones for restoring.
 - Entry point: a "Manage Add-ons" button on `products.php`, beside the existing "Manage Categories" entry.
 
 ### `add_product.php` / `edit_product.php` — per-product assignment
@@ -75,10 +88,16 @@ so a fresh DB provisions correctly (follow existing bootstrap pattern; do NOT re
 
 ## Customer UI (`menu.php`)
 
+**Data delivery — mirror the existing sizes pattern, no N+1.** menu.php already batch-loads all sizes in
+one query into `$sizesByProduct` and embeds them per-card as a `data-product-sizes` JSON attribute
+([menu.php:143-148](menu.php#L143), [:664](menu.php#L664)). Add-ons do the same: one
+`SELECT ... FROM product_addons JOIN addons ... WHERE is_active=1 ORDER BY product_id, display_order ASC`
+into `$addonsByProduct`, embedded as `data-product-addons`. One query for the whole 40+ drink menu.
+
 - Product modal gains an **Add-ons** `option-section` (styled like existing Sweetness/Ice/Milk sections),
   shown only when the product has ≥1 active assigned add-on.
-- Rendered from the product's assigned add-ons; each pill shows `name +$price` and carries
-  `data-addon-id` + `data-addon-price`.
+- Rendered from the product's `data-product-addons`, **in `display_order` ascending** (the query already
+  sorts it); each pill shows `name +$price` and carries `data-addon-id` + `data-addon-price`.
 - Pills are **multi-select** toggles (unlike the single-select option groups). Reuse a variant of
   `selectPill` that does not clear siblings for this group.
 - Live **Total** recompute: base/size price + Σ(selected add-on prices), × qty. Extend the existing
@@ -92,45 +111,55 @@ so a fresh DB provisions correctly (follow existing bootstrap pattern; do NOT re
 - Accept `addons[]` (array of addon ids) from POST.
 - Fetch the product's **assigned + active** add-ons from `product_addons ⋈ addons`; validate every posted
   id is in that set (reject otherwise, like the current sweetness/ice/milk whitelist checks).
-- Build an ordered list of `{id, name, price}` for the valid selections.
+- Build an **ordered** list of `{id, name, price}` for the valid selections, sorted by the add-on's
+  `display_order` (so barista/receipt order is deterministic and matches the menu).
 - Fold `Σ price` into the cart item's per-unit `price`.
 - Store on the cart item:
-  - `addons` => array of `{id, name, price}` (structured, for cart edit/merge)
-  - `addons_label` => `"Boba +$0.50, Whipped Cream +$0.75"` (display + checkout snapshot)
+  - `addons` => array of `{id, name, price}` (structured, for cart edit/merge and JSON snapshot)
 - **Merge key:** two lines are identical only if product, size, sweetness, ice, milk **and** the sorted
   add-on id set match. Add add-on signature to the merge comparison.
 
 ### `confirm_order.php`
-- All **3** `INSERT INTO order_items (...)` sites gain the `addons` column, bound from `$item['addons_label'] ?? ''`.
+- All **3** `INSERT INTO order_items (...)` sites gain the `addons` column, bound from
+  `json_encode($item['addons'] ?? [])`.
 - No change to total, loyalty, change, or stock-deduction logic (price already includes add-ons).
 
 ### Display surfaces (read-only, additive)
-Show `addons_label` wherever sweetness/ice/milk already render:
-`cart.php`, `view_order.php`, `edit_order_items.php`, `barista_display.php`,
-`receipt_print.php` / `receipt_pdf.php` / `receipt_paylater.php`, and the menu cart panel.
-For order views this reads the new `order_items.addons` column.
+Each surface `json_decode`s `order_items.addons` (or reads the cart item's `addons` array) and renders it
+where sweetness/ice/milk already appear: `cart.php`, `view_order.php`, `edit_order_items.php`,
+`barista_display.php`, `receipt_print.php` / `receipt_pdf.php` / `receipt_paylater.php`, and the menu cart panel.
+
+**Barista ticket priority (coffee workflow):** add-ons are the modification the barista must see first.
+On `barista_display.php`, the current `mods` list is `[sweetness, ice, milk]` ([barista_display.php:290-292](barista_display.php#L290));
+**prepend** add-on names so a ticket reads `Latte → Oat Milk, Extra Shot, 50%, Normal ice` — add-ons above
+size/sweetness/ice. Preserve the stored array order. Receipts show `name +$price`; barista display shows
+names only (price is noise at the machine).
 
 ## Error Handling & Edge Cases
 
 - Posted add-on not assigned/active → `add_to_cart.php` rejects with 400 (consistent with option whitelist).
-- Add-on made inactive **after** it's in a cart → cart line already snapshotted price + label; leave as-is.
-  Menu simply stops offering it.
-- Add-on deleted from library after being on past orders → orders keep the text snapshot; no broken FK
-  because order storage is text, not a join.
+- Add-on **archived** (`is_active=0`) after it's in a cart → cart line already snapshotted price + name;
+  leave as-is. Menu simply stops offering it; mapping row survives for later reactivation.
+- Add-on archived after being on past orders → orders keep the JSON snapshot; no broken FK because
+  order storage is JSON text, not a join.
 - Product with zero assigned add-ons → no Add-ons section renders; behaviour identical to today.
 - Price edit in library → affects only future selections; existing carts/orders keep snapshot price.
+- Malformed/empty `order_items.addons` (legacy rows = NULL) → `json_decode` yields null; render nothing.
 
 ## Testing
 
 - **DB/bootstrap:** fresh `config.php` run creates `addons`, `product_addons`, and the `order_items.addons`
   column without error; re-run is idempotent (no zombie recreation).
-- **Library CRUD:** add / edit / toggle / reorder / delete round-trips in `manage_addons.php`.
+- **Library CRUD:** add / edit / reorder / archive / restore round-trips in `manage_addons.php`.
+- **Archive keeps mapping:** assign add-on to a product, archive it, restore it → product still has it assigned.
 - **Assignment:** assign 2 add-ons to a product, reload edit page → chips pre-selected; unassign one → persists.
 - **Menu math:** select 2 add-ons, qty 3 → total = (size price + a1 + a2) × 3; matches server total from `add_to_cart`.
+- **Order & display order:** add-ons render in `display_order` on menu, barista ticket, and receipt (not insertion order).
 - **Validation:** POST an add-on id not assigned to the product → 400 rejected.
 - **Merge:** add same drink twice with identical add-ons → one line qty 2; differing add-ons → two lines.
-- **Checkout end-to-end:** place order with add-ons → `order_items.addons` populated; receipt + barista
-  display + view_order show the label; grand total correct.
+- **Checkout end-to-end:** place order with add-ons → `order_items.addons` holds valid JSON; `json_decode`
+  on receipt + barista display + view_order renders correctly; barista shows add-ons above size/sweet; grand total correct.
+- **Legacy safety:** an order row with `addons = NULL` renders with no add-on line, no PHP warning.
 - **Browser verification** (Playwright, per project convention): drive menu modal, confirm live total and
   cart label; screenshot light + dark.
 
