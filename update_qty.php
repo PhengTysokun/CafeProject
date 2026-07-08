@@ -703,6 +703,9 @@ body {
                         <?php if (!empty($item['milk'])): ?>
                             <span> • Milk: <?= htmlspecialchars($item['milk']) ?></span>
                         <?php endif; ?>
+                        <?php if (!empty($item['addons'])): ?>
+                            <span> • <?= htmlspecialchars(implode(', ', array_map(fn($a) => $a['name'], $item['addons']))) ?></span>
+                        <?php endif; ?>
                     </div>
                     
                     <div class="item-price">

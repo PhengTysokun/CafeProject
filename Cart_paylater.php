@@ -450,6 +450,7 @@ body {
                         <?php if (!empty($item['sweetness'])): ?>Sweet: <?= htmlspecialchars($item['sweetness']) ?><?php endif; ?>
                         <?php if (!empty($item['ice'])): ?> • Ice: <?= htmlspecialchars($item['ice']) ?><?php endif; ?>
                         <?php if (!empty($item['milk'])): ?> • Milk: <?= htmlspecialchars($item['milk']) ?><?php endif; ?>
+                        <?php if (!empty($item['addons'])): ?> • <?= htmlspecialchars(implode(', ', array_map(fn($a) => $a['name'], $item['addons']))) ?><?php endif; ?>
                     </div>
                     <div class="item-price">$<span id="item-total-<?= $i ?>"><?= number_format($lineTotal, 2) ?></span></div>
                 </div>
