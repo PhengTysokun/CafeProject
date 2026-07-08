@@ -1405,6 +1405,12 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <i class="fa-solid fa-tags"></i>
             <span class="hide-sm">Categories</span>
         </a>
+
+        <!-- Manage Add-ons -->
+        <a href="manage_addons.php" class="btn-add" style="background:transparent;border:1px solid var(--border,#2a2a2a);color:var(--text,#f5f5f5);">
+            <i class="fa-solid fa-plus-circle"></i>
+            <span class="hide-sm">Add-ons</span>
+        </a>
         <?php endif; ?>
 
         <!-- Theme -->
