@@ -60,6 +60,33 @@ if (!$res || $res->num_rows === 0) {
 
 $p = $res->fetch_assoc();
 
+// ── Add-ons: validate posted ids against this product's active assignments ──
+$posted_addons = array_values(array_unique(array_map('intval', $_POST['addons'] ?? [])));
+$addons = [];       // ordered [{id,name,price}]
+$addon_sum = 0.0;
+if ($posted_addons) {
+    $in = implode(',', array_fill(0, count($posted_addons), '?'));
+    $types = str_repeat('i', count($posted_addons));
+    $sql = "SELECT a.id, a.name, a.price
+            FROM product_addons pa JOIN addons a ON a.id = pa.addon_id
+            WHERE pa.product_id = ? AND a.is_active = 1 AND a.id IN ($in)
+            ORDER BY a.display_order ASC, a.id ASC";
+    $st = $conn->prepare($sql);
+    $st->bind_param('i' . $types, $product_id, ...$posted_addons);
+    $st->execute();
+    $rs = $st->get_result();
+    $valid_ids = [];
+    while ($r = $rs->fetch_assoc()) {
+        $addons[] = ['id'=>(int)$r['id'], 'name'=>$r['name'], 'price'=>(float)$r['price']];
+        $addon_sum += (float)$r['price'];
+        $valid_ids[] = (int)$r['id'];
+    }
+    // reject if any posted id was not a valid assignment
+    if (count($valid_ids) !== count($posted_addons)) {
+        json_out(false, 'Invalid add-on selection', 0, null, 400);
+    }
+}
+
 // ── Resolve size (per-size absolute price; defensive fallback to base) ──
 $line_price   = (float)$p['price'];   // products.price == Medium / base
 $size_label   = '';
@@ -88,6 +115,8 @@ if ((int)$p['has_sizes'] === 1) {
     // has_sizes=1 but zero rows → fall through as unsized (base price, factor 1.0)
 }
 
+$line_price += $addon_sum;   // add-ons are per-unit extras
+
 if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
@@ -95,6 +124,7 @@ if (!isset($_SESSION['cart'])) {
 $cart_was_empty = empty($_SESSION['cart']);
 
 // Merge identical items
+$addon_sig = implode(',', array_map(fn($a) => $a['id'], $addons));  // ordered ids
 $found = false;
 foreach ($_SESSION['cart'] as &$item) {
     if (
@@ -102,7 +132,8 @@ foreach ($_SESSION['cart'] as &$item) {
         ($item['size_code'] ?? '') == $resolved_code &&
         $item['sweetness']  == $sweetness  &&
         $item['ice']        == $ice        &&
-        $item['milk']       == $milk
+        $item['milk']       == $milk       &&
+        (implode(',', array_map(fn($x) => $x['id'], $item['addons'] ?? [])) === $addon_sig)
     ) {
         $item['qty'] += $qty;
         $found = true;
@@ -123,6 +154,7 @@ if (!$found) {
         'sweetness'    => $sweetness,
         'ice'          => $ice,
         'milk'         => $milk,
+        'addons'       => $addons,
         'qty'          => $qty,
     ];
 }
