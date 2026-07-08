@@ -258,7 +258,7 @@ if (!$order) { header("Location: find_order.php"); exit; }
 
 // ── Fetch items ──
 $stmt = $conn->prepare("
-    SELECT item_id, product_name, price, quantity, sweetness, ice, milk
+    SELECT item_id, product_name, price, quantity, sweetness, ice, milk, addons_snapshot
     FROM order_items WHERE order_id = ? ORDER BY item_id ASC
 ");
 $stmt->bind_param("i", $order_id);
@@ -445,6 +445,8 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                 if (!empty($item['sweetness'])) $customs[] = 'Sweet: ' . $item['sweetness'];
                 if (!empty($item['ice']))       $customs[] = 'Ice: '   . $item['ice'];
                 if (!empty($item['milk']))      $customs[] = 'Milk: '  . $item['milk'];
+                $__ad = json_decode($item['addons_snapshot'] ?? '[]', true) ?: [];
+                if ($__ad) $customs[] = 'Add-ons: ' . implode(', ', array_map(fn($a) => $a['name'], $__ad));
             ?>
             <div class="item-row" id="row-<?= $item['item_id'] ?>" data-id="<?= $item['item_id'] ?>" data-price="<?= (float)$item['price'] ?>">
 

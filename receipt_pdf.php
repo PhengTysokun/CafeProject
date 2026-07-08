@@ -46,7 +46,7 @@ if (empty($order['completed_at']) && in_array($order['status'], ['Paid', 'Comple
 
 // ── FETCH ITEMS ──
 $stmt = $conn->prepare("
-    SELECT product_name, price, quantity, sweetness, ice, milk, size_label
+    SELECT product_name, price, quantity, sweetness, ice, milk, size_label, addons_snapshot
     FROM order_items
     WHERE order_id = ?
 ");
@@ -337,6 +337,10 @@ foreach ($drinks as $item) {
     }
     if (!empty($item['milk'])) {
         $html .= '<tr><td></td><td style="text-align: left; padding-left: 15px; font-size: 9px; color: #555;">+ Milk: ' . htmlspecialchars($item['milk']) . '</td><td></td><td></td><td></td></tr>';
+    }
+    $__ad = json_decode($item['addons_snapshot'] ?? '[]', true) ?: [];
+    foreach ($__ad as $__a) {
+        $html .= '<tr><td></td><td style="text-align: left; padding-left: 15px; font-size: 9px; color: #555;">+ ' . htmlspecialchars($__a['name']) . ' +$' . number_format((float)$__a['price'], 2) . '</td><td></td><td></td><td></td></tr>';
     }
 }
 

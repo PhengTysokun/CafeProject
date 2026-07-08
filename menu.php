@@ -999,7 +999,9 @@ if ($ad_res) {
 
     <!-- Cart footer (always visible) -->
     <div class="cp-footer" id="cpFooter" <?= empty($cart) ? 'style="display:none"' : '' ?>>
-      <div class="cp-total-row">
+      <!-- Total hidden here — shown on the confirm/payment screen instead.
+           #cpTotal kept in DOM (display:none) because cpGetCartTotal() reads it for payment math. -->
+      <div class="cp-total-row" style="display:none">
         <span class="lbl">Total</span>
         <span class="amt" id="cpTotal">$<?= number_format($cp_total, 2) ?></span>
       </div>
@@ -1419,6 +1421,9 @@ function renderCartPanel(data) {
       '<div class="cp-item-info">' +
         '<div class="cp-item-name">' + escH(item.product_name) + '</div>' +
         (meta ? '<div class="cp-item-meta">' + escH(meta) + '</div>' : '') +
+        (item.addons && item.addons.length
+          ? '<div class="cp-item-meta">' + item.addons.map(function(a){ return escH(a.name); }).join(', ') + '</div>'
+          : '') +
         '<div class="cp-item-price">$<span id="cp-line-' + item.index + '">' + item.price.toFixed(2) + '</span></div>' +
       '</div>' +
       '<div class="cp-item-actions">' +

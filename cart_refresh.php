@@ -69,6 +69,7 @@ foreach ($cart as $i => $item) {
         'sweetness'    => $item['sweetness'] ?? '',
         'ice'          => $item['ice'] ?? '',
         'milk'         => $item['milk'] ?? '',
+        'addons'       => $item['addons'] ?? [],
         'lineTotal'    => round($p * $q, 2),
     ];
 }
