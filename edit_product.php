@@ -112,9 +112,11 @@ if (isset($_POST['update_product'])) {
         while ($row2 = $rs2->fetch_assoc()) { $existingSizes[$row2['size_code']] = $row2; }
         $hasSizes = (bool)$has_sizes;
 
-        // ── Add-on assignments: replace set ──
+        // ── Add-on assignments: replace set (empty when the "has add-ons" toggle is off) ──
         $conn->query("DELETE FROM product_addons WHERE product_id = " . (int)$id);
-        $addonIds = array_values(array_unique(array_map('intval', $_POST['addon_id'] ?? [])));
+        $addonIds = isset($_POST['has_addons'])
+            ? array_values(array_unique(array_map('intval', $_POST['addon_id'] ?? [])))
+            : [];
         if ($addonIds) {
             $pa = $conn->prepare("INSERT IGNORE INTO product_addons (product_id, addon_id) VALUES (?, ?)");
             foreach ($addonIds as $aid) {
@@ -141,6 +143,7 @@ $__aa->bind_param('i', $id);
 $__aa->execute();
 $__ar2 = $__aa->get_result();
 while ($__r = $__ar2->fetch_assoc()) $assignedAddons[(int)$__r['addon_id']] = true;
+$hasAddons = !empty($assignedAddons);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -692,8 +695,14 @@ input[name=category] { display: none; }
                     </div>
 
                     <?php if (!empty($allAddons)): ?>
-                    <div class="input-group" style="padding-left:0;">
-                        <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:8px;">Available Add-ons</label>
+                    <div class="input-group" style="padding-left:0;margin-bottom:8px;">
+                        <label class="form-check" for="has_addons" style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--muted);font-size:14px;">
+                            <input type="checkbox" id="has_addons" name="has_addons" value="1" <?= $hasAddons ? 'checked' : '' ?>
+                                onchange="var b=document.getElementById('addonRows');b.style.display=this.checked?'block':'none';if(!this.checked){b.querySelectorAll('input[type=checkbox]').forEach(function(c){c.checked=false;c.closest('.addon-chip').classList.remove('on');});}">
+                            This product has add-ons
+                        </label>
+                    </div>
+                    <div id="addonRows" class="input-group" style="padding-left:0;<?= $hasAddons ? '' : 'display:none;' ?>">
                         <div style="display:flex;flex-wrap:wrap;gap:8px;">
                             <?php foreach ($allAddons as $ad): $on = !empty($assignedAddons[(int)$ad['id']]); ?>
                             <label class="addon-chip<?= $on ? ' on' : '' ?>" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:50px;border:1px solid var(--border);background:#0f0f0f;color:var(--text);cursor:pointer;font-size:13px;">

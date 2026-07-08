@@ -64,8 +64,10 @@ if (isset($_POST['add_product'])) {
             }
         }
 
-        // ── Add-on assignments ──
-        $addonIds = array_values(array_unique(array_map('intval', $_POST['addon_id'] ?? [])));
+        // ── Add-on assignments (only when the "has add-ons" toggle is on) ──
+        $addonIds = isset($_POST['has_addons'])
+            ? array_values(array_unique(array_map('intval', $_POST['addon_id'] ?? [])))
+            : [];
         if ($addonIds) {
             $pa = $conn->prepare("INSERT IGNORE INTO product_addons (product_id, addon_id) VALUES (?, ?)");
             foreach ($addonIds as $aid) {
@@ -82,6 +84,7 @@ $allAddons = [];
 $__ar = $conn->query("SELECT id, name, price FROM addons WHERE is_active = 1 ORDER BY display_order ASC, id ASC");
 while ($__a = $__ar->fetch_assoc()) $allAddons[] = $__a;
 $assignedAddons = [];
+$hasAddons = !empty($assignedAddons);
 ?>
 
 <!DOCTYPE html>
@@ -408,8 +411,14 @@ body {
             </div>
 
             <?php if (!empty($allAddons)): ?>
-            <div class="input-group" style="padding-left:0;">
-                <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:8px;">Available Add-ons</label>
+            <div class="input-group" style="padding-left:0;margin-bottom:8px;">
+                <label class="form-check" for="has_addons" style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text-muted);font-size:14px;">
+                    <input type="checkbox" id="has_addons" name="has_addons" value="1" <?= $hasAddons ? 'checked' : '' ?>
+                        onchange="var b=document.getElementById('addonRows');b.style.display=this.checked?'block':'none';if(!this.checked){b.querySelectorAll('input[type=checkbox]').forEach(function(c){c.checked=false;c.closest('.addon-chip').classList.remove('on');});}">
+                    This product has add-ons
+                </label>
+            </div>
+            <div id="addonRows" class="input-group" style="padding-left:0;<?= $hasAddons ? '' : 'display:none;' ?>">
                 <div style="display:flex;flex-wrap:wrap;gap:8px;">
                     <?php foreach ($allAddons as $ad): $on = !empty($assignedAddons[(int)$ad['id']]); ?>
                     <label class="addon-chip<?= $on ? ' on' : '' ?>" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:50px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);cursor:pointer;font-size:13px;">
