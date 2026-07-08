@@ -239,6 +239,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 <th>Name</th>
                 <th>Slug</th>
                 <th style="width:90px">Products</th>
+                <th style="width:120px">Offers</th>
                 <th style="width:80px">Active</th>
                 <th style="width:150px">Actions</th>
             </tr>
@@ -267,6 +268,11 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 <td class="slug-muted"><?= he($c['slug']) ?></td>
                 <td><?= (int)$c['product_count'] ?></td>
                 <td>
+                    <?php foreach ([['Sweet',$c['offer_sweetness']],['Ice',$c['offer_ice']],['Milk',$c['offer_milk']]] as $__o): ?>
+                    <span class="pill" title="<?= $__o[1] ? 'Offered' : 'Hidden' ?>" style="margin-right:2px;<?= $__o[1] ? 'background:rgba(85,224,135,.12);color:var(--ok);' : 'background:rgba(255,95,95,.10);color:var(--danger);opacity:.55;' ?>"><?= $__o[0] ?></span>
+                    <?php endforeach; ?>
+                </td>
+                <td>
                     <form method="POST" style="margin:0;">
                         <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
                         <input type="hidden" name="action" value="toggle">
@@ -289,7 +295,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 </td>
             </tr>
             <tr id="edit-<?= (int)$c['category_id'] ?>" style="display:none;">
-                <td colspan="7" style="background:rgba(255,255,255,.02);">
+                <td colspan="8" style="background:rgba(255,255,255,.02);">
                     <form method="POST" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
                         <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
                         <input type="hidden" name="action" value="update">
