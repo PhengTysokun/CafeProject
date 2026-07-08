@@ -195,6 +195,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         <span class="brand-sub">Bird's Nest Coffee &rsaquo; Catalog</span>
     </div>
     <div class="topbar-right">
+        <a href="manage_addons.php" class="btn-nav"><i class="fa-solid fa-plus-circle"></i> Add-ons</a>
         <button class="btn-nav icon-only" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
     </div>
 </div>
