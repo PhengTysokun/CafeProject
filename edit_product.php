@@ -111,12 +111,36 @@ if (isset($_POST['update_product'])) {
         $rs2 = $qs2->get_result();
         while ($row2 = $rs2->fetch_assoc()) { $existingSizes[$row2['size_code']] = $row2; }
         $hasSizes = (bool)$has_sizes;
+
+        // ── Add-on assignments: replace set ──
+        $conn->query("DELETE FROM product_addons WHERE product_id = " . (int)$id);
+        $addonIds = array_values(array_unique(array_map('intval', $_POST['addon_id'] ?? [])));
+        if ($addonIds) {
+            $pa = $conn->prepare("INSERT IGNORE INTO product_addons (product_id, addon_id) VALUES (?, ?)");
+            foreach ($addonIds as $aid) {
+                if ($aid > 0) { $pa->bind_param('ii', $id, $aid); $pa->execute(); }
+            }
+        }
+        // refresh prefill
+        $assignedAddons = [];
+        foreach ($addonIds as $aid) $assignedAddons[$aid] = true;
     }
 }
 
 $cats = [];
 $_cat_r = $conn->query("SELECT slug, name FROM categories WHERE is_active = 1 ORDER BY display_order");
 while ($_c = $_cat_r->fetch_assoc()) $cats[$_c['slug']] = $_c['name'];
+
+$allAddons = [];
+$__ar = $conn->query("SELECT id, name, price FROM addons WHERE is_active = 1 ORDER BY display_order ASC, id ASC");
+while ($__a = $__ar->fetch_assoc()) $allAddons[] = $__a;
+
+$assignedAddons = [];
+$__aa = $conn->prepare("SELECT addon_id FROM product_addons WHERE product_id = ?");
+$__aa->bind_param('i', $id);
+$__aa->execute();
+$__ar2 = $__aa->get_result();
+while ($__r = $__ar2->fetch_assoc()) $assignedAddons[(int)$__r['addon_id']] = true;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -524,6 +548,8 @@ input[name=category] { display: none; }
     animation: floatB 11s ease-in-out infinite;
 }
 .page-wrap { position: relative; z-index: 1; }
+
+.addon-chip.on { border-color:var(--accent); background:rgba(209,144,75,.12); color:var(--accent); }
 </style>
 </head>
 <body>
@@ -664,6 +690,20 @@ input[name=category] { display: none; }
                             <?php endforeach; ?>
                         </div>
                     </div>
+
+                    <?php if (!empty($allAddons)): ?>
+                    <div class="input-group" style="padding-left:0;">
+                        <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:8px;">Available Add-ons</label>
+                        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                            <?php foreach ($allAddons as $ad): $on = !empty($assignedAddons[(int)$ad['id']]); ?>
+                            <label class="addon-chip<?= $on ? ' on' : '' ?>" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:50px;border:1px solid var(--border);background:#0f0f0f;color:var(--text);cursor:pointer;font-size:13px;">
+                                <input type="checkbox" name="addon_id[]" value="<?= (int)$ad['id'] ?>" <?= $on ? 'checked' : '' ?> style="display:none;" onchange="this.closest('.addon-chip').classList.toggle('on', this.checked);">
+                                <?= htmlspecialchars($ad['name'], ENT_QUOTES, 'UTF-8') ?> +$<?= number_format((float)$ad['price'], 2) ?>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
 

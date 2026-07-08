@@ -64,10 +64,24 @@ if (isset($_POST['add_product'])) {
             }
         }
 
+        // ── Add-on assignments ──
+        $addonIds = array_values(array_unique(array_map('intval', $_POST['addon_id'] ?? [])));
+        if ($addonIds) {
+            $pa = $conn->prepare("INSERT IGNORE INTO product_addons (product_id, addon_id) VALUES (?, ?)");
+            foreach ($addonIds as $aid) {
+                if ($aid > 0) { $pa->bind_param('ii', $product_id, $aid); $pa->execute(); }
+            }
+        }
+
         header("Location: products.php");
         exit;
     }
 }
+
+$allAddons = [];
+$__ar = $conn->query("SELECT id, name, price FROM addons WHERE is_active = 1 ORDER BY display_order ASC, id ASC");
+while ($__a = $__ar->fetch_assoc()) $allAddons[] = $__a;
+$assignedAddons = [];
 ?>
 
 <!DOCTYPE html>
@@ -78,6 +92,7 @@ if (isset($_POST['add_product'])) {
 <title>Add Product | Obsidian Cafe</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){var t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();</script>
 
 <style>
 :root {
@@ -90,9 +105,22 @@ if (isset($_POST['add_product'])) {
     --accent-dark: #a0702a;
     --text: #f5f5f5;
     --text-muted: #888888;
+    --bg-input: #181818;
+    --bg-input-focus: #1e1e1e;
     --shadow-accent: 0 4px 20px rgba(209, 144, 75, 0.15);
     --shadow-lg: 0 8px 40px rgba(0,0,0,0.5);
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="light"] {
+    --bg: #f5f0eb;
+    --bg-card: #ffffff;
+    --border: #e8ddd2;
+    --border-hover: #d4c4b0;
+    --text: #1a1008;
+    --text-muted: #7a6a58;
+    --bg-input: #f0e9e0;
+    --bg-input-focus: #fdf8f3;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -178,7 +206,7 @@ body {
     padding: 12px 14px 12px 44px;
     border-radius: 10px;
     border: 1px solid var(--border);
-    background: #181818;
+    background: var(--bg-input);
     color: var(--text);
     font-size: 14px;
     font-family: 'Poppins', sans-serif;
@@ -197,7 +225,26 @@ body {
 .input-group select:focus {
     border-color: var(--accent);
     box-shadow: var(--shadow-accent);
-    background: #1e1e1e;
+    background: var(--bg-input-focus);
+}
+
+.size-row input {
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'Poppins', sans-serif;
+    transition: var(--transition);
+    outline: none;
+    min-width: 0;
+}
+
+.size-row input:focus {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-accent);
+    background: var(--bg-input-focus);
 }
 
 .file-input-wrapper {
@@ -208,13 +255,13 @@ body {
     text-align: center;
     transition: var(--transition);
     cursor: pointer;
-    background: #181818;
+    background: var(--bg-input);
     margin-bottom: 14px;
 }
 
 .file-input-wrapper:hover {
     border-color: var(--accent);
-    background: #1e1e1e;
+    background: var(--bg-input-focus);
 }
 
 .file-input-wrapper input[type="file"] {
@@ -299,6 +346,8 @@ body {
     filter: drop-shadow(0 3px 10px rgba(231,76,60,0.75));
     word-break: break-word;
 }
+
+.addon-chip.on { border-color:var(--accent); background:rgba(209,144,75,.12); color:var(--accent); }
 </style>
 </head>
 
@@ -358,6 +407,20 @@ body {
                 <?php endforeach; ?>
             </div>
 
+            <?php if (!empty($allAddons)): ?>
+            <div class="input-group" style="padding-left:0;">
+                <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:8px;">Available Add-ons</label>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                    <?php foreach ($allAddons as $ad): $on = !empty($assignedAddons[(int)$ad['id']]); ?>
+                    <label class="addon-chip<?= $on ? ' on' : '' ?>" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:50px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);cursor:pointer;font-size:13px;">
+                        <input type="checkbox" name="addon_id[]" value="<?= (int)$ad['id'] ?>" <?= $on ? 'checked' : '' ?> style="display:none;" onchange="this.closest('.addon-chip').classList.toggle('on', this.checked);">
+                        <?= htmlspecialchars($ad['name'], ENT_QUOTES, 'UTF-8') ?> +$<?= number_format((float)$ad['price'], 2) ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <div class="input-group">
                 <i class="fa-solid fa-list"></i>
                 <select name="category" required>
@@ -405,6 +468,14 @@ document.getElementById('badgeText').addEventListener('input', function() {
     const badge = document.getElementById('badgePreview');
     if (val) { badge.textContent = val; wrap.style.display = 'block'; }
     else { wrap.style.display = 'none'; }
+});
+
+// follows shared theme key (toggled elsewhere)
+window.addEventListener('storage', function (e) {
+    if (e.key === 'theme') {
+        if (e.newValue === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        else document.documentElement.removeAttribute('data-theme');
+    }
 });
 </script>
 
