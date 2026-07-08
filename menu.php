@@ -864,6 +864,7 @@ if ($ad_res) {
           <div class="cp-item-info">
             <div class="cp-item-name"><?= e($item['product_name'] ?? '') ?></div>
             <?php if ($meta): ?><div class="cp-item-meta"><?= e(implode(' • ', $meta)) ?></div><?php endif; ?>
+            <?php if (!empty($item['addons'])): ?><div class="cp-item-meta"><?= e(implode(', ', array_map(fn($a) => $a['name'], $item['addons']))) ?></div><?php endif; ?>
             <div class="cp-item-price">$<span id="cp-line-<?= $i ?>"><?= number_format((float)($item['price'] ?? 0), 2) ?></span></div>
           </div>
           <div class="cp-item-actions">
