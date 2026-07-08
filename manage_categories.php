@@ -48,7 +48,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $u = $conn->prepare("UPDATE categories SET name=?, icon=?, is_active=?, offer_sweetness=?, offer_ice=?, offer_milk=?, offer_addons=? WHERE category_id=?");
                 $u->bind_param('ssiiiiii', $name, $icon, $active, $os, $oi, $om, $oa, $id);
                 $u->execute();
-                $flash = ['type'=>'success','msg'=>'Category updated.'];
+                $seeded = 0;
+                if ($oa) {
+                    // Seed-only: give every product in this category that has NO add-ons yet
+                    // the full active add-on set. Products with a custom set are left untouched.
+                    $slugRow = $conn->query("SELECT slug FROM categories WHERE category_id=" . (int)$id)->fetch_assoc();
+                    $catSlug = $slugRow['slug'] ?? '';
+                    if ($catSlug !== '') {
+                        $seed = $conn->prepare("
+                            INSERT IGNORE INTO product_addons (product_id, addon_id)
+                            SELECT p.product_id, a.id
+                            FROM products p CROSS JOIN addons a
+                            WHERE p.category = ? AND a.is_active = 1
+                              AND NOT EXISTS (SELECT 1 FROM product_addons pa WHERE pa.product_id = p.product_id)
+                        ");
+                        $seed->bind_param('s', $catSlug);
+                        $seed->execute();
+                        $seeded = $conn->affected_rows;
+                    }
+                }
+                $flash = ['type'=>'success','msg'=>'Category updated.' . ($seeded > 0 ? " Seeded add-ons for products that had none." : '')];
                 break;
             }
             case 'toggle': {
