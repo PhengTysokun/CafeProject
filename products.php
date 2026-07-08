@@ -1505,7 +1505,10 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <button class="filter-tab badge-tab" data-badge="none">No Badge</button>
         </div>
 
-        <?php if ($_can_manage_products): ?>
+        <?php /* Bulk "Enable sizes by category" hidden 2026-07-09 — sizes are set per-product via the
+                 add/edit product "This product has sizes" toggle. Handler (action=bulk_enable_sizes) is
+                 kept; to restore this UI, change `false` back to `$_can_manage_products`. */ ?>
+        <?php if (false): ?>
         <!-- Bulk enable sizes by category -->
         <form class="filter-row" id="bulkSizesRow" method="POST" action="products.php">
             <span class="filter-row-label"><i class="fa-solid fa-ruler-combined"></i> Sizes</span>
