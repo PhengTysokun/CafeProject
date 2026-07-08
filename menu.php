@@ -153,6 +153,25 @@ if (!empty($flat_products)) {
     }
 }
 
+/* ── ADD-ONS PER PRODUCT (active only) ── */
+$addonsByProduct = [];
+$ad_res = $conn->query("
+    SELECT pa.product_id, a.id, a.name, a.price
+    FROM product_addons pa
+    JOIN addons a ON a.id = pa.addon_id
+    WHERE a.is_active = 1
+    ORDER BY pa.product_id, a.display_order ASC, a.id ASC
+");
+if ($ad_res) {
+    while ($ad_row = $ad_res->fetch_assoc()) {
+        $addonsByProduct[(int)$ad_row['product_id']][] = [
+            'id'    => (int)$ad_row['id'],
+            'name'  => $ad_row['name'],
+            'price' => (float)$ad_row['price'],
+        ];
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -662,6 +681,7 @@ if (!empty($flat_products)) {
                  data-product-badge="<?= e($t['badge_text'] ?? '') ?>"
                  data-product-has-sizes="<?= (int)($t['has_sizes'] ?? 0) ?>"
                  data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$t['product_id']] ?? []), ENT_QUOTES) ?>'
+                 data-product-addons='<?= htmlspecialchars(json_encode($addonsByProduct[(int)$t['product_id']] ?? []), ENT_QUOTES) ?>'
                  data-is-bestseller="<?= $t['name']===$bestSellerName?'1':'0' ?>"
                  role="button" tabindex="0">
               <div class="seller-img-wrap">
@@ -706,6 +726,7 @@ if (!empty($flat_products)) {
                    data-product-badge="<?= e($p['badge_text'] ?? '') ?>"
                    data-product-has-sizes="<?= (int)($p['has_sizes'] ?? 0) ?>"
                    data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
+                   data-product-addons='<?= htmlspecialchars(json_encode($addonsByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
                    data-is-bestseller="<?= $p['name']===$bestSellerName?'1':'0' ?>"
                    role="button" tabindex="0">
                 <div class="card-img">
@@ -757,6 +778,7 @@ if (!empty($flat_products)) {
                    data-product-badge="<?= e($p['badge_text'] ?? '') ?>"
                    data-product-has-sizes="<?= (int)($p['has_sizes'] ?? 0) ?>"
                    data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
+                   data-product-addons='<?= htmlspecialchars(json_encode($addonsByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
                    data-is-bestseller="<?= $p['name']===$bestSellerName?'1':'0' ?>"
                    role="button" tabindex="0">
                 <div class="card-img">
@@ -1055,6 +1077,10 @@ if (!empty($flat_products)) {
           <?php endforeach; ?>
         </div>
       </div>
+      <div id="optAddons" class="option-section" style="display:none">
+        <div class="option-label">Add-ons</div>
+        <div class="pill-group" id="addonPills"></div>
+      </div>
       <div class="modal-footer">
         <div class="modal-total">Total: <strong id="modalTotalDisplay">$0.00</strong></div>
         <button class="btn-add-to-cart" onclick="addToCart()">
@@ -1215,9 +1241,9 @@ function escH(str) {
 }
 
 // ── PRODUCT MODAL ──
-var product = {}, modalQty = 1, modalUnitPrice = 0;
+var product = {}, modalQty = 1, modalUnitPrice = 0, modalAddonTotal = 0;
 
-function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes) {
+function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addons) {
   var p = Number(price) || 0;
   product = { id: id, name: name, price: p, cat: cat };
   modalQty = 1; modalUnitPrice = p;
@@ -1260,6 +1286,27 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes) {
     sizeWrap.style.display = 'none';
   }
 
+  // ── Add-on pills (multi-select toggles) ──
+  modalAddonTotal = 0;
+  var addonWrap = document.getElementById('optAddons');
+  var addonBox  = document.getElementById('addonPills');
+  addonBox.innerHTML = '';
+  if (Array.isArray(addons) && addons.length) {
+    addons.forEach(function(a) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'option-pill';
+      b.dataset.addonId = a.id;
+      b.dataset.addonPrice = a.price;
+      b.textContent = a.name + ' +$' + Number(a.price).toFixed(2);
+      b.onclick = function(){ toggleAddon(b); };
+      addonBox.appendChild(b);
+    });
+    addonWrap.style.display = 'block';
+  } else {
+    addonWrap.style.display = 'none';
+  }
+
   updateModalTotal();
   document.getElementById('modal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
@@ -1268,15 +1315,23 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes) {
 // Open the product modal using a card's data-product-* attributes (avoids inline-onclick string interpolation)
 function openModalFromCard(card) {
   if (!card) return;
-  var sizes = [];
+  var sizes = [], addons = [];
   try { sizes = JSON.parse(card.dataset.productSizes || '[]'); } catch (e) { sizes = []; }
-  openModal(card.dataset.productId, card.dataset.productName||'', Number(card.dataset.productPrice||0), card.dataset.productImage||'', card.dataset.productCategory||'', card.dataset.productDesc||'', card.dataset.productBadge||'', card.dataset.productHasSizes==='1', sizes);
+  try { addons = JSON.parse(card.dataset.productAddons || '[]'); } catch (e) { addons = []; }
+  openModal(card.dataset.productId, card.dataset.productName||'', Number(card.dataset.productPrice||0), card.dataset.productImage||'', card.dataset.productCategory||'', card.dataset.productDesc||'', card.dataset.productBadge||'', card.dataset.productHasSizes==='1', sizes, addons);
 }
 
 function closeModal() { document.getElementById('modal').style.display = 'none'; document.body.style.overflow = ''; }
 function changeQty(delta) { modalQty = Math.max(1, Math.min(10, modalQty + delta)); document.getElementById('modalQtyDisplay').textContent = modalQty; updateModalTotal(); }
-function updateModalTotal() { document.getElementById('modalTotalDisplay').textContent = '$' + (modalUnitPrice * modalQty).toFixed(2); }
+function updateModalTotal() { document.getElementById('modalTotalDisplay').textContent = '$' + ((modalUnitPrice + modalAddonTotal) * modalQty).toFixed(2); }
 function selectPill(pill) { pill.closest('.pill-group').querySelectorAll('.option-pill').forEach(function(p) { p.classList.remove('active'); }); pill.classList.add('active'); }
+function toggleAddon(pill) {
+  pill.classList.toggle('active');
+  var t = 0;
+  document.querySelectorAll('#addonPills .option-pill.active').forEach(function(p){ t += Number(p.dataset.addonPrice) || 0; });
+  modalAddonTotal = t;
+  updateModalTotal();
+}
 function getPillValue(groupId) { var a = document.querySelector('#' + groupId + ' .option-pill.active'); return a ? a.dataset.value : ''; }
 
 function selectSize(pill) {
@@ -1297,6 +1352,7 @@ function addToCart() {
   if (document.getElementById('optIce').style.display !== 'none')       params.append('ice',       getPillValue('icePills'));
   if (document.getElementById('optMilk').style.display !== 'none')      params.append('milk',      getPillValue('milkPills'));
   if (document.getElementById('optSize').style.display !== 'none')      params.append('size',      getPillValue('sizePills'));
+  document.querySelectorAll('#addonPills .option-pill.active').forEach(function(p){ params.append('addons[]', p.dataset.addonId); });
 
   fetch('add_to_cart.php', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'}, body: params.toString() })
     .then(function(r) { return r.json(); })
