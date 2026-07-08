@@ -21,7 +21,7 @@ if (!$order) die('Order not found.');
 
 // ── Fetch items ──
 $stmt = $conn->prepare("
-    SELECT product_name, quantity, price, sweetness, ice, milk
+    SELECT product_name, quantity, price, sweetness, ice, milk, addons_snapshot
     FROM order_items WHERE order_id = ? ORDER BY item_id
 ");
 $stmt->bind_param("i", $order_id);
@@ -493,6 +493,7 @@ body {
             <div class="items-list" id="itemsList">
             <?php foreach ($items as $item):
                 $opts = [];
+                foreach (json_decode($item['addons_snapshot'] ?? '[]', true) ?: [] as $__a) { if (!empty($__a['name'])) $opts[] = $__a['name']; }
                 if (!empty($item['sweetness']) && strtolower($item['sweetness']) !== 'normal') $opts[] = $item['sweetness'];
                 if (!empty($item['ice'])       && strtolower($item['ice'])       !== 'normal') $opts[] = $item['ice'];
                 if (!empty($item['milk'])      && strtolower($item['milk'])      !== 'none' && $item['milk'] !== '') $opts[] = $item['milk'];
