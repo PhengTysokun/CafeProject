@@ -89,11 +89,11 @@ Load any page (bootstrap runs on every `config.php` include), then check:
 
 Run:
 ```bash
-mysql -u root cafe -e "SHOW TABLES LIKE 'addons'; SHOW TABLES LIKE 'product_addons'; SHOW COLUMNS FROM order_items LIKE 'addons_snapshot'; SELECT COUNT(*) AS seeded FROM addons;"
+"C:/xampp/mysql/bin/mysql.exe" -u root db_coffee -e "SHOW TABLES LIKE 'addons'; SHOW TABLES LIKE 'product_addons'; SHOW COLUMNS FROM order_items LIKE 'addons_snapshot'; SELECT COUNT(*) AS seeded FROM addons;"
 ```
 Expected: both tables listed, `addons_snapshot` column present, `seeded` = 6.
 
-(If MySQL socket differs, use the project's usual connection; the DB name is `cafe` per `config.php`.)
+(If MySQL socket differs, use the project's usual connection; DB is `db_coffee`, mysql binary at `C:/xampp/mysql/bin/mysql.exe`, user `root` no password, per `config.php`.)
 
 - [ ] **Step 3: Verify idempotency**
 
@@ -363,7 +363,7 @@ foreach ($addonIds as $aid) $assignedAddons[$aid] = true;
 
 As admin, open `edit_product.php?id=<a milk-tea product>`. Tick Boba + Whipped Cream, Save. Reload → both chips pre-highlighted. Verify DB:
 ```bash
-mysql -u root cafe -e "SELECT pa.addon_id, a.name FROM product_addons pa JOIN addons a ON a.id=pa.addon_id WHERE pa.product_id=<ID>;"
+"C:/xampp/mysql/bin/mysql.exe" -u root db_coffee -e "SELECT pa.addon_id, a.name FROM product_addons pa JOIN addons a ON a.id=pa.addon_id WHERE pa.product_id=<ID>;"
 ```
 Expected: the two rows. Untick one, Save → only one row remains.
 
@@ -619,7 +619,7 @@ Apply the identical change (add `$addons_json` + one more `s`) at the other two 
 
 Place a real order with add-ons through the UI (cash or paylater). Then:
 ```bash
-mysql -u root cafe -e "SELECT product_name, price, addons_snapshot FROM order_items ORDER BY item_id DESC LIMIT 3;"
+"C:/xampp/mysql/bin/mysql.exe" -u root db_coffee -e "SELECT product_name, price, addons_snapshot FROM order_items ORDER BY item_id DESC LIMIT 3;"
 ```
 Expected: newest row's `addons_snapshot` holds valid JSON like `[{"id":1,"name":"Boba","price":0.5}]`; `price` includes the add-on. An order placed with **no** add-ons stores `[]`.
 
