@@ -28,8 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $os = isset($_POST['offer_sweetness']) ? 1 : 0;
                 $oi = isset($_POST['offer_ice'])       ? 1 : 0;
                 $om = isset($_POST['offer_milk'])      ? 1 : 0;
-                $ins = $conn->prepare("INSERT INTO categories (slug, name, icon, display_order, is_active, offer_sweetness, offer_ice, offer_milk) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                $ins->bind_param('sssiiiii', $slug, $name, $icon, $ord, $active, $os, $oi, $om);
+                $oa = isset($_POST['offer_addons'])    ? 1 : 0;
+                $ins = $conn->prepare("INSERT INTO categories (slug, name, icon, display_order, is_active, offer_sweetness, offer_ice, offer_milk, offer_addons) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $ins->bind_param('sssiiiiii', $slug, $name, $icon, $ord, $active, $os, $oi, $om, $oa);
                 $ins->execute();
                 $flash = ['type'=>'success','msg'=>"Category \"$slug\" added."];
                 break;
@@ -43,8 +44,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $os = isset($_POST['offer_sweetness']) ? 1 : 0;
                 $oi = isset($_POST['offer_ice'])       ? 1 : 0;
                 $om = isset($_POST['offer_milk'])      ? 1 : 0;
-                $u = $conn->prepare("UPDATE categories SET name=?, icon=?, is_active=?, offer_sweetness=?, offer_ice=?, offer_milk=? WHERE category_id=?");
-                $u->bind_param('ssiiiii', $name, $icon, $active, $os, $oi, $om, $id);
+                $oa = isset($_POST['offer_addons'])    ? 1 : 0;
+                $u = $conn->prepare("UPDATE categories SET name=?, icon=?, is_active=?, offer_sweetness=?, offer_ice=?, offer_milk=?, offer_addons=? WHERE category_id=?");
+                $u->bind_param('ssiiiiii', $name, $icon, $active, $os, $oi, $om, $oa, $id);
                 $u->execute();
                 $flash = ['type'=>'success','msg'=>'Category updated.'];
                 break;
@@ -99,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $categories = [];
 $res = $conn->query("
     SELECT c.category_id, c.slug, c.name, c.icon, c.display_order, c.is_active,
-           c.offer_sweetness, c.offer_ice, c.offer_milk,
+           c.offer_sweetness, c.offer_ice, c.offer_milk, c.offer_addons,
            (SELECT COUNT(*) FROM products p WHERE p.category_id = c.category_id) AS product_count
     FROM categories c
     ORDER BY c.display_order ASC, c.category_id ASC
@@ -195,7 +197,6 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         <span class="brand-sub">Bird's Nest Coffee &rsaquo; Catalog</span>
     </div>
     <div class="topbar-right">
-        <a href="manage_addons.php" class="btn-nav"><i class="fa-solid fa-plus-circle"></i> Add-ons</a>
         <button class="btn-nav icon-only" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
     </div>
 </div>
@@ -205,31 +206,33 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     <div class="flash <?= he($flash['type']) ?>"><?= he($flash['msg']) ?></div>
     <?php endif; ?>
 
-    <form method="POST" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+    <form method="POST" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px;display:flex;flex-direction:column;gap:14px;">
         <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
         <input type="hidden" name="action" value="create">
-        <div style="display:flex;flex-direction:column;gap:5px;">
-            <label style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Name</label>
-            <input type="text" name="name" id="catName" required placeholder="e.g. Smoothies" oninput="updateSlugPreview()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:13px;font-family:'Poppins',sans-serif;">
-            <span class="slug-muted" id="slugPreview">Slug will be: —</span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:5px;">
-            <label style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Icon</label>
-            <input type="text" name="icon" value="fa-tag" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:13px;font-family:'Poppins',sans-serif;width:150px;">
-            <span class="slug-muted">e.g. fa-mug-hot, fa-leaf, fa-blender</span>
-        </div>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);padding-bottom:8px;">
-            <input type="checkbox" name="is_active" checked> Active
-        </label>
-        <div style="display:flex;flex-direction:column;gap:2px;padding-bottom:6px;">
-            <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Offers</span>
-            <div style="display:flex;gap:10px;">
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_sweetness" checked> Sweet</label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_ice" checked> Ice</label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_milk" checked> Milk</label>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+            <div style="display:flex;flex-direction:column;gap:5px;">
+                <label style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Name</label>
+                <input type="text" name="name" id="catName" required placeholder="e.g. Smoothies" oninput="updateSlugPreview()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:13px;font-family:'Poppins',sans-serif;">
+                <span class="slug-muted" id="slugPreview">Slug will be: —</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px;">
+                <label style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Icon</label>
+                <input type="text" name="icon" value="fa-tag" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:13px;font-family:'Poppins',sans-serif;width:150px;">
+                <span class="slug-muted">e.g. fa-mug-hot, fa-leaf, fa-blender</span>
             </div>
         </div>
-        <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);padding-bottom:8px;"><i class="fa-solid fa-plus"></i> Add Category</button>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:14px;padding:9px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);flex-wrap:wrap;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);white-space:nowrap;"><input type="checkbox" name="is_active" checked> Active</label>
+                <span style="width:1px;height:18px;background:var(--border);"></span>
+                <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Offers</span>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_sweetness" checked> Sweet</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_ice" checked> Ice</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_milk" checked> Milk</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_addons" checked> Add-ons</label>
+            </div>
+            <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);"><i class="fa-solid fa-plus"></i> Add Category</button>
+        </div>
     </form>
 
     <table class="cat-table">
@@ -269,7 +272,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 <td class="slug-muted"><?= he($c['slug']) ?></td>
                 <td><?= (int)$c['product_count'] ?></td>
                 <td>
-                    <?php foreach ([['Sweet',$c['offer_sweetness']],['Ice',$c['offer_ice']],['Milk',$c['offer_milk']]] as $__o): ?>
+                    <?php foreach ([['Sweet',$c['offer_sweetness']],['Ice',$c['offer_ice']],['Milk',$c['offer_milk']],['Add-ons',$c['offer_addons']]] as $__o): ?>
                     <span class="pill" title="<?= $__o[1] ? 'Offered' : 'Hidden' ?>" style="margin-right:2px;<?= $__o[1] ? 'background:rgba(85,224,135,.12);color:var(--ok);' : 'background:rgba(255,95,95,.10);color:var(--danger);opacity:.55;' ?>"><?= $__o[0] ?></span>
                     <?php endforeach; ?>
                 </td>
@@ -322,6 +325,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_sweetness" <?= $c['offer_sweetness'] ? 'checked' : '' ?>> Sweet</label>
                                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_ice" <?= $c['offer_ice'] ? 'checked' : '' ?>> Ice</label>
                                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_milk" <?= $c['offer_milk'] ? 'checked' : '' ?>> Milk</label>
+                                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_addons" <?= $c['offer_addons'] ? 'checked' : '' ?>> Add-ons</label>
                             </div>
                         </div>
                         <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);padding-bottom:6px;">Save</button>

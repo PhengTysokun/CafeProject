@@ -145,6 +145,12 @@ _migrate($conn, 'categories_option_flags_v1', function($db) {
     $db->query("UPDATE categories SET offer_ice=0 WHERE slug='Hot'");
 });
 
+// ── Per-category add-on availability (master gate; products still pick which add-ons) ──
+_migrate($conn, 'categories_offer_addons_v1', function($db) {
+    $db->query("ALTER TABLE categories ADD COLUMN IF NOT EXISTS offer_addons TINYINT(1) NOT NULL DEFAULT 1");
+    $db->query("UPDATE categories SET offer_addons=0 WHERE slug='Juice'");
+});
+
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
 
 // Canonical table is cash_counts (renamed from the legacy cash_reconciliations).

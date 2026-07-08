@@ -174,13 +174,14 @@ if ($ad_res) {
 
 /* ── PER-CATEGORY OPTION VISIBILITY (sweetness / ice / milk), keyed by slug ── */
 $categoryOpts = [];
-$co_res = $conn->query("SELECT slug, offer_sweetness, offer_ice, offer_milk FROM categories");
+$co_res = $conn->query("SELECT slug, offer_sweetness, offer_ice, offer_milk, offer_addons FROM categories");
 if ($co_res) {
     while ($co = $co_res->fetch_assoc()) {
         $categoryOpts[$co['slug']] = [
-            'sweet' => (int)$co['offer_sweetness'],
-            'ice'   => (int)$co['offer_ice'],
-            'milk'  => (int)$co['offer_milk'],
+            'sweet'  => (int)$co['offer_sweetness'],
+            'ice'    => (int)$co['offer_ice'],
+            'milk'   => (int)$co['offer_milk'],
+            'addons' => (int)$co['offer_addons'],
         ];
     }
 }
@@ -1272,7 +1273,7 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addo
   document.getElementById('modalPrice').textContent = '$' + p.toFixed(2);
   document.getElementById('modalQtyDisplay').textContent = '1';
   // Per-category option visibility (configured in Manage Categories); default = show all.
-  var co = CATEGORY_OPTS[cat] || { sweet: 1, ice: 1, milk: 1 };
+  var co = CATEGORY_OPTS[cat] || { sweet: 1, ice: 1, milk: 1, addons: 1 };
   document.getElementById('optSweetness').style.display = co.sweet ? 'block' : 'none';
   document.getElementById('optIce').style.display       = co.ice   ? 'block' : 'none';
   document.getElementById('optMilk').style.display      = co.milk  ? 'block' : 'none';
@@ -1309,7 +1310,7 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addo
   var addonWrap = document.getElementById('optAddons');
   var addonBox  = document.getElementById('addonPills');
   addonBox.innerHTML = '';
-  if (Array.isArray(addons) && addons.length) {
+  if (co.addons && Array.isArray(addons) && addons.length) {
     addons.forEach(function(a) {
       var b = document.createElement('button');
       b.type = 'button';
