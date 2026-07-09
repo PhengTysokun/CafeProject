@@ -106,14 +106,32 @@ All handlers require a valid CSRF token; invalid token rejects.
    with the offer flag) so no empty section renders and `getPillValue('milkPills')`
    never returns a stray value.
 
+## add_to_cart.php — required change (not optional)
+
+`add_to_cart.php` **already validates** the posted milk. Line 39 holds a hardcoded
+whitelist `$valid_milk = ['Fresh Milk','Almond Milk','Soy Milk','Oat Milk','']` and
+lines 47-48 reject anything else with HTTP 400 "Invalid milk option".
+
+This whitelist will desync from `milk_options` the moment an admin adds a new milk:
+the menu would offer it, but add_to_cart would 400-reject it — the new milk is
+un-orderable. So this MUST change with the feature.
+
+**Fix:** source `$valid_milk` from the DB instead of the literal —
+`SELECT name FROM milk_options WHERE is_active=1`, then append `''` (the "no milk"
+case). Keep the existing `!in_array(...) → json_out(...400)` reject; do NOT switch to
+a silent drop (the codebase's convention is 400-reject, matching add-ons and the
+sweetness/ice checks). This also covers the stale-cached-tab case: an archived milk is
+absent from the active set, so a stale POST is rejected rather than silently accepted.
+
+Sweetness and Ice whitelists (lines 37-38) stay hardcoded — out of scope.
+
 ## Out of scope / untouched
 
-- Sweetness and Ice: stay hardcoded arrays in menu.php.
+- Sweetness and Ice: stay hardcoded arrays in menu.php and add_to_cart.php.
 - Order storage, cart, receipts (print/pdf/paylater), barista_display, view_order,
-  edit_order_items, reports: unchanged — milk remains a string snapshot.
-- `add_to_cart.php` does not validate the posted milk string against the active list.
-  This matches today's behavior (any milk string is accepted); milk is free so there
-  is no price/security impact. **Known-minor, deferred.**
+  edit_order_items, reports: unchanged — milk remains a string snapshot. The ~28
+  decoder/display files are untouched; only add_to_cart.php (the validator/writer)
+  changes.
 
 ## Edge rules
 
@@ -130,6 +148,9 @@ All handlers require a valid CSRF token; invalid token rejects.
 - manage_milk.php: add / rename / reorder / toggle-active / set-default / delete each
   persist; default radio always leaves exactly one default; deactivating/deleting the
   default promotes another. Non-admin is redirected; missing CSRF rejects.
+- add_to_cart.php: a newly-added milk is accepted (not 400-rejected); an archived or
+  unknown milk string is rejected with 400 "Invalid milk option"; empty milk ('')
+  still allowed.
 - menu.php: modal renders milk pills from DB in display_order; default pill is
   pre-selected; archived milk disappears from the modal but old order still shows its
   text; category with `offer_milk=0` still hides the section; zero active milks hides
