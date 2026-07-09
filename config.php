@@ -120,6 +120,22 @@ _migrate($conn, 'order_items_addons_snapshot_v1', function($db) {
     $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS addons_snapshot TEXT NULL");
 });
 
+// product_addons shipped without referential integrity (product_sizes has it, this didn't):
+// deleting a product/addon orphaned join rows. Add the same ON DELETE CASCADE FKs.
+_migrate($conn, 'product_addons_fks_v1', function($db) {
+    $db->query("DELETE pa FROM product_addons pa LEFT JOIN products p ON p.product_id = pa.product_id WHERE p.product_id IS NULL");
+    $db->query("DELETE pa FROM product_addons pa LEFT JOIN addons a   ON a.id = pa.addon_id           WHERE a.id IS NULL");
+    $db->query("ALTER TABLE product_addons ENGINE=InnoDB");
+    // Guard: skip if FKs already present (e.g. added out-of-band) so the migration doesn't error and stays applied
+    $fk = (int)$db->query("SELECT COUNT(*) c FROM information_schema.TABLE_CONSTRAINTS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'product_addons' AND CONSTRAINT_TYPE = 'FOREIGN KEY'")->fetch_assoc()['c'];
+    if ($fk === 0) {
+        $db->query("ALTER TABLE product_addons
+            ADD CONSTRAINT fk_pa_product FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+            ADD CONSTRAINT fk_pa_addon   FOREIGN KEY (addon_id)   REFERENCES addons(id)           ON DELETE CASCADE");
+    }
+});
+
 // Seed a starter set once (only if the library is empty)
 _migrate($conn, 'addons_seed_v1', function($db) {
     $n = (int)$db->query("SELECT COUNT(*) AS n FROM addons")->fetch_assoc()['n'];
