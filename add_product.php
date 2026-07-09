@@ -434,13 +434,13 @@ body {
 
             <div class="input-group">
                 <i class="fa-solid fa-list"></i>
-                <select name="category" required>
+                <select name="category" id="categorySelect" required onchange="syncCategoryAddons()">
                     <option value="">Select category</option>
                     <?php
-                    $_cats = $conn->query("SELECT slug, name FROM categories WHERE is_active = 1 ORDER BY display_order");
+                    $_cats = $conn->query("SELECT slug, name, offer_addons FROM categories WHERE is_active = 1 ORDER BY display_order");
                     while ($_c = $_cats->fetch_assoc()):
                     ?>
-                    <option value="<?= htmlspecialchars($_c['slug']) ?>"><?= htmlspecialchars($_c['name']) ?></option>
+                    <option value="<?= htmlspecialchars($_c['slug']) ?>" data-offer-addons="<?= (int)$_c['offer_addons'] ?>"><?= htmlspecialchars($_c['name']) ?></option>
                     <?php endwhile; ?>
                 </select>
             </div>
@@ -480,6 +480,24 @@ document.getElementById('badgeText').addEventListener('input', function() {
     if (val) { badge.textContent = val; wrap.style.display = 'block'; }
     else { wrap.style.display = 'none'; }
 });
+
+// When a category that offers add-ons is chosen, default the product to that
+// category's policy: enable add-ons + pre-tick all of them (still deselectable).
+// Categories that don't offer add-ons hide the section.
+function syncCategoryAddons() {
+    var toggle = document.getElementById('has_addons');
+    var rows   = document.getElementById('addonRows');
+    if (!toggle || !rows) return; // no active add-ons in the library
+    var sel = document.getElementById('categorySelect');
+    var opt = sel.options[sel.selectedIndex];
+    var offers = opt && opt.dataset.offerAddons === '1';
+    toggle.checked = offers;
+    rows.style.display = offers ? 'block' : 'none';
+    rows.querySelectorAll('input[type=checkbox]').forEach(function (c) {
+        c.checked = offers;
+        c.closest('.addon-chip').classList.toggle('on', offers);
+    });
+}
 
 // follows shared theme key (toggled elsewhere)
 window.addEventListener('storage', function (e) {
