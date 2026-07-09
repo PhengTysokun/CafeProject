@@ -1406,6 +1406,12 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
             <span class="hide-sm">Categories</span>
         </a>
 
+        <!-- Manage Milk -->
+        <a href="manage_milk.php" class="btn-add" style="background:transparent;border:1px solid var(--border,#2a2a2a);color:var(--text,#f5f5f5);">
+            <i class="fa-solid fa-bottle-water"></i>
+            <span class="hide-sm">Milk</span>
+        </a>
+
         <!-- Manage Add-ons -->
         <a href="manage_addons.php" class="btn-add" style="background:transparent;border:1px solid var(--border,#2a2a2a);color:var(--text,#f5f5f5);">
             <i class="fa-solid fa-plus-circle"></i>
