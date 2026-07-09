@@ -167,6 +167,29 @@ _migrate($conn, 'categories_offer_addons_v1', function($db) {
     $db->query("UPDATE categories SET offer_addons=0 WHERE slug='Juice'");
 });
 
+// ── Milk options library (admin-managed via manage_milk.php) ──
+$conn->query("CREATE TABLE IF NOT EXISTS milk_options (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    display_order INT NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    is_default TINYINT(1) NOT NULL DEFAULT 0,
+    INDEX idx_active_order (is_active, display_order)
+) DEFAULT CHARSET=utf8mb4");
+
+// Seed the current hardcoded milk set once (only if the table is empty).
+// Fresh Milk is the default — matches the prior hardcoded default in menu.php.
+_migrate($conn, 'milk_options_seed_v1', function($db) {
+    $n = (int)$db->query("SELECT COUNT(*) AS n FROM milk_options")->fetch_assoc()['n'];
+    if ($n === 0) {
+        $db->query("INSERT INTO milk_options (name, display_order, is_active, is_default) VALUES
+            ('Fresh Milk', 1, 1, 1),
+            ('Almond Milk', 2, 1, 0),
+            ('Soy Milk', 3, 1, 0),
+            ('Oat Milk', 4, 1, 0)");
+    }
+});
+
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
 
 // Canonical table is cash_counts (renamed from the legacy cash_reconciliations).
