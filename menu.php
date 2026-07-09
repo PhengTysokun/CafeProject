@@ -186,6 +186,18 @@ if ($co_res) {
     }
 }
 
+/* ── MILK OPTIONS (admin-managed via manage_milk.php) ── */
+$milkOptions = [];
+$defaultMilk = '';
+$mk_res = $conn->query("SELECT name, is_default FROM milk_options WHERE is_active = 1 ORDER BY display_order ASC, id ASC");
+if ($mk_res) {
+    while ($mk = $mk_res->fetch_assoc()) {
+        $milkOptions[] = $mk['name'];
+        if ((int)$mk['is_default'] === 1 && $defaultMilk === '') $defaultMilk = $mk['name'];
+    }
+}
+if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1086,14 +1098,16 @@ if ($co_res) {
           <?php endforeach; ?>
         </div>
       </div>
+      <?php if (!empty($milkOptions)): ?>
       <div id="optMilk" class="option-section">
         <div class="option-label">Milk</div>
         <div class="pill-group" id="milkPills">
-          <?php foreach (['Fresh Milk','Almond Milk','Soy Milk','Oat Milk'] as $mk): ?>
-          <button class="option-pill <?= $mk==='Fresh Milk'?'active':'' ?>" data-group="milk" data-value="<?= $mk ?>" onclick="selectPill(this)"><?= $mk ?></button>
+          <?php foreach ($milkOptions as $mk): ?>
+          <button class="option-pill <?= $mk === $defaultMilk ? 'active' : '' ?>" data-group="milk" data-value="<?= htmlspecialchars($mk, ENT_QUOTES) ?>" onclick="selectPill(this)"><?= htmlspecialchars($mk, ENT_QUOTES) ?></button>
           <?php endforeach; ?>
         </div>
       </div>
+      <?php endif; ?>
       <div id="optAddons" class="option-section" style="display:none">
         <div class="option-label">Add-ons</div>
         <div class="pill-group" id="addonPills"></div>
@@ -1247,6 +1261,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // ── Constants from PHP ──
 var CSRF        = '<?= e($_SESSION['csrf_token']) ?>';
 var CATEGORY_OPTS = <?= json_encode($categoryOpts, JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
+var MILK_DEFAULT = <?= json_encode($defaultMilk, JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
 var BUY_X_COUNT = <?= (int)BUY_X_COUNT ?>;
 var ADD_TO_ORDER_MODE = <?= (int)$add_to_order_mode ?>;
 var CAFE_TABLES = [];
@@ -1279,7 +1294,7 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addo
   document.getElementById('optMilk').style.display      = co.milk  ? 'block' : 'none';
   document.querySelectorAll('#sweetnessPills .option-pill').forEach(function(pill) { pill.classList.toggle('active', pill.dataset.value === '50%'); });
   document.querySelectorAll('#icePills .option-pill').forEach(function(pill)      { pill.classList.toggle('active', pill.dataset.value === 'Normal Ice'); });
-  document.querySelectorAll('#milkPills .option-pill').forEach(function(pill)     { pill.classList.toggle('active', pill.dataset.value === 'Fresh Milk'); });
+  document.querySelectorAll('#milkPills .option-pill').forEach(function(pill)     { pill.classList.toggle('active', pill.dataset.value === MILK_DEFAULT); });
 
   // ── Size pills (render in given order; default = Medium or first) ──
   var sizeWrap = document.getElementById('optSize');
