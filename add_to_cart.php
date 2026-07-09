@@ -67,9 +67,13 @@ $addon_sum = 0.0;
 if ($posted_addons) {
     $in = implode(',', array_fill(0, count($posted_addons), '?'));
     $types = str_repeat('i', count($posted_addons));
+    // Gate on the product's category Offer too (mirror menu: hidden pills must not be addable via a stale/crafted POST)
     $sql = "SELECT a.id, a.name, a.price
-            FROM product_addons pa JOIN addons a ON a.id = pa.addon_id
-            WHERE pa.product_id = ? AND a.is_active = 1 AND a.id IN ($in)
+            FROM product_addons pa
+            JOIN addons a      ON a.id = pa.addon_id
+            JOIN products pr   ON pr.product_id = pa.product_id
+            JOIN categories c  ON c.slug = pr.category
+            WHERE pa.product_id = ? AND a.is_active = 1 AND c.offer_addons = 1 AND a.id IN ($in)
             ORDER BY a.display_order ASC, a.id ASC";
     $st = $conn->prepare($sql);
     $st->bind_param('i' . $types, $product_id, ...$posted_addons);
