@@ -80,10 +80,12 @@ if (isset($_POST['update_product'])) {
             $prices  = $_POST['size_price']  ?? [];
             $factors = $_POST['size_factor'] ?? [];
             $sorts   = $_POST['size_sort']   ?? [];
+            // Replace set: drop existing rows, re-insert only sizes with a price (blank = size not offered / removed)
+            $conn->query("DELETE FROM product_sizes WHERE product_id = " . (int)$id);
             $up = $conn->prepare("INSERT INTO product_sizes (product_id,size_code,label,price,size_factor,sort_order)
-                VALUES (?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE label=VALUES(label), price=VALUES(price), size_factor=VALUES(size_factor), sort_order=VALUES(sort_order)");
+                VALUES (?,?,?,?,?,?)");
             $mediumPrice = null;
+            $fallbackPrice = null;
             foreach ($codes as $i => $code) {
                 $sizePrice = (float)($prices[$i] ?? 0);
                 if ($sizePrice <= 0) continue; // skip blank rows
@@ -93,14 +95,23 @@ if (isset($_POST['update_product'])) {
                 $up->bind_param("issddi", $id, $code, $sizeLabel, $sizePrice, $sizeFactor, $sizeSort);
                 $up->execute();
                 if ($code === 'M') $mediumPrice = $sizePrice;
+                if ($fallbackPrice === null) $fallbackPrice = $sizePrice; // first surviving size (form order S→M→L)
             }
-            // Keep products.price == Medium so legacy single-price paths stay correct
-            if ($mediumPrice !== null) {
+            // Keep products.price synced for legacy single-price paths: Medium if offered, else the first available size (e.g. Large-only)
+            $basePrice = $mediumPrice ?? $fallbackPrice;
+            if ($basePrice !== null) {
                 $sp = $conn->prepare("UPDATE products SET price=? WHERE product_id=?");
-                $sp->bind_param("di", $mediumPrice, $id);
+                $sp->bind_param("di", $basePrice, $id);
                 $sp->execute();
-                $product['price'] = $mediumPrice;
+                $product['price'] = $basePrice;
+            } else {
+                // "has sizes" was checked but every row left blank → not actually sized; keep the base Price field
+                $conn->query("UPDATE products SET has_sizes=0 WHERE product_id=" . (int)$id);
+                $has_sizes = 0;
             }
+        } else {
+            // Sizes turned off: clear leftover rows so menu/cart never see stale sizes
+            $conn->query("DELETE FROM product_sizes WHERE product_id = " . (int)$id);
         }
 
         // Refresh prefill state to reflect what was just saved
@@ -552,6 +563,7 @@ input[name=category] { display: none; }
 }
 .page-wrap { position: relative; z-index: 1; }
 
+.addon-chip { display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:50px;border:1px solid var(--border);background:#0f0f0f;color:var(--text);cursor:pointer;font-size:13px; }
 .addon-chip.on { border-color:var(--accent); background:rgba(209,144,75,.12); color:var(--accent); }
 </style>
 </head>
@@ -705,7 +717,7 @@ input[name=category] { display: none; }
                     <div id="addonRows" class="input-group" style="padding-left:0;<?= $hasAddons ? '' : 'display:none;' ?>">
                         <div style="display:flex;flex-wrap:wrap;gap:8px;">
                             <?php foreach ($allAddons as $ad): $on = !empty($assignedAddons[(int)$ad['id']]); ?>
-                            <label class="addon-chip<?= $on ? ' on' : '' ?>" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:50px;border:1px solid var(--border);background:#0f0f0f;color:var(--text);cursor:pointer;font-size:13px;">
+                            <label class="addon-chip<?= $on ? ' on' : '' ?>">
                                 <input type="checkbox" name="addon_id[]" value="<?= (int)$ad['id'] ?>" <?= $on ? 'checked' : '' ?> style="display:none;" onchange="this.closest('.addon-chip').classList.toggle('on', this.checked);">
                                 <?= htmlspecialchars($ad['name'], ENT_QUOTES, 'UTF-8') ?> +$<?= number_format((float)$ad['price'], 2) ?>
                             </label>
