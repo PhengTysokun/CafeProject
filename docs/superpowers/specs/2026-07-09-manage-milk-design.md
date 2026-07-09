@@ -65,26 +65,27 @@ radio. Single list section titled "Milk Options".
 
 - **Gate:** `require 'admin_only.php'` (admin/manager only), CSRF using the
   `stands.php` token pattern — matches manage_addons.php / manage_categories.php.
-- **Per row:** rename (name), reorder (display_order), active toggle (`is_active`),
-  default radio (`is_default`), delete.
+- **Per row:** rename (name), reorder (display_order), Archive/Restore
+  (`is_active` toggle), default radio (`is_default`).
 - **Add new:** a create row appends a milk with the next `display_order`, `is_active=1`,
   `is_default=0`.
-- **Soft-archive:** deactivating via `is_active=0` keeps the row (seasonal menus),
-  same convention as add-ons. Hard delete is also allowed (see edge rules).
+- **Archive-only (no hard delete):** matches manage_addons.php exactly — an archived
+  milk keeps its row (seasonal menus; a milk you stop carrying may come back), a
+  "show archived" filter reveals archived rows, and the button reads Archive/Restore.
+  **No `delete` action** — deliberately consistent with the add-ons page.
 - **Entry button:** add a link/button on `products.php` beside the existing
   "Manage Add-ons" / "Categories" entry buttons, gated by the same
   `$_can_manage_products` condition those use.
 
-### Handlers (POST actions on manage_milk.php)
-- `add` — insert new milk.
-- `rename` — update name.
-- `toggle_active` — flip is_active. If deactivating the current default, promote
-  the first remaining active milk to default (see invariant).
+### Handlers (POST actions on manage_milk.php) — same names as manage_addons.php
+- `create` — insert new milk (`is_active=1`, `is_default=0`, next display_order).
+- `update` — update name.
+- `reorder` — update display_order (mirror manage_addons/manage_categories reorder).
+- `archive` — toggle is_active both ways. If archiving the current default, promote
+  the first remaining active milk to default (see invariant) **and set a flash
+  message** naming the new default (see edge rules).
 - `set_default` — set this row is_default=1 and clear is_default on all others
   (single UPDATE clearing others + one setting this).
-- `reorder` — update display_order (mirror manage_categories reorder approach).
-- `delete` — hard delete the row. If it was the default, promote the first
-  remaining active milk to default.
 
 All handlers require a valid CSRF token; invalid token rejects.
 
@@ -135,19 +136,24 @@ Sweetness and Ice whitelists (lines 37-38) stay hardcoded — out of scope.
 
 ## Edge rules
 
-- Archiving or deleting the current default milk auto-promotes the first remaining
-  active milk (by display_order) to default, preserving the single-default invariant.
-- If all milks are archived/deleted, menu hides the Milk section; new orders simply
-  carry no milk value (same as a category with `offer_milk=0`).
-- Deleting a milk never touches historical orders (string snapshot).
+- Archiving the current default milk auto-promotes the first remaining active milk
+  (by display_order) to default, preserving the single-default invariant. On promote,
+  set a flash message so the change isn't silent, e.g.
+  "Fresh Milk archived — Almond Milk is now the default." Displayed on the page like
+  the add-ons/categories success flashes.
+- If all milks are archived, menu hides the Milk section; new orders simply carry no
+  milk value (same as a category with `offer_milk=0`). No default exists in this state;
+  the invariant re-applies as soon as one milk is restored/created.
+- Archiving a milk never touches historical orders (string snapshot).
 
 ## Testing
 
 - Migration: fresh load creates `milk_options`, seeds 4 rows, Fresh Milk default.
   Re-load does not duplicate (guard `COUNT(*)==0`).
-- manage_milk.php: add / rename / reorder / toggle-active / set-default / delete each
-  persist; default radio always leaves exactly one default; deactivating/deleting the
-  default promotes another. Non-admin is redirected; missing CSRF rejects.
+- manage_milk.php: create / update / reorder / archive / restore / set-default each
+  persist; default radio always leaves exactly one default; archiving the default
+  promotes another and shows the flash message; "show archived" filter reveals archived
+  rows; no hard-delete action exists. Non-admin is redirected; missing CSRF rejects.
 - add_to_cart.php: a newly-added milk is accepted (not 400-rejected); an archived or
   unknown milk string is rejected with 400 "Invalid milk option"; empty milk ('')
   still allowed.
