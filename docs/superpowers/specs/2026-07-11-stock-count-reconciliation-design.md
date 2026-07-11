@@ -58,6 +58,24 @@ noise).
    `manual_adjust`. The migration reads the current enum and only adds the value if
    absent (idempotent).
 
+### `ingredient_history.amount` sign convention (must match existing)
+
+The existing convention (verified in confirm_order.php:648 and the aggregation in
+ingredient_history.php:102-105): `amount` is stored as a **positive magnitude** for
+single-direction types (`order_deduct`, `po_received`, …), while **`manual_adjust`
+stores a SIGNED amount** — the report explicitly treats `manual_adjust AND amount<0`
+as a deduction and uses `ABS(amount)` for totals.
+
+`count_adjust` is bidirectional (a count can raise or lower stock), so it follows the
+`manual_adjust` precedent: store the **signed** `delta` (`newStock − oldStock`). To
+keep the ledger totals correct, two edits to `ingredient_history.php`:
+- Add `count_adjust` to `$valid_types` (line 14) so it appears in the type filter.
+- Extend the deduct classification (lines 102-105) from
+  `change_type='order_deduct' OR (change_type='manual_adjust' AND amount<0)` to also
+  include `OR (change_type='count_adjust' AND amount<0)`, mirroring `manual_adjust`,
+  so a negative count adjustment counts as a deduction (not an addition) and `ABS` is
+  applied to its magnitude.
+
 No new permission row: the Apply gate is a role check
 (`in_array($_SESSION['role'] ?? '', ['admin','manager'], true)`).
 
@@ -76,16 +94,25 @@ Steps, wrapped in a single transaction (all-or-nothing):
    guard at stock_count.php:68.)
 2. For each `stock_count_items` row of this count with `actual_qty IS NOT NULL`:
    - `newStock = (int)round(actual_qty)`; read current `ingredients.stock_quantity` as `oldStock`.
-   - `delta = newStock − oldStock`; if `delta === 0`, skip.
+     (`stock_quantity` is `INT`; the counted value is rounded to a whole unit for the
+     stock write. The raw `actual_qty` is preserved verbatim in the log reference below,
+     so a fractional count is never silently lost.)
+   - `delta = newStock − oldStock`; if `delta === 0`, skip (no write, no log).
    - `UPDATE ingredients SET stock_quantity = ? WHERE ingredient_id = ?` (newStock).
    - `INSERT INTO ingredient_history (ingredient_id, change_type, amount, order_id, reference, created_by)
-      VALUES (?, 'count_adjust', ?, NULL, ?, ?)` where `amount = delta` and
-      `reference = "Stock count <business_date> #<count_id>: expected <expected_qty> → counted <actual_qty>"`,
-      `created_by = manager username`.
+      VALUES (?, 'count_adjust', ?, NULL, ?, ?)` where `amount = delta` (SIGNED, per the
+      convention above) and
+      `reference = "Stock count <business_date> #<count_id>: expected <expected_qty>, counted <actual_qty> (was <oldStock>, now <newStock>)"`,
+      `created_by = manager username`. Including `was → now` makes each row self-explanatory
+      when auditing, since `expected_qty` (fixed at count time) can differ from `oldStock`
+      (live at apply time).
 3. Commit. On any failure, roll back (stock + history + reconciled flag all revert).
 
-Response: JSON `{ok:true, adjusted:N, skipped:M}` for AJAX, or a redirect/flash for
-a full-page submit.
+Response: JSON `{ok:true, adjusted:N, skipped:M}` for AJAX (also surfaced in the
+post-apply banner, e.g. "Reconciled — 12 adjusted, 37 unchanged"), or a redirect/flash
+for a full-page submit. No separate reconciliation-log table is needed: `reconciled_by`
+/`reconciled_at` on `stock_counts` already record who applied the session and when, and
+the per-item `count_adjust` history rows record exactly what changed.
 
 ## UI
 
@@ -134,6 +161,28 @@ adjacent gap.
 - **Stock is INT:** counted decimal is rounded; log records the integer delta.
 - **Rollback:** any mid-apply failure rolls the whole transaction back, including the
   `reconciled_at` claim, so the session stays pending and can be retried.
+- **Deleted ingredient between submit and apply:** cannot occur. `stock_count_items.ingredient_id
+  → ingredients` is an `ON DELETE RESTRICT` FK, so any ingredient present in a count
+  cannot be deleted. No special handling needed (the `UPDATE ingredients` will always
+  hit a live row).
+- **Concurrent stock change during apply:** the overwrite semantic already accepts that
+  intervening movement is clobbered (see Semantics). Reads and writes are adjacent; a
+  logged `delta` could be marginally off only under rare same-instant concurrency on a
+  single-writer POS — accepted, not guarded with compare-and-swap (over-engineering here).
+
+## Review decisions (deferred / rejected)
+
+Recorded so they aren't re-litigated:
+- **Rejected — separate reconciliation-log table:** redundant with `reconciled_by`/`reconciled_at`
+  on `stock_counts` + the per-item history rows.
+- **Rejected — compare-and-swap on the stock write:** over-engineering for a single-writer,
+  end-of-day cafe; overwrite already documents intervening-change behavior.
+- **Rejected — CSRF generated at login:** lazy `if(empty($_SESSION['csrf_token']))` at page
+  top runs before the form renders, so the token exists for that load; matches the
+  existing codebase pattern.
+- **Deferred to future (not now):** time-gap warning showing orders processed between
+  submit and apply; partial reconciliation (uncheck suspicious rows before applying);
+  large-variance highlighting in the confirm dialog. None block the core feature.
 
 ## Testing
 
@@ -144,6 +193,9 @@ adjacent gap.
   `count_adjust` row per non-zero-delta item with the correct signed `amount` and
   reference; zero-delta and uncounted items produce no history row; `reconciled_at`
   /`reconciled_by` set.
+- Sign/ledger: a **negative** `count_adjust` (stock counted lower than system) is logged
+  with a negative `amount`, appears under the deduction totals in ingredient_history.php
+  (not additions), and `count_adjust` is selectable in the type filter.
 - Apply-once: second Apply on the same session → rejected, no further writes.
 - Permission: a clerk (perm `stock_count`, non-manager) gets no button and the
   `reconcile` POST is rejected; missing CSRF is rejected.
