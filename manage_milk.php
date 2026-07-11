@@ -51,6 +51,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             } else {
                                 $flash = ['type'=>'success','msg'=>$row['name']." archived. No active milks remain."];
                             }
+                        } elseif ((int)$row['is_active'] === 0) {
+                            // Restoring a milk: if no active default exists (e.g. all were archived), it becomes the default.
+                            $hasDefault = (int)$conn->query("SELECT COUNT(*) c FROM milk_options WHERE is_default = 1 AND is_active = 1")->fetch_assoc()['c'];
+                            if ($hasDefault === 0) {
+                                $conn->query("UPDATE milk_options SET is_default = 1 WHERE id = " . $id);
+                                $flash = ['type'=>'success','msg'=>$row['name']." restored — it is now the default."];
+                            } else {
+                                $flash = ['type'=>'success','msg'=>'Milk visibility updated.'];
+                            }
                         } else {
                             $flash = ['type'=>'success','msg'=>'Milk visibility updated.'];
                         }
