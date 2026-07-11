@@ -442,6 +442,7 @@ tr.hidden { display:none !important; }
             <option value="quick_restock" <?= $filter_type === 'quick_restock' ? 'selected' : '' ?>>Quick Restock</option>
             <option value="po_received"   <?= $filter_type === 'po_received'   ? 'selected' : '' ?>>PO Received</option>
             <option value="manual_adjust" <?= $filter_type === 'manual_adjust' ? 'selected' : '' ?>>Manual Adjustment</option>
+            <option value="count_adjust" <?= $filter_type === 'count_adjust' ? 'selected' : '' ?>>Stock Count</option>
         </select>
     </div>
     <div class="filter-group">
@@ -708,7 +709,8 @@ async function pollHistory() {
 
             const rawAmt = parseFloat(r.amount);
             const isDeduct = r.change_type === 'order_deduct'
-                          || (r.change_type === 'manual_adjust' && rawAmt < 0);
+                          || (r.change_type === 'manual_adjust' && rawAmt < 0)
+                          || (r.change_type === 'count_adjust' && rawAmt < 0);
             if (isDeduct) {
                 cntDeduct++;
                 totalDeducted += Math.abs(rawAmt);
