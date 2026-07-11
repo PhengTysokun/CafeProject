@@ -555,7 +555,7 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
                     <th></th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="scBody">
             <?php foreach ($sc_rows as $scr):
                 $shortage = (int)$scr['shortage_items'];
                 $overage  = (int)$scr['overage_items'];
@@ -607,6 +607,56 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
             <?php endforeach; ?>
             </tbody>
         </table>
+        <style>
+        .sc-pg{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:14px 18px;border-top:1px solid var(--border)}
+        .sc-pg .info{font-size:12px;color:var(--muted2)}
+        .sc-pg nav{display:flex;gap:4px;flex-wrap:wrap}
+        .sc-pgb{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:32px;padding:0 6px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted2);font-size:13px;font-weight:600;text-decoration:none;cursor:pointer}
+        .sc-pgb:hover{border-color:var(--amber);color:var(--amber)}
+        .sc-pgb.act{background:var(--amber);border-color:var(--amber);color:#000;font-weight:700}
+        .sc-pgb.dis{opacity:.35;cursor:default}
+        .sc-pge{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;color:var(--muted2);font-size:13px}
+        </style>
+        <div class="sc-pg" id="scPg" style="display:none">
+            <span class="info" id="scPgInfo"></span>
+            <nav id="scPgNav"></nav>
+        </div>
+        <script>
+        (function(){
+            var PER = 10;
+            var body = document.getElementById('scBody');
+            if (!body) return;
+            var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+            if (rows.length <= PER) return; // pager not needed
+            var pg = document.getElementById('scPg'), info = document.getElementById('scPgInfo'), nav = document.getElementById('scPgNav');
+            var page = 1, totalPages = Math.ceil(rows.length / PER);
+            pg.style.display = 'flex';
+            function render(){
+                page = Math.max(1, Math.min(page, totalPages));
+                var start = (page - 1) * PER, end = start + PER;
+                rows.forEach(function(r, i){ r.style.display = (i >= start && i < end) ? '' : 'none'; });
+                info.textContent = 'Page ' + page + ' of ' + totalPages + ' · ' + rows.length + ' sessions';
+                var html = page > 1
+                    ? '<a href="#" class="sc-pgb" data-p="1">«</a><a href="#" class="sc-pgb" data-p="' + (page - 1) + '">‹</a>'
+                    : '<span class="sc-pgb dis">«</span><span class="sc-pgb dis">‹</span>';
+                var ws = Math.max(1, page - 2), we = Math.min(totalPages, page + 2);
+                if (ws > 1) html += '<span class="sc-pge">…</span>';
+                for (var i = ws; i <= we; i++){
+                    html += i === page ? '<span class="sc-pgb act">' + i + '</span>'
+                                       : '<a href="#" class="sc-pgb" data-p="' + i + '">' + i + '</a>';
+                }
+                if (we < totalPages) html += '<span class="sc-pge">…</span>';
+                html += page < totalPages
+                    ? '<a href="#" class="sc-pgb" data-p="' + (page + 1) + '">›</a><a href="#" class="sc-pgb" data-p="' + totalPages + '">»</a>'
+                    : '<span class="sc-pgb dis">›</span><span class="sc-pgb dis">»</span>';
+                nav.innerHTML = html;
+                nav.querySelectorAll('a.sc-pgb').forEach(function(a){
+                    a.addEventListener('click', function(e){ e.preventDefault(); page = parseInt(a.getAttribute('data-p'), 10); render(); });
+                });
+            }
+            render();
+        })();
+        </script>
         <?php endif; ?>
     </div>
 
