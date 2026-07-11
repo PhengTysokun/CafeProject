@@ -1291,7 +1291,8 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addo
   var co = CATEGORY_OPTS[cat] || { sweet: 1, ice: 1, milk: 1, addons: 1 };
   document.getElementById('optSweetness').style.display = co.sweet ? 'block' : 'none';
   document.getElementById('optIce').style.display       = co.ice   ? 'block' : 'none';
-  document.getElementById('optMilk').style.display      = co.milk  ? 'block' : 'none';
+  var _optMilk = document.getElementById('optMilk');
+  if (_optMilk) _optMilk.style.display = co.milk ? 'block' : 'none';
   document.querySelectorAll('#sweetnessPills .option-pill').forEach(function(pill) { pill.classList.toggle('active', pill.dataset.value === '50%'); });
   document.querySelectorAll('#icePills .option-pill').forEach(function(pill)      { pill.classList.toggle('active', pill.dataset.value === 'Normal Ice'); });
   document.querySelectorAll('#milkPills .option-pill').forEach(function(pill)     { pill.classList.toggle('active', pill.dataset.value === MILK_DEFAULT); });
@@ -1384,7 +1385,8 @@ function addToCart() {
   var params = new URLSearchParams({ id: product.id, qty: modalQty, csrf_token: CSRF });
   if (document.getElementById('optSweetness').style.display !== 'none') params.append('sweetness', getPillValue('sweetnessPills'));
   if (document.getElementById('optIce').style.display !== 'none')       params.append('ice',       getPillValue('icePills'));
-  if (document.getElementById('optMilk').style.display !== 'none')      params.append('milk',      getPillValue('milkPills'));
+  var _mk = document.getElementById('optMilk');
+  if (_mk && _mk.style.display !== 'none')      params.append('milk',      getPillValue('milkPills'));
   if (document.getElementById('optSize').style.display !== 'none')      params.append('size',      getPillValue('sizePills'));
   document.querySelectorAll('#addonPills .option-pill.active').forEach(function(p){ params.append('addons[]', p.dataset.addonId); });
 
