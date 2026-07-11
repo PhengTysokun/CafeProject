@@ -31,6 +31,8 @@ if ((int)$_sc_tables === 2) {
             sc.status,
             sc.submitted_by,
             sc.submitted_at,
+            sc.reconciled_at,
+            sc.reconciled_by,
             sc.notes,
             COUNT(sci.item_id)                                             AS total_items,
             SUM(sci.actual_qty IS NOT NULL)                                AS counted_items,
@@ -551,6 +553,7 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
                     <th style="text-align:right;color:#f87171">Shortages</th>
                     <th style="text-align:right;color:#fbbf24">Overages</th>
                     <th>Submitted By</th>
+                    <th>Reconciled</th>
                     <th>Notes</th>
                     <th></th>
                 </tr>
@@ -595,6 +598,19 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
                     <?php endif; ?>
                 </td>
                 <td style="color:var(--muted2)"><?= htmlspecialchars($scr['submitted_by'] ?? '—') ?></td>
+                <td>
+                    <?php if ($scr['status'] !== 'submitted'): ?>
+                        <span style="color:var(--muted2)">—</span>
+                    <?php elseif (!empty($scr['reconciled_at'])): ?>
+                        <span class="badge match" title="<?= date('d M Y, g:i A', strtotime($scr['reconciled_at'])) ?>">
+                            <i class="fa-solid fa-clipboard-check"></i> <?= htmlspecialchars($scr['reconciled_by'] ?? '', ENT_QUOTES) ?>
+                        </span>
+                    <?php else: ?>
+                        <span class="badge" style="background:var(--amber-dim,rgba(209,144,75,.12));color:#fbbf24;border:1px solid rgba(209,144,75,.25)">
+                            <i class="fa-solid fa-hourglass-half"></i> Pending
+                        </span>
+                    <?php endif; ?>
+                </td>
                 <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                     <?= htmlspecialchars($scr['notes'] ?? '') ?>
                 </td>
