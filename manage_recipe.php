@@ -21,6 +21,19 @@ if (isset($_POST['save_recipe'])) {
 
     $product_id = (int)$_POST['product_id'];
 
+    // Guard: a missing/zero product_id would delete WHERE product_id=0 and then
+    // insert orphan (0, ...) recipe rows tied to no product.
+    if ($product_id <= 0) {
+        if (!empty($_POST['ajax'])) {
+            header('Content-Type: application/json');
+            http_response_code(400);
+            echo json_encode(["ok" => 0, "error" => "Please choose a product."]);
+            exit;
+        }
+        header("Location: manage_recipe.php?error=noproduct");
+        exit;
+    }
+
     // Clear old recipe
     mysqli_query($conn, "DELETE FROM product_ingredients WHERE product_id = $product_id");
 
