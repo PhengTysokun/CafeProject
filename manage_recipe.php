@@ -2,9 +2,22 @@
 require 'auth.php';
 require 'config.php';
 if (!can('manage_recipes')) { header("Location: recipes_view.php"); exit; }
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
 /* ================= SAVE RECIPE ================= */
 if (isset($_POST['save_recipe'])) {
+
+    // CSRF: this endpoint wipes + rewrites a product's recipe, so guard it.
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        if (!empty($_POST['ajax'])) {
+            header('Content-Type: application/json');
+            http_response_code(403);
+            echo json_encode(["ok" => 0, "error" => "Security check failed. Please refresh and try again."]);
+            exit;
+        }
+        header("Location: manage_recipe.php?error=csrf");
+        exit;
+    }
 
     $product_id = (int)$_POST['product_id'];
 
@@ -677,6 +690,7 @@ input:disabled {
         <?php endif; ?>
 
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES) ?>">
             <!-- Product Selection -->
             <div class="form-group">
                 <label><i class="fa-solid fa-cube"></i> Select Product</label>

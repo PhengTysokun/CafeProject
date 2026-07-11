@@ -2,6 +2,7 @@
 require 'auth.php';
 require 'config.php';
 if (!can('recipes')) { header("Location: dashboard.php?denied=1"); exit; }
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
 /* ── Theme flash prevention ── */
 function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -831,6 +832,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 <script>
 // ── Inline Recipe Editor: data from server ──
 const BASE_INGREDIENTS = <?= json_encode($baseIngredients) ?>;
+const RECIPE_CSRF = <?= json_encode($_SESSION['csrf_token']) ?>;
 const RECIPE_EDIT_DATA = <?= json_encode($recipeEditData) ?>;
 let rmCurrentProductId = 0;
 
@@ -890,6 +892,7 @@ async function saveRecipeModal() {
     const formData = new FormData();
     formData.append('save_recipe', '1');
     formData.append('ajax', '1');
+    formData.append('csrf_token', RECIPE_CSRF);
     formData.append('product_id', rmCurrentProductId);
     formData.append('milk_amount', document.getElementById('rmMilk').value || '');
     formData.append('syrup_amount', document.getElementById('rmSyrup').value || '');
