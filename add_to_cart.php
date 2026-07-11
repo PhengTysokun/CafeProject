@@ -36,7 +36,10 @@ $size_code = trim((string)($_POST['size'] ?? ''));
 // Validate options against allowed values
 $valid_sweetness = ['0%', '25%', '50%', '75%', '100%', ''];
 $valid_ice       = ['No Ice', 'Less Ice', 'Normal Ice', 'More Ice', ''];
-$valid_milk      = ['Fresh Milk', 'Almond Milk', 'Soy Milk', 'Oat Milk', ''];
+// Milk whitelist is admin-managed (milk_options); build it from the active set + '' (no milk).
+$valid_milk = [''];
+$mk_wl = $conn->query("SELECT name FROM milk_options WHERE is_active = 1");
+if ($mk_wl) { while ($mw = $mk_wl->fetch_assoc()) $valid_milk[] = $mw['name']; }
 
 if ($sweetness !== '' && !in_array($sweetness, $valid_sweetness)) {
     json_out(false, 'Invalid sweetness option', 0, null, 400);
