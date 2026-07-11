@@ -68,13 +68,18 @@ as a deduction and uses `ABS(amount)` for totals.
 
 `count_adjust` is bidirectional (a count can raise or lower stock), so it follows the
 `manual_adjust` precedent: store the **signed** `delta` (`newStock − oldStock`). To
-keep the ledger totals correct, two edits to `ingredient_history.php`:
-- Add `count_adjust` to `$valid_types` (line 14) so it appears in the type filter.
-- Extend the deduct classification (lines 102-105) from
+keep the ledger totals correct, two edits to `ingredient_history.php` (line numbers
+are indicative — locate by the described code, they may drift):
+- Add `count_adjust` to the `$valid_types` array (currently near line 14) so it appears
+  in the type filter.
+- Extend the deduct-classification logic (currently near lines 102-105) from
   `change_type='order_deduct' OR (change_type='manual_adjust' AND amount<0)` to also
   include `OR (change_type='count_adjust' AND amount<0)`, mirroring `manual_adjust`,
   so a negative count adjustment counts as a deduction (not an addition) and `ABS` is
   applied to its magnitude.
+
+`ingredient_history.reference` is `VARCHAR(255)` (verified); the reference string built
+below is ~70 chars, so no truncation.
 
 No new permission row: the Apply gate is a role check
 (`in_array($_SESSION['role'] ?? '', ['admin','manager'], true)`).
@@ -86,7 +91,11 @@ Preconditions (all required, else reject):
 - Valid CSRF token (see CSRF note below).
 - Target session exists, `status='submitted'`, and `reconciled_at IS NULL`.
 
-Steps, wrapped in a single transaction (all-or-nothing):
+Steps, wrapped in a single transaction (all-or-nothing). The handler reads current
+stock then writes within the transaction; carry a code comment noting this is safe on
+a single-writer POS and that a multi-server deployment would need
+`SELECT … FOR UPDATE` on the `ingredients` rows — so the pattern isn't cargo-culted
+into a context where it breaks:
 1. Atomically claim the session:
    `UPDATE stock_counts SET reconciled_at=NOW(), reconciled_by=? WHERE count_id=? AND status='submitted' AND reconciled_at IS NULL`.
    If `affected_rows = 0` → already reconciled or not submitted; roll back and return
@@ -125,6 +134,8 @@ the per-item `count_adjust` history rows record exactly what changed.
   *"Reconciled by <name> at <time>"* and no button.
 - Clerks (non-manager) never see the button; the server gate also rejects them.
 - Draft (not yet submitted) → no Apply (must submit first).
+- Submitted but **zero counted items** (every `actual_qty IS NULL`) → no Apply button;
+  show "No counted items to apply." (nothing to reconcile).
 
 **reconciliation_report.php** Inventory Stock Counts list:
 - Add a reconciliation indicator per submitted row: **Reconciled** (with
@@ -180,9 +191,16 @@ Recorded so they aren't re-litigated:
 - **Rejected — CSRF generated at login:** lazy `if(empty($_SESSION['csrf_token']))` at page
   top runs before the form renders, so the token exists for that load; matches the
   existing codebase pattern.
+- **Rejected — namespaced CSRF key (`csrf_token_reconcile`):** the whole app uses a single
+  global `$_SESSION['csrf_token']`, set once and never regenerated mid-session, so the
+  cross-tab mismatch it guards against doesn't arise. A namespaced key would diverge from
+  every other form. Keep the global token; the "set once, never regenerate" rule is the
+  invariant to preserve.
 - **Deferred to future (not now):** time-gap warning showing orders processed between
   submit and apply; partial reconciliation (uncheck suspicious rows before applying);
-  large-variance highlighting in the confirm dialog. None block the core feature.
+  large-variance highlighting in the confirm dialog; a per-row "counted 2.5 → will set 3"
+  rounding preview in the review table (moot while stock is whole-unit). None block the
+  core feature.
 
 ## Testing
 
@@ -200,6 +218,8 @@ Recorded so they aren't re-litigated:
 - Permission: a clerk (perm `stock_count`, non-manager) gets no button and the
   `reconcile` POST is rejected; missing CSRF is rejected.
 - Draft session: Apply not offered/rejected (must be submitted).
+- Zero counted items: a submitted count with every `actual_qty IS NULL` shows no Apply
+  button ("No counted items to apply.") and the `reconcile` POST is a safe no-op.
 - Report: submitted rows show Pending before apply, Reconciled (with name) after.
 - Live verify (admin Sokun, plus a clerk account) via browser/DB per the project's
   established pattern.
