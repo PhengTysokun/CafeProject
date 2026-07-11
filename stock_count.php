@@ -229,6 +229,8 @@ if (!$session) {
 
 $count_id  = (int)$session['count_id'];
 $is_locked = ($session['status'] === 'submitted');
+$is_manager     = in_array($_SESSION['role'] ?? '', ['admin','manager'], true);
+$is_reconciled  = !empty($session['reconciled_at']);
 
 /* ── Load items ── */
 $items_q = $conn->prepare("
@@ -521,6 +523,25 @@ $next = date('Y-m-d', strtotime($bdate . ' +1 day'));
     <i class="fa-solid fa-circle-check"></i>
     Count submitted and locked. View-only mode.
 </div>
+    <?php if ($is_reconciled): ?>
+    <div class="locked-banner" style="background:rgba(96,165,250,.1);border-color:rgba(96,165,250,.25);color:#93c5fd;">
+        <i class="fa-solid fa-clipboard-check" style="color:#60a5fa;"></i>
+        Reconciled by <strong style="color:#bfdbfe;">&nbsp;<?= h($session['reconciled_by'] ?? '') ?>&nbsp;</strong>
+        at <strong style="color:#bfdbfe;">&nbsp;<?= h(date('g:i A, M j', strtotime($session['reconciled_at']))) ?></strong>
+    </div>
+    <?php elseif ($is_manager && $counted_count > 0): ?>
+    <div class="locked-banner" style="background:var(--amber-dim);border-color:var(--amber-border);color:#fbbf24;justify-content:space-between;">
+        <span><i class="fa-solid fa-scale-balanced" style="color:var(--amber);"></i>
+            Review complete? Apply these counts to system stock.</span>
+        <button class="submit-btn" id="applyBtn" onclick="applyReconcile()" style="padding:8px 18px;">
+            <i class="fa-solid fa-check-double"></i> Apply to Stock
+        </button>
+    </div>
+    <?php elseif ($is_manager): ?>
+    <div class="locked-banner" style="background:rgba(255,255,255,.04);border-color:var(--border);color:var(--muted2);">
+        <i class="fa-solid fa-circle-info"></i> No counted items to apply.
+    </div>
+    <?php endif; ?>
 <?php endif; ?>
 
 <!-- Stats -->
@@ -724,6 +745,8 @@ if ($counted_arr):
 
 <script>
 const COUNT_ID = <?= $count_id ?>;
+const CSRF_TOKEN  = <?= json_encode($_SESSION['csrf_token']) ?>;
+const COUNTED_NOW = <?= (int)$counted_count ?>;
 const TOTAL    = <?= $total_items ?>;
 let   counted  = <?= $counted_count ?>;
 
@@ -941,6 +964,37 @@ function renderPagination(totalPages) {
     html += `<button class="pg-btn" onclick="goPage(${totalPages})" ${currentPage===totalPages?'disabled':''}>»</button>`;
     html += '</div>';
     pg.innerHTML = html;
+}
+
+/* ── Reconcile (manager/admin) ── */
+function applyReconcile() {
+    const btn = document.getElementById('applyBtn');
+    if (!confirm(`Set system stock to the counted values for ${COUNTED_NOW} counted item(s)? `
+              + `This adjusts inventory and is logged. Uncounted items are left unchanged.`)) return;
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border:2px solid rgba(0,0,0,.2);border-top-color:#000;border-radius:50%;animation:spin .7s linear infinite"></div> Applying…';
+    const fd = new FormData();
+    fd.append('action', 'reconcile');
+    fd.append('count_id', COUNT_ID);
+    fd.append('csrf_token', CSRF_TOKEN);
+    fetch('stock_count.php', { method:'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+            if (d.ok) {
+                alert(`Reconciled — ${d.adjusted} adjusted, ${d.skipped} unchanged.`);
+                document.body.classList.add('fading');
+                setTimeout(() => location.reload(), 400);
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-check-double"></i> Apply to Stock';
+                alert('Error: ' + (d.msg || 'Unknown error'));
+            }
+        })
+        .catch(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-check-double"></i> Apply to Stock';
+            alert('Network error — nothing changed.');
+        });
 }
 
 // Init pagination on load
