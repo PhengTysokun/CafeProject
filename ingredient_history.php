@@ -11,7 +11,7 @@ $filter_type = trim($_GET['type'] ?? '');
 $filter_from = trim($_GET['from'] ?? '');
 $filter_to   = trim($_GET['to']   ?? '');
 
-$valid_types = ['order_deduct','order_restore','quick_restock','po_received','manual_adjust'];
+$valid_types = ['order_deduct','order_restore','quick_restock','po_received','manual_adjust','count_adjust'];
 if (!in_array($filter_type, $valid_types)) $filter_type = '';
 
 $per_page = 10;
@@ -99,10 +99,10 @@ if ($filter_to !== '') {
 /* ── aggregate stats across ALL matching rows (not paginated) ── */
 $agg_sql = "
     SELECT
-        SUM(CASE WHEN h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0) THEN 1 ELSE 0 END) AS cnt_deduct,
-        SUM(CASE WHEN h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0) THEN ABS(h.amount) ELSE 0 END) AS total_deducted,
-        SUM(CASE WHEN NOT(h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0)) THEN 1 ELSE 0 END) AS cnt_add,
-        SUM(CASE WHEN NOT(h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0)) THEN ABS(h.amount) ELSE 0 END) AS total_added,
+        SUM(CASE WHEN h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0) OR (h.change_type='count_adjust' AND h.amount<0) THEN 1 ELSE 0 END) AS cnt_deduct,
+        SUM(CASE WHEN h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0) OR (h.change_type='count_adjust' AND h.amount<0) THEN ABS(h.amount) ELSE 0 END) AS total_deducted,
+        SUM(CASE WHEN NOT(h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0) OR (h.change_type='count_adjust' AND h.amount<0)) THEN 1 ELSE 0 END) AS cnt_add,
+        SUM(CASE WHEN NOT(h.change_type='order_deduct' OR (h.change_type='manual_adjust' AND h.amount<0) OR (h.change_type='count_adjust' AND h.amount<0)) THEN ABS(h.amount) ELSE 0 END) AS total_added,
         COUNT(*) AS total_count
     FROM ingredient_history h
     JOIN ingredients i ON i.ingredient_id = h.ingredient_id
@@ -512,13 +512,15 @@ tr.hidden { display:none !important; }
             <?php foreach ($rows as $r):
                 $rawAmt    = (float)$r['amount'];
                 $isDeduct  = $r['change_type'] === 'order_deduct'
-                          || ($r['change_type'] === 'manual_adjust' && $rawAmt < 0);
+                          || ($r['change_type'] === 'manual_adjust' && $rawAmt < 0)
+                          || ($r['change_type'] === 'count_adjust' && $rawAmt < 0);
                 $typeLabel = match((string)$r['change_type']) {
                     'order_deduct'  => ['Order Deduction',  'fa-arrow-trend-down'],
                     'order_restore' => ['Order Restore',    'fa-rotate-left'],
                     'quick_restock' => ['Quick Restock',    'fa-arrow-trend-up'],
                     'po_received'   => ['PO Received',      'fa-truck'],
                     'manual_adjust' => ['Manual Adjustment','fa-sliders'],
+                    'count_adjust'  => ['Stock Count',       'fa-clipboard-check'],
                     default         => [$r['change_type'],  'fa-circle'],
                 };
                 $amtDisplay = ($isDeduct ? '−' : '+') . fmtQ(abs($rawAmt)) . ($r['unit'] ? ' ' . h($r['unit']) : '');
@@ -636,12 +638,14 @@ const TYPE_META = {
     quick_restock: { label: 'Quick Restock',    icon: 'fa-arrow-trend-up'   },
     po_received:   { label: 'PO Received',      icon: 'fa-truck'            },
     manual_adjust: { label: 'Manual Adjustment',icon: 'fa-sliders'          },
+    count_adjust:  { label: 'Stock Count',       icon: 'fa-clipboard-check' },
 };
 
 function buildRow(r) {
     const rawAmt   = parseFloat(r.amount);
     const isDeduct = r.change_type === 'order_deduct'
-                  || (r.change_type === 'manual_adjust' && rawAmt < 0);
+                  || (r.change_type === 'manual_adjust' && rawAmt < 0)
+                  || (r.change_type === 'count_adjust' && rawAmt < 0);
     const meta     = TYPE_META[r.change_type] || { label: r.change_type, icon: 'fa-circle' };
     const amt      = Math.abs(rawAmt);
     const unit     = r.unit ? ' ' + r.unit : '';
