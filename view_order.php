@@ -44,7 +44,7 @@ if ($_att_check && $_att_check->num_rows > 0) {
 $_ann_check = $conn->query("SHOW TABLES LIKE 'announcements'");
 $_announcements = [];
 if ($_ann_check && $_ann_check->num_rows > 0) {
-    $_ann_res = $conn->query("SELECT id, title, message, type FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) ORDER BY created_at DESC");
+    $_ann_res = $conn->query("SELECT id, title, message, type FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) AND (starts_at IS NULL OR starts_at <= CURDATE()) ORDER BY created_at DESC");
     if ($_ann_res) $_announcements = $_ann_res->fetch_all(MYSQLI_ASSOC);
 }
 
@@ -2642,7 +2642,7 @@ if ($action === "fetch") {
 
     // Fetch active announcements alongside orders
     $_ann_data = [];
-    $_ann_res2 = $conn->query("SELECT id, title, message, type FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) ORDER BY created_at DESC");
+    $_ann_res2 = $conn->query("SELECT id, title, message, type FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) AND (starts_at IS NULL OR starts_at <= CURDATE()) ORDER BY created_at DESC");
     if ($_ann_res2) {
         foreach ($_ann_res2->fetch_all(MYSQLI_ASSOC) as $_a) {
             $_ann_data[] = ['id' => (int)$_a['id'], 'title' => $_a['title'], 'message' => $_a['message'], 'type' => $_a['type']];

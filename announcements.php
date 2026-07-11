@@ -11,13 +11,16 @@ $conn->query("CREATE TABLE IF NOT EXISTS announcements (
     created_by VARCHAR(100),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     expires_at DATE NULL,
+    starts_at DATE NULL,
     is_active TINYINT(1) DEFAULT 1
 )");
+// Existing installs: ensure the scheduling column is present (mirrors config.php migration).
+$conn->query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS starts_at DATE NULL AFTER expires_at");
 
 // Mark all active announcements as read for this user
 $conn->query("INSERT IGNORE INTO announcement_reads (user_id, announcement_id)
     SELECT " . (int)$_SESSION['user_id'] . ", id FROM announcements
-    WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE())");
+    WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) AND (starts_at IS NULL OR starts_at <= CURDATE())");
 
 $toast = '';
 $toast_type = '';
@@ -30,17 +33,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = trim($_POST['message'] ?? '');
         $type    = in_array($_POST['type'] ?? '', ['info','warning','urgent']) ? $_POST['type'] : 'info';
         $expires = !empty($_POST['expires_at']) ? $_POST['expires_at'] : null;
+        $starts  = !empty($_POST['starts_at'])  ? $_POST['starts_at']  : null;
         $author  = $_SESSION['username'] ?? 'Admin';
 
-        if ($title && $message) {
-            $stmt = $conn->prepare("INSERT INTO announcements (title, message, type, created_by, expires_at) VALUES (?,?,?,?,?)");
-            $stmt->bind_param("sssss", $title, $message, $type, $author, $expires);
+        if (!$title || !$message) {
+            $toast = "Title and message are required.";
+            $toast_type = 'error';
+        } elseif ($starts && $expires && $starts > $expires) {
+            $toast = "Show From date must be on or before the Expires On date.";
+            $toast_type = 'error';
+        } else {
+            $stmt = $conn->prepare("INSERT INTO announcements (title, message, type, created_by, expires_at, starts_at) VALUES (?,?,?,?,?,?)");
+            $stmt->bind_param("ssssss", $title, $message, $type, $author, $expires, $starts);
             $stmt->execute();
             $toast = "Announcement posted!";
             $toast_type = 'success';
-        } else {
-            $toast = "Title and message are required.";
-            $toast_type = 'error';
         }
     }
 
@@ -66,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $per_page    = 10;
 $page        = max(1, (int)($_GET['page'] ?? 1));
 $total_count = (int)$conn->query("SELECT COUNT(*) FROM announcements")->fetch_row()[0];
-$active_count = (int)$conn->query("SELECT COUNT(*) FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE())")->fetch_row()[0];
+$active_count = (int)$conn->query("SELECT COUNT(*) FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) AND (starts_at IS NULL OR starts_at <= CURDATE())")->fetch_row()[0];
 $total_pages = $total_count > 0 ? (int)ceil($total_count / $per_page) : 1;
 $page        = min($page, $total_pages);
 $offset      = ($page - 1) * $per_page;
@@ -355,8 +362,9 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         </div>
         <?php else: ?>
         <?php foreach ($announcements as $a):
-            $expired  = !is_null($a['expires_at']) && $a['expires_at'] < date('Y-m-d');
-            $isActive = $a['is_active'] && !$expired;
+            $expired   = !is_null($a['expires_at']) && $a['expires_at'] < date('Y-m-d');
+            $scheduled = !is_null($a['starts_at'])  && $a['starts_at'] > date('Y-m-d');
+            $isActive  = $a['is_active'] && !$expired && !$scheduled;
             $typeMap  = ['info'=>['#5bc0de','info-circle'], 'warning'=>['#f39c12','triangle-exclamation'], 'urgent'=>['#e74c3c','circle-exclamation']];
             [$tColor, $tIcon] = $typeMap[$a['type']] ?? $typeMap['info'];
         ?>
@@ -388,11 +396,16 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 <span class="badge badge-<?= $a['type'] ?>"><i class="fa-solid fa-<?= $tIcon ?>"></i> <?= ucfirst($a['type']) ?></span>
                 <?php if ($isActive): ?>
                 <span class="badge badge-active"><i class="fa-solid fa-circle-dot"></i> Active</span>
+                <?php elseif ($scheduled && $a['is_active'] && !$expired): ?>
+                <span class="badge badge-off"><i class="fa-regular fa-clock"></i> Scheduled</span>
                 <?php else: ?>
                 <span class="badge badge-off"><i class="fa-solid fa-circle"></i> <?= $expired ? 'Expired' : 'Hidden' ?></span>
                 <?php endif; ?>
                 <span><i class="fa-regular fa-user"></i> <?= htmlspecialchars($a['created_by']) ?></span>
                 <span><i class="fa-regular fa-clock"></i> <?= date('d M Y, g:i A', strtotime($a['created_at'])) ?></span>
+                <?php if ($a['starts_at'] && $scheduled): ?>
+                <span><i class="fa-regular fa-calendar-plus"></i> Starts <?= date('d M Y', strtotime($a['starts_at'])) ?></span>
+                <?php endif; ?>
                 <?php if ($a['expires_at']): ?>
                 <span class="<?= $expired ? 'tag-expired' : '' ?>">
                     <i class="fa-solid fa-calendar-xmark"></i>
@@ -481,6 +494,11 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                             <i class="fa-solid fa-circle-exclamation"></i> Urgent
                         </label>
                     </div>
+                </div>
+
+                <div class="field-group">
+                    <label class="fl-label">Show From <span style="font-size:10px;color:var(--text-muted);font-weight:400;text-transform:none">(optional — leave blank to show immediately)</span></label>
+                    <input type="date" name="starts_at" class="fl-input" min="<?= date('Y-m-d') ?>">
                 </div>
 
                 <div class="field-group">

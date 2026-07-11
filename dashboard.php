@@ -70,6 +70,7 @@ if (can('announcements')) {
         SELECT COUNT(*) FROM announcements a
         WHERE a.is_active = 1
           AND (a.expires_at IS NULL OR a.expires_at >= CURDATE())
+          AND (a.starts_at IS NULL OR a.starts_at <= CURDATE())
           AND NOT EXISTS (
               SELECT 1 FROM announcement_reads r
               WHERE r.announcement_id = a.id AND r.user_id = ?

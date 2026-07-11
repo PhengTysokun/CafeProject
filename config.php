@@ -190,6 +190,15 @@ _migrate($conn, 'milk_options_seed_v1', function($db) {
     }
 });
 
+// Announcements gain a "Show From" (schedule) date: future-dated ones stay hidden until then.
+// The table itself is created in announcements.php; only ALTER when it already exists.
+_migrate($conn, 'announcements_starts_at_v1', function($db) {
+    $has = $db->query("SHOW TABLES LIKE 'announcements'");
+    if ($has && $has->num_rows) {
+        $db->query("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS starts_at DATE NULL AFTER expires_at");
+    }
+});
+
 $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
 
 // Canonical table is cash_counts (renamed from the legacy cash_reconciliations).
