@@ -260,7 +260,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS announcement_reads (
 $conn->query("CREATE TABLE IF NOT EXISTS ingredient_history (
     id INT AUTO_INCREMENT PRIMARY KEY,
     ingredient_id INT NOT NULL,
-    change_type ENUM('order_deduct','order_restore','quick_restock','po_received','manual_adjust') NOT NULL,
+    change_type ENUM('order_deduct','order_restore','quick_restock','po_received','manual_adjust','count_adjust') NOT NULL,
     amount DECIMAL(10,4) NOT NULL,
     order_id INT NULL,
     reference VARCHAR(255) NULL,
@@ -271,6 +271,14 @@ $conn->query("CREATE TABLE IF NOT EXISTS ingredient_history (
 ) DEFAULT CHARSET=utf8mb4");
 _migrate($conn, 'ingredient_history_enum_v1', function($db) {
     $db->query("ALTER TABLE ingredient_history MODIFY COLUMN change_type ENUM('order_deduct','order_restore','quick_restock','po_received','manual_adjust') NOT NULL");
+});
+_migrate($conn, 'ingredient_history_count_adjust_v1', function($db) {
+    $db->query("ALTER TABLE ingredient_history MODIFY COLUMN change_type ENUM('order_deduct','order_restore','quick_restock','po_received','manual_adjust','count_adjust') NOT NULL");
+});
+_migrate($conn, 'stock_counts_reconciled_v1', function($db) {
+    $db->query("ALTER TABLE stock_counts
+        ADD COLUMN IF NOT EXISTS reconciled_at DATETIME NULL,
+        ADD COLUMN IF NOT EXISTS reconciled_by VARCHAR(100) NULL");
 });
 _migrate($conn, 'order_remakes_v1', function($db) {
     $db->query("CREATE TABLE IF NOT EXISTS order_remakes (
