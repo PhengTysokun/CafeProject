@@ -304,6 +304,7 @@ tr.hidden { display:none !important; }
 .type-badge.quick_restock { background:rgba(85,224,135,.1);  color:var(--ok);      border:1px solid rgba(85,224,135,.2); }
 .type-badge.po_received   { background:rgba(52,152,219,.1);  color:var(--blue);    border:1px solid rgba(52,152,219,.2); }
 .type-badge.manual_adjust { background:rgba(155,89,182,.1);  color:var(--purple);  border:1px solid rgba(155,89,182,.2); }
+.type-badge.count_adjust  { background:rgba(96,165,250,.1);  color:var(--blue);    border:1px solid rgba(96,165,250,.2); }
 
 /* TOAST */
 #toast-cnt { position:fixed; bottom:24px; right:20px; z-index:99999; display:flex; flex-direction:column-reverse; gap:8px; pointer-events:none; }
@@ -466,7 +467,7 @@ tr.hidden { display:none !important; }
     <span class="chip"><i class="fa-solid fa-flask"></i> <?= h($filter_ing_name) ?> <a href="?<?= http_build_query(array_filter(['type'=>$filter_type,'from'=>$filter_from,'to'=>$filter_to])) ?>">×</a></span>
     <?php endif; ?>
     <?php if ($filter_type): ?>
-    <?php $typeLabels = ['order_deduct'=>'Order Deduction','order_restore'=>'Order Restore','quick_restock'=>'Quick Restock','po_received'=>'PO Received']; ?>
+    <?php $typeLabels = ['order_deduct'=>'Order Deduction','order_restore'=>'Order Restore','quick_restock'=>'Quick Restock','po_received'=>'PO Received','count_adjust'=>'Stock Count']; ?>
     <span class="chip"><i class="fa-solid fa-tag"></i> <?= h($typeLabels[$filter_type] ?? $filter_type) ?> <a href="?<?= http_build_query(array_filter(['ingredient_id'=>$filter_ing,'from'=>$filter_from,'to'=>$filter_to])) ?>">×</a></span>
     <?php endif; ?>
     <?php if ($filter_from): ?>
