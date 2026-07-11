@@ -2,6 +2,7 @@
 require 'auth.php';
 require 'config.php';
 if (!can('stock_count')) { header("Location: dashboard.php?denied=1"); exit; }
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
 /* ── Business date (before 6 AM = yesterday) ── */
 $now_h  = (int)date('G');
@@ -72,6 +73,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
         echo json_encode(['ok'=>false,'msg'=>'Already submitted or not found']); exit;
     }
     echo json_encode(['ok'=>true]);
+    exit;
+}
+
+/* ══════════════════════════════════════════════
+   AJAX: reconcile — apply a submitted count to stock
+   (manager/admin only; overwrites ingredients.stock_quantity)
+══════════════════════════════════════════════ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reconcile') {
+    header('Content-Type: application/json');
+
+    // Role gate: counter cannot approve own count; separate from stock_count perm
+    if (!in_array($_SESSION['role'] ?? '', ['admin','manager'], true)) {
+        echo json_encode(['ok'=>false,'msg'=>'Not authorized to apply counts.']); exit;
+    }
+    // CSRF
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        echo json_encode(['ok'=>false,'msg'=>'Invalid session token. Reload and try again.']); exit;
+    }
+    $count_id = (int)($_POST['count_id'] ?? 0);
+    if ($count_id <= 0) { echo json_encode(['ok'=>false,'msg'=>'Invalid count.']); exit; }
+    $by = $_SESSION['username'] ?? '';
+
+    $conn->begin_transaction();
+    try {
+        // 1) Atomically claim: only if submitted + not yet reconciled (TOCTOU-safe,
+        //    mirrors the submit guard at stock_count.php:68). Single-writer POS —
+        //    a multi-server deploy would need SELECT ... FOR UPDATE on ingredients.
+        $claim = $conn->prepare("UPDATE stock_counts
+            SET reconciled_at=NOW(), reconciled_by=?
+            WHERE count_id=? AND status='submitted' AND reconciled_at IS NULL");
+        $claim->bind_param("si", $by, $count_id);
+        $claim->execute();
+        if ($claim->affected_rows === 0) {
+            $conn->rollback();
+            echo json_encode(['ok'=>false,'msg'=>'Already reconciled or not submitted.']); exit;
+        }
+        $claim->close();
+
+        // fetch business_date for the log reference
+        $bd_q = $conn->prepare("SELECT business_date FROM stock_counts WHERE count_id=?");
+        $bd_q->bind_param("i", $count_id);
+        $bd_q->execute();
+        $business_date = $bd_q->get_result()->fetch_assoc()['business_date'] ?? '';
+        $bd_q->close();
+
+        // 2) Per counted item: overwrite stock, log signed delta
+        $items_q = $conn->prepare("
+            SELECT sci.ingredient_id, sci.expected_qty, sci.actual_qty, i.stock_quantity
+            FROM stock_count_items sci
+            JOIN ingredients i ON i.ingredient_id = sci.ingredient_id
+            WHERE sci.count_id=? AND sci.actual_qty IS NOT NULL");
+        $items_q->bind_param("i", $count_id);
+        $items_q->execute();
+        $rows = $items_q->get_result()->fetch_all(MYSQLI_ASSOC);
+        $items_q->close();
+
+        $upd = $conn->prepare("UPDATE ingredients SET stock_quantity=? WHERE ingredient_id=?");
+        $log = $conn->prepare("INSERT INTO ingredient_history
+            (ingredient_id, change_type, amount, order_id, reference, created_by)
+            VALUES (?, 'count_adjust', ?, NULL, ?, ?)");
+
+        $adjusted = 0; $skipped = 0;
+        foreach ($rows as $r) {
+            $iid      = (int)$r['ingredient_id'];
+            $newStock = (int)round((float)$r['actual_qty']);
+            $oldStock = (int)$r['stock_quantity'];
+            $delta    = $newStock - $oldStock;
+            if ($delta === 0) { $skipped++; continue; }
+
+            $upd->bind_param("ii", $newStock, $iid);
+            $upd->execute();
+
+            $ref = sprintf(
+                'Stock count %s #%d: expected %s, counted %s (was %d, now %d)',
+                $business_date, $count_id,
+                rtrim(rtrim(number_format((float)$r['expected_qty'], 4, '.', ''), '0'), '.'),
+                rtrim(rtrim(number_format((float)$r['actual_qty'],   4, '.', ''), '0'), '.'),
+                $oldStock, $newStock
+            );
+            $amt = (float)$delta; // SIGNED per convention
+            $log->bind_param("idss", $iid, $amt, $ref, $by);
+            $log->execute();
+            $adjusted++;
+        }
+        $upd->close();
+        $log->close();
+
+        $conn->commit();
+        echo json_encode(['ok'=>true,'adjusted'=>$adjusted,'skipped'=>$skipped]);
+    } catch (\Throwable $e) {
+        $conn->rollback();
+        echo json_encode(['ok'=>false,'msg'=>'Apply failed — nothing changed.']);
+    }
     exit;
 }
 
