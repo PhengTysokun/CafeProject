@@ -519,7 +519,13 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     flex:2; padding:9px 12px; border-radius:9px; border:1px solid var(--border);
     background:rgba(255,255,255,.02); color:var(--text-muted); font-size:13px;
 }
-.rm-fixed-row input { flex:1; }
+.rm-fixed-row input {
+    flex:1; min-width:0;
+    background:var(--bg-input); border:1px solid var(--border); color:var(--text);
+    border-radius:9px; padding:9px 12px; font-family:'Poppins',sans-serif; font-size:13px;
+    outline:none; transition:var(--transition);
+}
+.rm-fixed-row input:focus { border-color:var(--accent); }
 .rm-btn-group { display:flex; gap:12px; margin-top:26px; }
 .rm-btn-group button {
     flex:1; padding:13px; border-radius:10px; border:none; font-weight:600;

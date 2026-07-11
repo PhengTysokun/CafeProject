@@ -11,8 +11,11 @@ if (isset($_POST['save_recipe'])) {
     // Clear old recipe
     mysqli_query($conn, "DELETE FROM product_ingredients WHERE product_id = $product_id");
 
-    // Base ingredients (multiple)
+    // Base ingredients (multiple) — aggregate by ingredient so the same base picked
+    // in two rows becomes ONE row. product_ingredients has no unique key, so duplicate
+    // rows would otherwise double-count that ingredient's stock at order time.
     if (!empty($_POST['base_ingredient'])) {
+        $baseAgg = [];
         foreach ($_POST['base_ingredient'] as $i => $ing_id) {
 
             $ing_id = (int)$ing_id;
@@ -23,12 +26,15 @@ if (isset($_POST['save_recipe'])) {
                 $amount = (int)$amountRaw; // FORCE INTEGER (g/ml)
 
                 if ($amount > 0) {
-                    mysqli_query($conn, "
-                        INSERT INTO product_ingredients (product_id, ingredient_id, amount_used)
-                        VALUES ($product_id, $ing_id, $amount)
-                    ");
+                    $baseAgg[$ing_id] = ($baseAgg[$ing_id] ?? 0) + $amount;
                 }
             }
+        }
+        foreach ($baseAgg as $ing_id => $amount) {
+            mysqli_query($conn, "
+                INSERT INTO product_ingredients (product_id, ingredient_id, amount_used)
+                VALUES ($product_id, $ing_id, $amount)
+            ");
         }
     }
 
