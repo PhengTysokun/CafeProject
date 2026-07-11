@@ -136,6 +136,40 @@ _migrate($conn, 'product_addons_fks_v1', function($db) {
     }
 });
 
+// product_ingredients (the recipe join) shipped without a composite UNIQUE and with
+// RESTRICT FKs (unlike product_sizes/product_addons which CASCADE): the same ingredient
+// could be added twice (double stock), and deleting a product that had a recipe errored
+// with FK 1451. Add UNIQUE(product_id,ingredient_id) + swap both FKs to ON DELETE CASCADE.
+_migrate($conn, 'product_ingredients_unique_cascade_v1', function($db) {
+    // 1) Collapse any existing duplicate (product_id, ingredient_id) rows into one, summing amounts.
+    $db->query("CREATE TEMPORARY TABLE _pi_agg AS
+        SELECT product_id, ingredient_id, SUM(amount_used) AS amt
+        FROM product_ingredients GROUP BY product_id, ingredient_id");
+    $db->query("DELETE FROM product_ingredients");
+    $db->query("INSERT INTO product_ingredients (product_id, ingredient_id, amount_used)
+        SELECT product_id, ingredient_id, amt FROM _pi_agg");
+    $db->query("DROP TEMPORARY TABLE _pi_agg");
+
+    // 2) Skip the structural change if the UNIQUE already exists (idempotent / added out-of-band).
+    $hasUq = (int)$db->query("SELECT COUNT(*) c FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='product_ingredients'
+          AND INDEX_NAME='uq_product_ingredient'")->fetch_assoc()['c'];
+    if ($hasUq === 0) {
+        // Drop the existing (auto-named) FKs so they can be re-added as CASCADE.
+        $fks = $db->query("SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='product_ingredients'
+              AND CONSTRAINT_TYPE='FOREIGN KEY'");
+        while ($fk = $fks->fetch_assoc()) {
+            $db->query("ALTER TABLE product_ingredients DROP FOREIGN KEY `" . $fk['CONSTRAINT_NAME'] . "`");
+        }
+        $db->query("ALTER TABLE product_ingredients
+            ADD UNIQUE KEY uq_product_ingredient (product_id, ingredient_id)");
+        $db->query("ALTER TABLE product_ingredients
+            ADD CONSTRAINT fk_pi_product    FOREIGN KEY (product_id)    REFERENCES products(product_id)       ON DELETE CASCADE,
+            ADD CONSTRAINT fk_pi_ingredient FOREIGN KEY (ingredient_id) REFERENCES ingredients(ingredient_id) ON DELETE CASCADE");
+    }
+});
+
 // Seed a starter set once (only if the library is empty)
 _migrate($conn, 'addons_seed_v1', function($db) {
     $n = (int)$db->query("SELECT COUNT(*) AS n FROM addons")->fetch_assoc()['n'];
