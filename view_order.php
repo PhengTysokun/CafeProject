@@ -1905,7 +1905,7 @@ function buildBaristaCardInner(o) {
         </div>
         <div class="bcard-sub">
             <span><i class="fa-regular fa-user"></i>${escapeHtml(o.customer_name || 'Guest')}</span>
-            <span data-timestamp="${escapeHtml(o.order_date)}"><i class="fa-regular fa-clock"></i>${elapsedShort(o.started_at || o.order_date)}</span>
+            <span data-bts="${escapeHtml(o.started_at || o.order_date)}"><i class="fa-regular fa-clock"></i>${elapsedShort(o.started_at || o.order_date)}</span>
         </div>
         ${items}
         <div class="card-footer" style="margin-top:8px">
