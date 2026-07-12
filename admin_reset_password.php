@@ -67,6 +67,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $toast = "Must-change flag removed.";
         $toast_type = 'success';
     }
+
+    // Require the employee to set up their security question
+    elseif ($action === 'require_security' && $target > 0) {
+        // Non-admin cannot target an admin account (mirrors force_reset guard)
+        if (($_SESSION['role'] ?? '') !== 'admin') {
+            $check = $conn->prepare("SELECT r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.user_id = ?");
+            $check->bind_param("i", $target);
+            $check->execute();
+            $tgt_role = $check->get_result()->fetch_assoc()['role'] ?? '';
+            if ($tgt_role === 'admin') {
+                $toast = "You cannot change an admin account.";
+                $toast_type = 'error';
+                goto render;
+            }
+        }
+        $stmt = $conn->prepare("UPDATE users SET must_set_security = 1 WHERE user_id = ?");
+        $stmt->bind_param("i", $target);
+        $stmt->execute();
+        $toast = "Security-question setup required for this employee. They'll be prompted at next login.";
+        $toast_type = 'success';
+    }
+
+    // Cancel the requirement
+    elseif ($action === 'cancel_security' && $target > 0) {
+        // Same admin-target guard as require_security/force_reset (symmetry + least surprise)
+        if (($_SESSION['role'] ?? '') !== 'admin') {
+            $check = $conn->prepare("SELECT r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.user_id = ?");
+            $check->bind_param("i", $target);
+            $check->execute();
+            $tgt_role = $check->get_result()->fetch_assoc()['role'] ?? '';
+            if ($tgt_role === 'admin') {
+                $toast = "You cannot change an admin account.";
+                $toast_type = 'error';
+                goto render;
+            }
+        }
+        $stmt = $conn->prepare("UPDATE users SET must_set_security = 0 WHERE user_id = ?");
+        $stmt->bind_param("i", $target);
+        $stmt->execute();
+        $toast = "Security-question requirement cleared.";
+        $toast_type = 'success';
+    }
 }
 
 render:
@@ -79,7 +121,7 @@ while ($rm = $rm_res->fetch_assoc()) $role_meta[$rm['slug']] = $rm;
 $_is_admin_role = ($_SESSION['role'] ?? '') === 'admin';
 $_user_where    = $_is_admin_role ? "1=1" : "r.slug != 'admin'";
 $users_result = $conn->query(
-    "SELECT u.user_id, u.username, r.slug AS role, u.security_question, u.must_change_password
+    "SELECT u.user_id, u.username, r.slug AS role, u.security_question, u.must_change_password, u.must_set_security
      FROM users u JOIN roles r ON r.id = u.role_id
      WHERE {$_user_where}
      ORDER BY r.slug DESC, u.username ASC"
@@ -90,6 +132,7 @@ while ($r = $users_result->fetch_assoc()) $all_users[] = $r;
 $total        = count($all_users);
 $sq_set       = count(array_filter($all_users, fn($u) => !empty($u['security_question'])));
 $must_change  = count(array_filter($all_users, fn($u) => $u['must_change_password']));
+$sec_required = count(array_filter($all_users, fn($u) => $u['must_set_security']));
 
 ?>
 <!DOCTYPE html>
@@ -152,7 +195,8 @@ body {
 .page-wrap { max-width:960px; margin:0 auto; padding:28px 20px 60px; }
 
 /* Stat strip */
-.stat-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:26px; }
+.stat-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:26px; }
+@media (max-width:720px){ .stat-strip{ grid-template-columns:repeat(2,1fr); } }
 .stat-card {
     background:var(--card); border:1px solid var(--border); border-radius:14px;
     padding:18px 20px; display:flex; align-items:center; gap:14px;
@@ -163,6 +207,7 @@ body {
 .stat-card:nth-child(1){animation-delay:.08s}
 .stat-card:nth-child(2){animation-delay:.15s}
 .stat-card:nth-child(3){animation-delay:.22s}
+.stat-card:nth-child(4){animation-delay:.29s}
 .stat-icon {
     width:44px; height:44px; border-radius:12px; flex-shrink:0;
     display:flex; align-items:center; justify-content:center; font-size:18px;
@@ -378,6 +423,13 @@ tbody tr:nth-child(9){animation-delay:.64s} tbody tr:nth-child(10){animation-del
                 <div class="stat-lbl">Pending Password Change</div>
             </div>
         </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background:rgba(243,156,18,.1);color:var(--warning)"><i class="fa-solid fa-user-shield"></i></div>
+            <div>
+                <div class="stat-val" style="color:<?= $sec_required > 0 ? 'var(--warning)' : 'var(--success)' ?>"><?= $sec_required ?></div>
+                <div class="stat-lbl">Security Setup Required</div>
+            </div>
+        </div>
     </div>
 
     <!-- Table -->
@@ -430,8 +482,30 @@ tbody tr:nth-child(9){animation-delay:.64s} tbody tr:nth-child(10){animation-del
                     <td>
                         <?php if (!empty($u['security_question'])): ?>
                         <span class="badge badge-ok"><i class="fa-solid fa-check"></i> Set</span>
+                        <?php elseif (!empty($u['must_set_security'])): ?>
+                        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                            <span class="badge badge-alert"><i class="fa-solid fa-hourglass-half"></i> Setup required</span>
+                            <?php if ($u['user_id'] != $_SESSION['user_id']): ?>
+                            <form method="POST" style="display:inline">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                <input type="hidden" name="action" value="cancel_security">
+                                <input type="hidden" name="target_user_id" value="<?= $u['user_id'] ?>">
+                                <button type="submit" class="btn-sm"><i class="fa-solid fa-xmark"></i> Cancel</button>
+                            </form>
+                            <?php endif; ?>
+                        </div>
                         <?php else: ?>
-                        <span class="badge badge-missing"><i class="fa-solid fa-exclamation"></i> Not set</span>
+                        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                            <span class="badge badge-missing"><i class="fa-solid fa-exclamation"></i> Not set</span>
+                            <?php if ($u['user_id'] != $_SESSION['user_id']): ?>
+                            <form method="POST" style="display:inline">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                <input type="hidden" name="action" value="require_security">
+                                <input type="hidden" name="target_user_id" value="<?= $u['user_id'] ?>">
+                                <button type="submit" class="btn-sm"><i class="fa-solid fa-user-shield"></i> Require setup</button>
+                            </form>
+                            <?php endif; ?>
+                        </div>
                         <?php endif; ?>
                     </td>
                     <td>
