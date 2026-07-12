@@ -7,7 +7,7 @@ $username = $_SESSION['username'] ?? '';
 $role     = $_SESSION['role']     ?? 'staff';
 
 // Load current user record
-$stmt = $conn->prepare("SELECT username, security_question, must_change_password FROM users WHERE user_id = ?");
+$stmt = $conn->prepare("SELECT username, security_question, must_change_password, must_set_security FROM users WHERE user_id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
@@ -84,18 +84,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $toast_type = 'error';
         } else {
             $hashed_ans = password_hash($answer, PASSWORD_DEFAULT);
-            $stmt3 = $conn->prepare("UPDATE users SET security_question = ?, security_answer = ? WHERE user_id = ?");
+            $stmt3 = $conn->prepare("UPDATE users SET security_question = ?, security_answer = ?, must_set_security = 0 WHERE user_id = ?");
             $stmt3->bind_param("ssi", $question, $hashed_ans, $user_id);
             $stmt3->execute();
             $toast = "Security question saved successfully!";
             $toast_type = 'success';
-            $user['security_question'] = $question;
+            $user['security_question']  = $question;
+            $user['must_set_security']  = 0;
         }
     }
 }
 
 $must_change = (bool)($user['must_change_password'] ?? 0);
 $has_sq      = !empty($user['security_question']);
+$must_set_sec = !empty($user['must_set_security']) && !$has_sq;
 $home_url = ($role === 'barista') ? 'view_order.php' : 'dashboard.php';
 ?>
 <!DOCTYPE html>
@@ -401,8 +403,16 @@ body {
     </div>
     <?php endif; ?>
 
-    <!-- Security question missing tip -->
-    <?php if (!$has_sq): ?>
+    <!-- Security question required by manager -->
+    <?php if ($must_set_sec): ?>
+    <div class="sq-missing-banner" style="border-color:rgba(243,156,18,.35);background:rgba(243,156,18,.08)">
+        <i class="fa-solid fa-user-shield" style="color:var(--warning)"></i>
+        <span style="color:var(--text)">
+            <strong>Your manager asked you to set a security question</strong> so you can recover your own password if you forget it. Please set one below.
+            &nbsp;<a href="<?= $home_url ?>" style="color:var(--text-muted);text-decoration:underline">Remind me later</a>
+        </span>
+    </div>
+    <?php elseif (!$has_sq): ?>
     <div class="sq-missing-banner">
         <i class="fa-solid fa-shield-exclamation"></i>
         <span><strong>No security question set.</strong> Set one up below so you can recover your account if you ever forget your password — without needing to contact an admin.</span>
