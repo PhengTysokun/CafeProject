@@ -258,7 +258,7 @@ if (!$order) { header("Location: find_order.php"); exit; }
 
 // ── Fetch items ──
 $stmt = $conn->prepare("
-    SELECT item_id, product_name, price, quantity, sweetness, ice, milk, addons_snapshot
+    SELECT item_id, product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot
     FROM order_items WHERE order_id = ? ORDER BY item_id ASC
 ");
 $stmt->bind_param("i", $order_id);
@@ -442,6 +442,7 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
             <?php foreach ($items as $n => $item):
                 $lineTotal = $item['price'] * $item['quantity'];
                 $customs = [];
+                if (!empty($item['size_label'])) $customs[] = 'Size: ' . $item['size_label'];
                 if (!empty($item['sweetness'])) $customs[] = 'Sweet: ' . $item['sweetness'];
                 if (!empty($item['ice']))       $customs[] = 'Ice: '   . $item['ice'];
                 if (!empty($item['milk']))      $customs[] = 'Milk: '  . $item['milk'];
