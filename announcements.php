@@ -402,16 +402,21 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 <span class="badge badge-off"><i class="fa-solid fa-circle"></i> <?= $expired ? 'Expired' : 'Hidden' ?></span>
                 <?php endif; ?>
                 <span><i class="fa-regular fa-user"></i> <?= htmlspecialchars($a['created_by']) ?></span>
-                <span><i class="fa-regular fa-clock"></i> <?= date('d M Y, g:i A', strtotime($a['created_at'])) ?></span>
-                <?php if ($a['starts_at'] && $scheduled): ?>
-                <span><i class="fa-regular fa-calendar-plus"></i> Starts <?= date('d M Y', strtotime($a['starts_at'])) ?></span>
-                <?php endif; ?>
-                <?php if ($a['expires_at']): ?>
-                <span class="<?= $expired ? 'tag-expired' : '' ?>">
-                    <i class="fa-solid fa-calendar-xmark"></i>
-                    Expires <?= date('d M Y', strtotime($a['expires_at'])) ?>
+                <span title="Date posted"><i class="fa-regular fa-clock"></i> Posted <?= date('d M Y, g:i A', strtotime($a['created_at'])) ?></span>
+                <span title="Show From"><i class="fa-regular fa-calendar-plus"></i>
+                    <?php if ($a['starts_at']): ?>
+                    Shows <?= date('d M Y', strtotime($a['starts_at'])) ?><?= $scheduled ? ' (scheduled)' : '' ?>
+                    <?php else: ?>
+                    Shows immediately
+                    <?php endif; ?>
                 </span>
-                <?php endif; ?>
+                <span title="Expires On" class="<?= $expired ? 'tag-expired' : '' ?>"><i class="fa-solid fa-calendar-xmark"></i>
+                    <?php if ($a['expires_at']): ?>
+                    Expires <?= date('d M Y', strtotime($a['expires_at'])) ?>
+                    <?php else: ?>
+                    No expiry
+                    <?php endif; ?>
+                </span>
             </div>
         </div>
         <?php endforeach; ?>
