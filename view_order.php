@@ -1915,6 +1915,32 @@ function buildBaristaCardInner(o) {
     `;
 }
 
+// ── Barista sidebar stats (queue, overdue, done today, avg wait) ──
+function updateBaristaStats() {
+    if (userRole !== 'barista') return;
+    const el = id => document.getElementById(id);
+    if (!el('stat-queue')) return;
+    let queue = 0, overdue = 0, done = 0, waitSum = 0, waitN = 0;
+    (allOrders || []).forEach(o => {
+        if (o.status === 'Preparing') {
+            queue++;
+            if (orderAgeMin(o) >= OVERDUE_MINUTES) overdue++;
+        } else if (o.status === 'Completed') {
+            done++;
+            const basis = o.started_at || o.order_date;
+            if (o.completed_at && basis) {
+                const mins = (new Date(String(o.completed_at).replace(' ','T')) - new Date(String(basis).replace(' ','T'))) / 60000;
+                if (mins >= 0) { waitSum += mins; waitN++; }
+            }
+        }
+    });
+    el('stat-queue').textContent   = queue;
+    el('stat-overdue').textContent = overdue;
+    el('stat-done').textContent    = done;
+    el('stat-avgwait').textContent = waitN ? (waitSum / waitN).toFixed(1) + 'm' : '—';
+    el('stat-overdue-row').classList.toggle('is-alert', overdue > 0);
+}
+
 // ── Add Row ──
 function addRow(o) {
     const card = document.createElement("div");
@@ -2176,6 +2202,7 @@ async function loadOrders() {
         
         // Apply filters after loading
         applyFilters();
+        updateBaristaStats();
     } catch (err) {
         console.error("Fetch failed:", err);
     }
@@ -2716,6 +2743,7 @@ setInterval(() => {
         el.textContent = timeAgo(el.dataset.timestamp);
     });
     refreshAgeBadges();
+    updateBaristaStats();
 }, 30000);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
