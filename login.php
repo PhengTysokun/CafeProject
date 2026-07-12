@@ -499,12 +499,6 @@ html, body {
                 </div>
             </div>
 
-            <label class="remember">
-                <input type="checkbox" name="remember">
-                <span class="cb"><i class="fa-solid fa-check"></i></span>
-                <span>Keep me signed in</span>
-            </label>
-
             <button type="submit" class="btn" id="btn">
                 <span class="btn-label">Sign In &nbsp;<i class="fa-solid fa-arrow-right-to-bracket"></i></span>
                 <span class="spinner"></span>
