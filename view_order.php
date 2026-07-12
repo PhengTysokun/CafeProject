@@ -1259,6 +1259,25 @@ body.barista-mode { padding: 0; }
     .bnav { flex-direction:row; margin-top:0; flex-wrap:wrap; }
 }
 [data-theme="light"] .bsidebar { background:#F5F7FA; }
+
+/* ── Barista Card ── */
+.order-card.bcard { padding: 16px 18px 14px; }
+.order-card.bcard.is-overdue { --sc: var(--danger); }
+.order-card.bcard.is-warn    { --sc: var(--warning); }
+.bcard-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; padding-left:8px; }
+.bcard-num { font-size:15px; font-weight:700; color:var(--sc, var(--accent)); letter-spacing:.02em; line-height:1.3; flex-shrink:0; }
+.bcard-badge { font-size:10.5px; font-weight:700; letter-spacing:.03em; padding:4px 10px; border-radius:20px; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+.bcard-badge.overdue { background:rgba(255,92,92,.13); color:var(--danger); }
+.bcard-badge.prep    { background:rgba(243,156,18,.13); color:var(--warning); }
+.bcard-sub { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:12px; padding:0 8px; }
+.bcard-sub i { font-size:11px; margin-right:4px; opacity:.8; }
+.bitem { padding:0 8px; margin-bottom:12px; }
+.bitem:last-of-type { margin-bottom:0; }
+.bitem-name { font-size:17px; font-weight:700; color:var(--text-light); letter-spacing:-.01em; line-height:1.25; }
+.bcat { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; padding:2px 8px; border-radius:5px; background:rgba(209,144,75,.14); color:var(--accent); flex-shrink:0; }
+.bchips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.bchip { font-size:11px; font-weight:500; padding:3px 10px; border-radius:20px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.06); color:var(--text-muted); }
+.bchip-more { background:transparent; border-style:dashed; font-style:normal; opacity:.7; }
     </style>
 </head>
 <body>
@@ -1688,6 +1707,7 @@ let allOrders = [];
 
 // ── Get user role from PHP ──
 const userRole = "<?= $_SESSION['role'] ?? 'staff' ?>";
+const OVERDUE_MINUTES = <?= (int)OVERDUE_MINUTES ?>;
 const isAdmin = userRole === 'admin';
 const canManageOrders = userRole === 'admin' || userRole === 'manager';
 const canRemake = userRole === 'admin' || userRole === 'manager' || userRole === 'staff';
@@ -1778,8 +1798,40 @@ function timeAgo(dateString) {
     return Math.floor(diff / 86400) + ' day ago';
 }
 
+// ── Barista helpers ──
+// Readable elapsed: minutes → "Xm", "Xh", "Xh Ym", "Xd"
+function elapsedShort(ts) {
+    if (!ts) return '';
+    const m = Math.max(0, Math.floor((Date.now() - new Date(ts.replace(' ','T'))) / 60000));
+    if (m < 60) return m + 'm';
+    if (m < 1440) { const h = Math.floor(m/60), r = m%60; return r ? `${h}h ${r}m` : `${h}h`; }
+    return Math.floor(m/1440) + 'd';
+}
+// Age basis: started_at when present else order_date. Guard invalid/missing dates → 0 (never NaN).
+function orderAgeMin(o) {
+    const basis = o.started_at || o.order_date;
+    if (!basis) return 0;
+    const t = new Date(String(basis).replace(' ','T')).getTime();
+    if (isNaN(t)) return 0;
+    return Math.max(0, Math.floor((Date.now() - t) / 60000));
+}
+// Chips for one item, capped with "+N more"
+function baristaItemChips(i) {
+    const chips = [];
+    if (i.size)      chips.push(escapeHtml(i.size));
+    if (i.sweetness) chips.push(escapeHtml(i.sweetness));
+    if (i.ice)       chips.push(escapeHtml(i.ice));
+    if (i.milk)      chips.push(escapeHtml(i.milk));
+    if (i.addons && i.addons.length) i.addons.forEach(a => chips.push(escapeHtml(a)));
+    const CAP = 5;
+    let shown = chips.slice(0, CAP).map(c => `<span class="bchip">${c}</span>`).join('');
+    if (chips.length > CAP) shown += `<span class="bchip bchip-more">+${chips.length - CAP} more</span>`;
+    return shown;
+}
+
 // ── Build Card Inner HTML ──
 function buildCardInner(o) {
+    if (userRole === 'barista') return buildBaristaCardInner(o);
     const tableTag = o.table_number
         ? `<span class="card-table-badge"><i class="fa-solid fa-ticket" style="font-size:9px"></i> Stand ${escapeHtml(o.table_number)}</span>`
         : '';
@@ -1831,6 +1883,38 @@ function buildCardInner(o) {
     `;
 }
 
+// ── Build Barista Card Inner HTML (station view) ──
+function buildBaristaCardInner(o) {
+    const age = orderAgeMin(o);
+    const overdue = o.status === 'Preparing' && age >= OVERDUE_MINUTES;
+    const badge = o.status === 'Preparing'
+        ? `<span class="bcard-badge ${overdue ? 'overdue' : 'prep'}">${overdue ? '<i class="fa-solid fa-triangle-exclamation"></i> Overdue' : '<i class="fa-solid fa-hourglass-half"></i> Preparing'}</span>`
+        : getStatusBadge(o.status);
+    const items = (o.items || []).map(i => `
+        <div class="bitem">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="bitem-name">${escapeHtml(String(i.quantity))}× ${escapeHtml(i.product_name)}</span>
+                ${i.category ? `<span class="bcat">${escapeHtml(i.category)}</span>` : ''}
+            </div>
+            <div class="bchips">${baristaItemChips(i)}</div>
+        </div>`).join('') || '<div style="color:var(--text-muted);font-size:12px;padding-left:8px">No items</div>';
+    return `
+        <div class="bcard-top">
+            <span class="bcard-num">#${escapeHtml(String(o.daily_order_no))}</span>
+            ${badge}
+        </div>
+        <div class="bcard-sub">
+            <span><i class="fa-regular fa-user"></i>${escapeHtml(o.customer_name || 'Guest')}</span>
+            <span data-timestamp="${escapeHtml(o.order_date)}"><i class="fa-regular fa-clock"></i>${elapsedShort(o.started_at || o.order_date)}</span>
+        </div>
+        ${items}
+        <div class="card-footer" style="margin-top:8px">
+            <div class="card-employee"><span style="opacity:.6;font-size:10px">Taken by:</span> ${escapeHtml(o.employee_name || 'Unknown')}</div>
+        </div>
+        <div class="card-actions">${getActionButtons(o)}</div>
+    `;
+}
+
 // ── Add Row ──
 function addRow(o) {
     const card = document.createElement("div");
@@ -1838,6 +1922,14 @@ function addRow(o) {
     card.className = "order-card" + (o.remake_count > 0 ? " is-remade" : "");
     card.dataset.status = o.status;
     card.dataset.orderId = o.order_id;
+    if (userRole === 'barista') {
+        card.classList.add('bcard');
+        if (o.status === 'Preparing') {
+            const age = orderAgeMin(o);
+            if (age >= OVERDUE_MINUTES) card.classList.add('is-overdue');
+            else if (age >= Math.floor(OVERDUE_MINUTES * 0.7)) card.classList.add('is-warn');
+        }
+    }
     if ((o.status === 'Completed' || o.status === 'Refunded') && !showCompleted) {
         card.style.display = 'none';
     }
@@ -1934,6 +2026,14 @@ function updateExistingRow(o) {
     }
     card.dataset.status = o.status;
     card.className = "order-card" + (o.remake_count > 0 ? " is-remade" : "");
+    if (userRole === 'barista') {
+        card.classList.add('bcard');
+        if (o.status === 'Preparing') {
+            const age = orderAgeMin(o);
+            if (age >= OVERDUE_MINUTES) card.classList.add('is-overdue');
+            else if (age >= Math.floor(OVERDUE_MINUTES * 0.7)) card.classList.add('is-warn');
+        }
+    }
     card.innerHTML = buildCardInner(o);
 }
 
