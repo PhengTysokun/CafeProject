@@ -101,7 +101,7 @@ git commit -m "feat(settings): OVERDUE_MINUTES threshold (default 10)"
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces: each order object in the `fetch` JSON gains `started_at` (string|null) and `completed_at` (string|null). Each item object gains `category` (string) **only when the requester is a barista**. Consumed by Tasks 4 (card) and 5 (stats).
+- Produces: **only when the requester is a barista**, each order object in the `fetch` JSON gains `started_at` (string|null) and `completed_at` (string|null), and each item object gains `category` (string). For cashier/manager the JSON is byte-for-byte unchanged. Consumed by Tasks 4 (card) and 5 (stats).
 
 - [ ] **Step 1: Add columns to the SELECT + JOIN**
 
@@ -122,20 +122,23 @@ In the `action === "fetch"` SQL (starts ~line 2544), add `o.started_at`, `o.comp
 ```
 - In the `GROUP BY` (~line 2582), append `, oi.product_id, p.category` so ONLY_FULL_GROUP_BY is satisfied.
 
-- [ ] **Step 2: Add started_at/completed_at to the order map**
-
-In the `if (!isset($map[$id]))` block (~line 2604), after `"order_date" => $r['order_date'],` add:
-```php
-                "started_at"    => $r['started_at'],
-                "completed_at"  => $r['completed_at'],
-```
-
-- [ ] **Step 3: Emit category per item, barista-only**
+- [ ] **Step 2: Compute the role flag + add started_at/completed_at to the order map (barista-only)**
 
 Just before the `while` loop (after `$map = [];`, ~line 2599) compute the role flag once:
 ```php
     $__isBarista = ($_SESSION['role'] ?? '') === 'barista';
 ```
+In the `if (!isset($map[$id]))` block (~line 2604), after `"order_date" => $r['order_date'],` add the two fields conditionally — build the base array, then append. Simplest: after the `$map[$id] = [ ... ];` assignment closes, add:
+```php
+            if ($__isBarista) {
+                $map[$id]["started_at"]   = $r['started_at'];
+                $map[$id]["completed_at"] = $r['completed_at'];
+            }
+```
+(Cashier/manager never receive these keys → payload byte-for-byte unchanged.)
+
+- [ ] **Step 3: Emit category per item, barista-only**
+
 In the item push (`$map[$id]["items"][] = [ ... ]`, ~line 2630), add the category key conditionally by appending after the array is built. Replace the item push block:
 ```php
         if (!empty($r['product_name'])) {
@@ -164,7 +167,7 @@ Expected: `No syntax errors detected`.
 
 - [ ] **Step 5: Verify payload as barista + regression as cashier**
 
-Log in via browser as barista **darasokun**, open DevTools Network (or use Playwright `browser_evaluate` to `fetch('view_order.php?action=fetch').then(r=>r.json())`), confirm an item has a `category` field and each order has `started_at`/`completed_at`. Then as cashier **Sok_Dara**, confirm items have **no** `category` field (regression: cashier payload unchanged apart from the two new order-level nullable fields, which their UI ignores).
+Log in via browser as barista **darasokun**, open DevTools Network (or use Playwright `browser_evaluate` to `fetch('view_order.php?action=fetch').then(r=>r.json())`), confirm an item has a `category` field and each order has `started_at`/`completed_at`. Then as cashier **Sok_Dara**, confirm orders have **no** `started_at`/`completed_at` and items have **no** `category` — cashier/manager payload is byte-for-byte unchanged.
 
 - [ ] **Step 6: Commit**
 
