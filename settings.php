@@ -38,6 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'stands' => [
             'stand_count' => (string)max(1, min(100, (int)($_POST['stand_count'] ?? 20))),
         ],
+        'barista' => [
+            'overdue_minutes' => (string)max(1, min(120, (int)($_POST['overdue_minutes'] ?? 10))),
+        ],
         default => [],
     };
 
@@ -85,6 +88,7 @@ $khr_rate        = (int)($s['khr_exchange_rate']   ?? 4100);
 $tax_rate        = (float)($s['tax_rate']          ?? 10);
 $daily_target    = (float)($s['daily_sales_target'] ?? 500);
 $stand_count     = (int)($s['stand_count'] ?? 20);
+$overdue_minutes = (int)($s['overdue_minutes']     ?? 10);
 
 $_today      = date('Y-m-d');
 $hh_expired  = $hh_end_date !== '' && $_today > $hh_end_date;
@@ -594,6 +598,7 @@ body::after {
             'tax'        => 'Tax Settings',
             'target'     => 'Sales Target',
             'stands'     => 'Stand Numbers',
+            'barista'    => 'Barista Station',
             default      => 'Settings',
         };
     ?>
@@ -933,6 +938,46 @@ body::after {
                 <div class="form-actions-info">
                     <i class="fa-solid fa-circle-info"></i>
                     Saves Stand Numbers only
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <a href="dashboard.php" class="btn btn-cancel">
+                        <i class="fa-solid fa-xmark"></i> Dashboard
+                    </a>
+                    <button type="submit" class="btn btn-save" style="padding:10px 22px;font-size:13px;">
+                        <i class="fa-solid fa-floppy-disk"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <!-- ── BARISTA SETTINGS ── -->
+    <form method="POST">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+                <div>
+                    <div class="card-title">Barista Station</div>
+                    <div class="card-sub">Configure the barista station display and order prioritization</div>
+                </div>
+            </div>
+
+            <div class="card-inner">
+                <div class="fields-grid single">
+                    <div class="field">
+                        <label><i class="fa-solid fa-clock"></i> Overdue threshold (minutes)</label>
+                        <input type="number" name="overdue_minutes" id="overdueMinutes"
+                               value="<?= $overdue_minutes ?>" min="1" max="120" step="1">
+                        <span class="field-hint">Set 1–120 minutes. Orders older than this are marked Overdue on the barista station.</span>
+                    </div>
+                </div>
+            </div>
+
+            <input type="hidden" name="_section" value="barista">
+            <div class="form-actions">
+                <div class="form-actions-info">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Saves Barista Station settings only
                 </div>
                 <div style="display:flex;gap:10px;">
                     <a href="dashboard.php" class="btn btn-cancel">
