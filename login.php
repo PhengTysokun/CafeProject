@@ -5,7 +5,10 @@ require 'config.php';
 $error = '';
 if (isset($_GET['timeout']))       $error = 'Session expired due to inactivity. Please sign in again.';
 elseif (isset($_GET['error'])) {
-    if ($_GET['error'] === 'locked') $error = 'Too many failed attempts. Try again in 15 minutes.';
+    if ($_GET['error'] === 'locked') {
+        $mins  = isset($_GET['mins']) ? max(1, (int)$_GET['mins']) : 15;
+        $error = "Too many failed attempts. Try again in {$mins} minute" . ($mins === 1 ? '' : 's') . '.';
+    }
     else {
         $left  = isset($_GET['left']) ? (int)$_GET['left'] : null;
         $error = 'Invalid username or password.' . ($left !== null && $left > 0 ? " {$left} attempt(s) left." : '');
@@ -18,7 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rate = $conn->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
     $rate->bind_param("s", $ip); $rate->execute();
     $attempts = (int)$rate->get_result()->fetch_row()[0];
-    if ($attempts >= 5) { header("Location: login.php?error=locked"); exit; }
+    if ($attempts >= 5) {
+        // Real remaining time: window clears once the oldest blocking attempt ages past 15 min
+        $mq = $conn->prepare("SELECT TIMESTAMPDIFF(SECOND, MIN(attempted_at), NOW()) FROM login_attempts WHERE ip = ? AND attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+        $mq->bind_param("s", $ip); $mq->execute();
+        $ageSec = (int)($mq->get_result()->fetch_row()[0] ?? 0);
+        $mins   = max(1, (int)ceil((900 - $ageSec) / 60));
+        header("Location: login.php?error=locked&mins=" . $mins); exit;
+    }
 
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
