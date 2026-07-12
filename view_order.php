@@ -1373,6 +1373,9 @@ async function toggleClock() {
         var data = await resp.json();
 
         if (data.ok) {
+            // Sidebar clock pill (barista station) — keep in sync with the nav button
+            var pill = document.getElementById('bClockPill');
+            var pillText = document.getElementById('bClockPillText');
             if (!clocked) {
                 btn.dataset.clocked = '1';
                 btn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Clock Out';
@@ -1380,6 +1383,8 @@ async function toggleClock() {
                 btn.style.borderColor = 'rgba(255,95,95,.25)';
                 btn.style.color = '#ff6b6b';
                 btn.title = 'Clocked in at ' + (data.time || '');
+                if (pill) { pill.style.background = 'rgba(85,224,135,.1)'; pill.style.color = '#55e087'; }
+                if (pillText) { pillText.textContent = 'Clocked in ' + (data.time || ''); }
             } else {
                 btn.dataset.clocked = '0';
                 btn.innerHTML = '<i class="fa-solid fa-fingerprint"></i> Clock In';
@@ -1387,6 +1392,8 @@ async function toggleClock() {
                 btn.style.borderColor = 'rgba(85,224,135,.25)';
                 btn.style.color = '#55e087';
                 btn.title = 'Not clocked in';
+                if (pill) { pill.style.background = 'rgba(255,95,95,.08)'; pill.style.color = '#ff6b6b'; }
+                if (pillText) { pillText.textContent = 'Not clocked in'; }
             }
             showClockToast(data.msg, false);
         } else {
@@ -1431,9 +1438,9 @@ function showClockToast(msg, isErr) {
         $bcBg = $bc ? 'rgba(85,224,135,.1)' : 'rgba(255,95,95,.08)';
         $bcCol = $bc ? '#55e087' : '#ff6b6b';
      ?>
-     <div class="bclock-pill" style="background:<?= $bcBg ?>;color:<?= $bcCol ?>">
+     <div class="bclock-pill" id="bClockPill" style="background:<?= $bcBg ?>;color:<?= $bcCol ?>">
         <span style="width:7px;height:7px;border-radius:50%;background:currentColor"></span>
-        <?= $bc ? ('Clocked in '.htmlspecialchars($_clock_since)) : 'Not clocked in' ?>
+        <span id="bClockPillText"><?= $bc ? ('Clocked in '.htmlspecialchars($_clock_since)) : 'Not clocked in' ?></span>
      </div>
      <div class="bstats">
         <div class="bstats-label">Today</div>
