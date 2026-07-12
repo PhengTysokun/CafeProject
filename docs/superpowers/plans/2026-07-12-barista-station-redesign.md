@@ -338,10 +338,13 @@ function elapsedShort(ts) {
     if (m < 1440) { const h = Math.floor(m/60), r = m%60; return r ? `${h}h ${r}m` : `${h}h`; }
     return Math.floor(m/1440) + 'd';
 }
-// Age basis: started_at when present else order_date
+// Age basis: started_at when present else order_date. Guard invalid/missing dates → 0 (never NaN).
 function orderAgeMin(o) {
     const basis = o.started_at || o.order_date;
-    return Math.max(0, Math.floor((Date.now() - new Date(String(basis).replace(' ','T'))) / 60000));
+    if (!basis) return 0;
+    const t = new Date(String(basis).replace(' ','T')).getTime();
+    if (isNaN(t)) return 0;
+    return Math.max(0, Math.floor((Date.now() - t) / 60000));
 }
 // Chips for one item, capped with "+N more"
 function baristaItemChips(i) {
