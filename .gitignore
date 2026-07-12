@@ -16,6 +16,11 @@ db_coffee_export.sql
 # Browser automation artifacts (Playwright MCP screenshots/snapshots)
 /.playwright-mcp/
 
+# Dev screenshots dumped in repo root (real assets live in images/ and uploads/)
+/*.png
+/*.jpg
+/*.jpeg
+
 # Logs & temp
 *.log
 *.bak
