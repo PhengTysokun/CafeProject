@@ -37,11 +37,19 @@ consistent, `must_set_security` is also soft:
 - At next login the employee lands on `profile.php` (security tab) with a banner:
   *"Your manager asked you to set a security question so you can recover your own
   password."*
-- They may **"Skip for now"** and use the POS/dashboard; they are **re-prompted every
-  login** until they save one.
+- They may **"Remind me later"** and use the POS/dashboard; they are **re-prompted every
+  login** until they save one. (If they navigate back to `profile.php` in the same
+  session the banner reappears — the flag is still `1` and the security tab is the GET
+  default — so "later" means "next visit," not a permanent dismissal.)
 - Saving a security question **clears the flag**.
 
 No hard lockout — a cashier is never blocked from working mid-shift over this.
+
+**Timing note:** the banner is driven by `$user`, loaded at page start, so it appears
+on the employee's **next login / next `profile.php` load** — not mid-session. If an
+admin sets the flag while the employee is already sitting on a page, the employee sees
+it on their next navigation to `profile.php` or next login. This is fine for the soft
+model and is intended, not a bug.
 
 ## Data model (1 migration, guarded, in config.php)
 
@@ -66,19 +74,23 @@ No hard lockout — a cashier is never blocked from working mid-shift over this.
     target's role and reject if it's `admin`.
   - `UPDATE users SET must_set_security = 1 WHERE user_id = ?` (prepared, int-bound).
   - Flash confirmation ("Security-question setup required for <username>.").
-- **New action `cancel_security_requirement`** (same guards): `UPDATE users SET
+- **New action `cancel_security`** (same guards): `UPDATE users SET
   must_set_security = 0 WHERE user_id = ?` — lets an admin undo the requirement.
+  (Paired with `require_security` — consistent verb-noun naming in the handler block.)
 - **Load the flag**: add `u.must_set_security` to the user list query
   (`admin_reset_password.php:82`).
 - **Badge rendering** (replaces the current 2-state Set / "Not set" at ~431-434) —
   three states:
   - Has `security_question` → existing "Set" badge (unchanged).
   - No question **and** `must_set_security = 1` → **"Setup required"** badge (amber/
-    hourglass) + a small **"Cancel"** form (`cancel_security_requirement`).
+    hourglass) + a small **"Cancel"** form (`cancel_security`).
   - No question and not required → **"Not set"** badge + a **"Require setup"** button
     (`require_security`) inside a POST form with CSRF + target `user_id`.
-- Optional (documented, **not** in scope unless trivial): a summary stat "N require
-  setup" alongside the existing `must_change` count.
+- **Summary stat (included):** a "N require setup" count alongside the existing
+  `must_change` count — `$sec_required = count(array_filter($all_users, fn($u) =>
+  !empty($u['must_set_security'])))` (computed from the already-loaded `$all_users`, no
+  extra query), rendered next to the existing counts. Gives the admin at-a-glance
+  visibility of how many employees are pending — the point of the feature.
 
 ### 3. login.php
 - The successful-login redirect (`login.php:53`) currently: `if
@@ -99,6 +111,14 @@ No hard lockout — a cashier is never blocked from working mid-shift over this.
 - In the `save_security` success branch (`profile.php:85-92`): also set
   `must_set_security = 0` in the same UPDATE (or a follow-up UPDATE), and update the
   in-memory `$user` so the banner disappears on the post-save render.
+- **The password-change handler (`profile.php:56-64`) must NOT touch
+  `must_set_security`** — it already only writes `password` + `must_change_password`
+  (verified). The flag survives a password change on purpose: an employee with both
+  flags changes their password first, then is re-prompted for the security question on
+  the following login. Do not add `must_set_security` to that UPDATE.
+- **"Remind me later" link:** points to `$home_url` (`profile.php:99`); relabelled from
+  "Skip for now" to make clear it's a deferral, not a permanent dismissal (re-prompts
+  next visit).
 
 ## Security & correctness invariants
 
@@ -120,6 +140,11 @@ No hard lockout — a cashier is never blocked from working mid-shift over this.
   is left out to keep reset behavior unchanged and the requirement an explicit admin
   action. Deferred, not built.
 - Changing how the answer is hashed/verified, or the `forgot_password.php` flow.
+- **Audit-logging the require/cancel action** — considered, rejected. The only audit
+  table (`role_audit_log`) is role-scoped (`action, role_slug, detail, performed_by`,
+  no user/target column) and doesn't fit a per-employee event; a new general audit
+  table for one flag toggle is over-engineering. The flash + the visible badge state
+  are sufficient. Revisit if a general user-action audit log is introduced later.
 
 ## Testing
 
