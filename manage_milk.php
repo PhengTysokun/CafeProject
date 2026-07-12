@@ -187,6 +187,11 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 .icon-btn:disabled { opacity:.3; cursor:not-allowed; }
 .act-link { color:var(--accent); text-decoration:none; font-size:12px; font-weight:600; margin-right:10px; cursor:pointer; background:none; border:none; font-family:inherit; }
 .danger-link { color:var(--danger); }
+/* ── Page entrance fade-in ── */
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.topbar { animation: fadeInUp .45s ease both; }
+.wrap   { animation: fadeInUp .55s .08s ease both; }
+@media (prefers-reduced-motion: reduce) { .topbar, .wrap { animation: none; } }
 </style>
 </head>
 <body>

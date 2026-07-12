@@ -360,6 +360,11 @@ body {
 .addon-chip.on { border-color:var(--accent); background:rgba(209,144,75,.12); color:var(--accent); }
 /* Checkboxes must not inherit the full-width text-input styling */
 .input-group input[type="checkbox"] { width:auto; padding:0; margin:0; flex:0 0 auto; }
+/* ── Page entrance fade-in ── */
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.container      { animation: fadeInUp .45s ease both; }
+.form-container { animation: fadeInUp .55s .08s ease both; }
+@media (prefers-reduced-motion: reduce) { .container, .form-container { animation: none; } }
 </style>
 </head>
 
