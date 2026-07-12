@@ -2549,6 +2549,8 @@ if ($action === "fetch") {
             o.total,
             o.status,
             o.order_date,
+            o.started_at,
+            o.completed_at,
             o.token_number,
             o.employee_id,
             o.employee_name,
@@ -2569,18 +2571,21 @@ if ($action === "fetch") {
             oi.milk,
             oi.size_label,
             oi.addons_snapshot,
-            oi.quantity
+            oi.quantity,
+            oi.product_id,
+            p.category
         FROM orders o
         LEFT JOIN employees emp ON emp.employee_id = o.employee_id
         LEFT JOIN users u ON u.user_id = emp.user_id
         LEFT JOIN roles ro ON ro.id = u.role_id
         LEFT JOIN order_remakes rm ON rm.order_id = o.order_id
         LEFT JOIN order_items oi ON o.order_id = oi.order_id
+        LEFT JOIN products p ON p.product_id = oi.product_id
         LEFT JOIN order_cancellations oc ON oc.order_id = o.order_id
         LEFT JOIN order_refunds orr ON orr.order_id = o.order_id
         WHERE o.business_date = ?
-        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.addons_snapshot, oi.quantity
-        ORDER BY 
+        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.addons_snapshot, oi.quantity, oi.product_id, p.category
+        ORDER BY
             CASE o.status
                 WHEN 'PendingPayment' THEN 1
                 WHEN 'Paid' THEN 2
@@ -2597,6 +2602,7 @@ if ($action === "fetch") {
     $result = $stmt->get_result();
 
     $map = [];
+    $__isBarista = ($_SESSION['role'] ?? '') === 'barista';
     while ($r = $result->fetch_assoc()) {
         $id = $r['order_id'];
 
@@ -2624,10 +2630,14 @@ if ($action === "fetch") {
                 "remake_reasons" => $r['remake_reasons'] ? explode('|||', $r['remake_reasons']) : [],
                 "items" => []
             ];
+            if ($__isBarista) {
+                $map[$id]["started_at"]   = $r['started_at'];
+                $map[$id]["completed_at"] = $r['completed_at'];
+            }
         }
 
         if (!empty($r['product_name'])) {
-            $map[$id]["items"][] = [
+            $item = [
                 "item_id"      => (int)$r["item_id"],
                 "product_name" => $r["product_name"],
                 "size"         => $r["size_label"],
@@ -2637,6 +2647,8 @@ if ($action === "fetch") {
                 "addons"       => array_map(fn($a) => $a['name'], json_decode($r["addons_snapshot"] ?? '[]', true) ?: []),
                 "quantity"     => $r["quantity"]
             ];
+            if ($__isBarista) { $item["category"] = $r["category"] ?? ''; }
+            $map[$id]["items"][] = $item;
         }
     }
 
