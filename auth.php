@@ -141,6 +141,14 @@ if (!isset($_SESSION['user_id'])) {
 // ── Session timeout: 30 minutes idle ──
 $timeout = 30 * 60;
 if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > $timeout) {
+    // Auto-clock-out on idle timeout (mirror logout.php) so an open attendance
+    // record closes at the real time, not at 23:59:59 via the day-rollover sweep.
+    require_once 'config.php';
+    $uid = (int)$_SESSION['user_id'];
+    $conn->query("UPDATE attendance
+                  SET clock_out    = NOW(),
+                      hours_worked = ROUND(TIMESTAMPDIFF(MINUTE, clock_in, NOW()) / 60, 2)
+                  WHERE user_id = $uid AND date = CURDATE() AND clock_out IS NULL");
     session_unset();
     session_destroy();
     header("Location: login.php?timeout=1");
@@ -155,7 +163,12 @@ $_rs->bind_param("i", $_SESSION['user_id']);
 $_rs->execute();
 $_rr = $_rs->get_result()->fetch_assoc();
 if (!$_rr) {
-    // Account deleted — force logout
+    // Account deleted — force logout (close any open attendance record first)
+    $uid = (int)$_SESSION['user_id'];
+    $conn->query("UPDATE attendance
+                  SET clock_out    = NOW(),
+                      hours_worked = ROUND(TIMESTAMPDIFF(MINUTE, clock_in, NOW()) / 60, 2)
+                  WHERE user_id = $uid AND date = CURDATE() AND clock_out IS NULL");
     session_unset();
     session_destroy();
     header("Location: login.php");
