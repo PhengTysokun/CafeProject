@@ -280,6 +280,9 @@ _migrate($conn, 'stock_counts_reconciled_v1', function($db) {
         ADD COLUMN IF NOT EXISTS reconciled_at DATETIME NULL,
         ADD COLUMN IF NOT EXISTS reconciled_by VARCHAR(100) NULL");
 });
+_migrate($conn, 'users_must_set_security_v1', function($db) {
+    $db->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_set_security TINYINT(1) NOT NULL DEFAULT 0");
+});
 _migrate($conn, 'order_remakes_v1', function($db) {
     $db->query("CREATE TABLE IF NOT EXISTS order_remakes (
         id INT AUTO_INCREMENT PRIMARY KEY,
