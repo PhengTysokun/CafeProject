@@ -2527,12 +2527,10 @@ async function completeOrder(id) {
                 const res = await r.json();
 
                 if (res.ok) {
-                    const row = document.getElementById("row-" + id);
-                    if (row) {
-                        const orderNumber = row.querySelector('.card-order-num')?.textContent?.replace('#', '') || id;
-                        const customerName = row.querySelector('.card-customer-name')?.textContent?.trim() || 'Customer';
-                        callOrder(id, customerName, orderNumber);
-                    }
+                    const _o = (allOrders || []).find(x => Number(x.order_id) === Number(id));
+                    const orderNumber = _o ? _o.daily_order_no : id;
+                    const customerName = _o ? (_o.customer_name || 'Guest') : 'Customer';
+                    callOrder(id, customerName, orderNumber);
                     await loadOrders();
                     showToast("✅ Order completed");
                 } else {
