@@ -96,6 +96,18 @@ In `admin_reset_password.php`, after the `clear_flag` block (which ends at line 
 
     // Cancel the requirement
     elseif ($action === 'cancel_security' && $target > 0) {
+        // Same admin-target guard as require_security/force_reset (symmetry + least surprise)
+        if (($_SESSION['role'] ?? '') !== 'admin') {
+            $check = $conn->prepare("SELECT r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.user_id = ?");
+            $check->bind_param("i", $target);
+            $check->execute();
+            $tgt_role = $check->get_result()->fetch_assoc()['role'] ?? '';
+            if ($tgt_role === 'admin') {
+                $toast = "You cannot change an admin account.";
+                $toast_type = 'error';
+                goto render;
+            }
+        }
         $stmt = $conn->prepare("UPDATE users SET must_set_security = 0 WHERE user_id = ?");
         $stmt->bind_param("i", $target);
         $stmt->execute();
@@ -103,7 +115,7 @@ In `admin_reset_password.php`, after the `clear_flag` block (which ends at line 
         $toast_type = 'success';
     }
 ```
-(The `require_security` guard mirrors `force_reset` at lines 27-37, including the `goto render;` early-exit; `cancel_security` only clears a flag so it needs no admin-target guard beyond the shared CSRF/perm gate — but keep it symmetric and harmless.)
+(Both actions mirror the `force_reset` admin-target guard at lines 27-37, including the `goto render;` early-exit, so a non-admin can never set OR clear the flag on an admin account.)
 
 - [ ] **Step 2: Load the flag in the user list query**
 
@@ -118,9 +130,9 @@ to:
 
 - [ ] **Step 3: Compute the summary stat**
 
-After `admin_reset_password.php:92` (`$must_change = ...`), add:
+After `admin_reset_password.php:92` (`$must_change = ...`), add — mirroring the bare-truthy style of the adjacent `$must_change` count (line 92) so all three counts read the same way:
 ```php
-$sec_required = count(array_filter($all_users, fn($u) => !empty($u['must_set_security'])));
+$sec_required = count(array_filter($all_users, fn($u) => $u['must_set_security']));
 ```
 
 - [ ] **Step 4: Render the stat card**
@@ -365,11 +377,11 @@ Expected: lands on `profile.php`; the amber **"Your manager asked you to set a s
 - [ ] **Step 4: Employee sets it → flag clears**
 
 As the flagged employee on `profile.php`, fill the Security Question card (pick a question, type an answer, confirm current password) and save.
-Expected: "Security question saved" toast; banner gone. DB check:
+Expected: "Security question saved" toast; banner gone. DB check (confirms both the question AND the hashed answer were written):
 ```bash
-php -r "require 'config.php'; \$r=\$conn->query(\"SELECT username,must_set_security,security_question IS NOT NULL AS has_q FROM users WHERE username='<THAT_USER>'\")->fetch_assoc(); print_r(\$r);"
+php -r "require 'config.php'; \$r=\$conn->query(\"SELECT username, must_set_security, security_question IS NOT NULL AS has_q, security_answer IS NOT NULL AS has_a FROM users WHERE username='<THAT_USER>'\")->fetch_assoc(); print_r(\$r);"
 ```
-Expected: `must_set_security=0`, `has_q=1`. Back on `admin_reset_password.php` (as Sokun) the badge now reads **"Set"**.
+Expected: `must_set_security=0`, `has_q=1`, `has_a=1`. Back on `admin_reset_password.php` (as Sokun) the badge now reads **"Set"**.
 
 - [ ] **Step 5: Recovery works + password change doesn't clear flag**
 
@@ -379,7 +391,23 @@ Expected: `must_set_security=0`, `has_q=1`. Back on `admin_reset_password.php` (
 php -r "require 'config.php'; \$conn->query(\"UPDATE users SET must_set_security=0 WHERE username IN ('<TESTUSERS>')\"); echo 'cleared test flags';"
 ```
 
-- [ ] **Step 6: Cancel action**
+- [ ] **Step 6: Both flags — password priority, then security (highest-risk interaction)**
+
+Set BOTH flags on a fresh test user via DB:
+```bash
+php -r "require 'config.php'; \$conn->query(\"UPDATE users SET must_change_password=1, must_set_security=1 WHERE username='<TESTUSER>'\"); echo 'both flags set';"
+```
+- Log in as that user → lands on `profile.php`. Change the **password** (Change Password card). Verify afterward:
+```bash
+php -r "require 'config.php'; print_r(\$conn->query(\"SELECT username,must_change_password,must_set_security FROM users WHERE username='<TESTUSER>'\")->fetch_assoc());"
+```
+Expected: `must_change_password=0`, `must_set_security=1` (password cleared, security flag survives — confirms the password handler does NOT touch it).
+- Log out, log back in → still routed to `profile.php`, now showing the **security** banner. Employee sets the security question → `must_set_security=0`. Clean up any leftover test flags:
+```bash
+php -r "require 'config.php'; \$conn->query(\"UPDATE users SET must_set_security=0 WHERE username IN ('<TESTUSERS>')\"); echo 'cleared test flags';"
+```
+
+- [ ] **Step 7: Cancel action**
 
 As Sokun, on a "Setup required" row click **Cancel** → badge returns to "Not set", flag `0`, stat decrements.
 
