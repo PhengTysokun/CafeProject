@@ -1218,6 +1218,47 @@ if ($action === ""):
 [data-theme="light"] .customizations,
 [data-theme="light"] .custom-chip,
 [data-theme="light"] .chip{ background:#F5F7FA; border-color:#E2E5EA; }
+
+/* ── Barista Station Shell ── */
+body.barista-mode { padding: 0; }
+.bstation { display: flex; min-height: 100vh; }
+.bsidebar {
+    width: 250px; flex-shrink: 0; position: sticky; top: 0; align-self: flex-start;
+    height: 100vh; overflow-y: auto;
+    background: rgba(255,255,255,0.02); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 22px; padding: 22px 18px;
+}
+.bsidebar-brand { display:flex; align-items:center; gap:11px; font-weight:800; font-size:16px; color:var(--text); }
+.bsidebar-brand .logo { width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,var(--accent),var(--accent-dark));display:flex;align-items:center;justify-content:center;color:#000;flex-shrink:0; }
+.buser { display:flex; align-items:center; gap:11px; }
+.buser .avatar { width:40px;height:40px;border-radius:11px;background:rgba(209,144,75,.15);border:1px solid rgba(209,144,75,.25);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent); }
+.bclock-pill { display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;padding:6px 12px;border-radius:9px; }
+.bstats { display:flex; flex-direction:column; gap:9px; }
+.bstats-label { font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-muted);font-weight:700; }
+.bstat-row { display:flex; align-items:center; justify-content:space-between; padding:9px 12px; border-radius:10px; background:rgba(255,255,255,.03); border:1px solid var(--border); transition:var(--transition); }
+.bstat-row .k { font-size:12.5px; color:var(--text-muted); display:flex; align-items:center; gap:8px; }
+.bstat-row .v { font-size:16px; font-weight:800; color:var(--text); }
+.bstat-row.is-alert { border-color:rgba(255,92,92,.35); background:rgba(255,92,92,.06); }
+.bstat-row.is-alert .v { color: var(--danger); }
+.bnav { display:flex; flex-direction:column; gap:6px; margin-top:auto; }
+.bnav a, .bnav button {
+    display:flex; align-items:center; gap:10px; text-decoration:none;
+    font-size:13px; font-weight:600; color:var(--text-muted);
+    padding:10px 12px; border-radius:10px; border:1px solid transparent;
+    background:none; cursor:pointer; font-family:'Poppins',sans-serif; text-align:left; width:100%;
+    transition:all .18s;
+}
+.bnav a:hover, .bnav button:hover { color:var(--text); background:rgba(255,255,255,.04); }
+.bmain { flex:1; min-width:0; padding: 24px 28px 60px; }
+.bmain-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; margin-bottom:20px; }
+.bmain-head h1 { font-size:22px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:10px; }
+.barista-mode .orders-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+@media (max-width: 820px) {
+    .bstation { flex-direction: column; }
+    .bsidebar { width:100%; height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center; }
+    .bnav { flex-direction:row; margin-top:0; flex-wrap:wrap; }
+}
+[data-theme="light"] .bsidebar { background:#F5F7FA; }
     </style>
 </head>
 <body>
@@ -1233,88 +1274,7 @@ if ($action === ""):
     <div class="steam"></div>
 </div>
 
-<!-- Top-left: Nav + Identity -->
-<div style="position:fixed;top:24px;left:24px;display:flex;flex-direction:column;gap:18px;z-index:100;">
-    <div style="display:flex;gap:10px;">
-        <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
-        <a href="menu.php" class="back" style="position:static;">
-            <i class="fa-solid fa-mug-hot"></i> Menu
-        </a>
-        <?php endif; ?>
-        <?php if (($_SESSION['role'] ?? '') === 'barista'): ?>
-        <a href="recipes_view.php" class="back" style="position:static;">
-            <i class="fa-solid fa-book-open"></i> Drink Recipe
-        </a>
-        <?php else: ?>
-        <a href="dashboard.php" class="back" style="position:static;">
-            <i class="fa-solid fa-gauge"></i> Dashboard
-        </a>
-        <?php endif; ?>
-    </div>
-    <div style="padding-left:4px;">
-        <div style="font-size:16px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:3px;">
-            <?= $_greeting ?>, <span style="color:var(--accent);"><?= $_vo_username ?></span>
-        </div>
-        <div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px;margin-bottom:7px;">
-            <i class="fa-regular fa-calendar" style="font-size:11px;"></i> <?= $_date_str ?>
-        </div>
-        <div style="display:inline-flex;align-items:center;gap:6px;
-                    padding:4px 12px;border-radius:50px;font-size:12px;font-weight:600;
-                    color:<?= $_role_color ?>;
-                    background:<?= $_role_color ?>18;
-                    border:1px solid <?= $_role_color ?>40;
-                    letter-spacing:.3px;">
-            <span style="width:7px;height:7px;border-radius:50%;background:<?= $_role_color ?>;
-                         box-shadow:0 0 5px <?= $_role_color ?>;
-                         animation:pulse-dot 2s infinite;display:inline-block;"></span>
-            <?= $_role_label ?>
-        </div>
-    </div>
-</div>
-
-<!-- Top-right: Clock + Profile + Logout -->
-<div style="position:fixed;top:24px;right:24px;display:flex;gap:8px;z-index:100;">
-    <?php
-    $clocked = $_is_clocked_in;
-    $clkBg    = $clocked ? 'rgba(255,95,95,.08)'   : 'rgba(85,224,135,.08)';
-    $clkBr    = $clocked ? 'rgba(255,95,95,.25)'   : 'rgba(85,224,135,.25)';
-    $clkColor = $clocked ? '#ff6b6b'               : '#55e087';
-    $clkIcon  = $clocked ? 'right-from-bracket'    : 'fingerprint';
-    $clkLabel = $clocked ? 'Clock Out'             : 'Clock In';
-    $clkTitle = $clocked ? 'Clocked in at ' . $_clock_since : 'Not clocked in';
-    ?>
-    <button id="clockBtn" data-clocked="<?= $clocked ? '1' : '0' ?>"
-        onclick="toggleClock()"
-        title="<?= htmlspecialchars($clkTitle) ?>"
-        style="position:static;display:inline-flex;align-items:center;gap:7px;
-               padding:7px 14px;border-radius:8px;font-size:13px;font-family:'Poppins',sans-serif;font-weight:500;cursor:pointer;
-               background:<?= $clkBg ?>;border:1px solid <?= $clkBr ?>;color:<?= $clkColor ?>;transition:all .2s;">
-        <i class="fa-solid fa-<?= $clkIcon ?>"></i> <?= $clkLabel ?>
-    </button>
-    <?php if (can('my_profile')): ?>
-    <a href="profile.php" class="back" style="position:static;" title="My Profile">
-        <i class="fa-solid fa-circle-user"></i> Profile
-    </a>
-    <?php endif; ?>
-    <a href="shift_report.php" class="back" style="position:static;background:rgba(255,95,95,.08);border-color:rgba(255,95,95,.25);color:#ff6b6b;" title="View shift report &amp; log out">
-        <i class="fa-solid fa-right-from-bracket"></i> Logout
-    </a>
-</div>
-
-<!-- Header -->
-<div style="text-align:center;padding-top:28px;margin-bottom:32px;">
-    <h1 style="color:var(--accent);font-size:28px;font-weight:800;display:inline-flex;align-items:center;
-               gap:10px;margin:0 0 8px;text-shadow:0 0 24px rgba(209,144,75,.2);">
-        <i class="fa-solid fa-receipt"></i> Orders
-    </h1>
-    <br>
-    <div class="vo-live-badge" style="display:inline-flex;">
-        <span class="dot"></span> Live
-    </div>
-</div>
-
-<!-- Announcements -->
-<div id="annContainer" style="max-width:900px;margin:0 auto 0;padding:0 20px;"></div>
+<?php $r = $_SESSION['role'] ?? ''; ?>
 <style>
 @keyframes annIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
 </style>
@@ -1435,8 +1395,140 @@ function showClockToast(msg, isErr) {
 }
 </script>
 
+<?php if ($r === 'barista'): ?>
+<script>document.body.classList.add('barista-mode');</script>
+<div class="bstation">
+  <aside class="bsidebar">
+     <div class="bsidebar-brand"><span class="logo"><i class="fa-solid fa-mug-hot"></i></span> Bird's Nest</div>
+     <div class="buser">
+        <div class="avatar"><?= strtoupper(substr($_vo_username,0,1)) ?></div>
+        <div>
+           <div style="font-weight:700;font-size:14px;color:var(--text)"><?= $_vo_username ?></div>
+           <div style="font-size:11px;color:<?= $_role_color ?>"><?= $_role_label ?></div>
+        </div>
+     </div>
+     <?php
+        $bc = $_is_clocked_in;
+        $bcBg = $bc ? 'rgba(85,224,135,.1)' : 'rgba(255,95,95,.08)';
+        $bcCol = $bc ? '#55e087' : '#ff6b6b';
+     ?>
+     <div class="bclock-pill" style="background:<?= $bcBg ?>;color:<?= $bcCol ?>">
+        <span style="width:7px;height:7px;border-radius:50%;background:currentColor"></span>
+        <?= $bc ? ('Clocked in '.htmlspecialchars($_clock_since)) : 'Not clocked in' ?>
+     </div>
+     <div class="bstats">
+        <div class="bstats-label">Today</div>
+        <div class="bstat-row" id="stat-queue-row"><span class="k"><i class="fa-solid fa-hourglass-half"></i> In Queue</span><span class="v" id="stat-queue">0</span></div>
+        <div class="bstat-row" id="stat-overdue-row"><span class="k"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span><span class="v" id="stat-overdue">0</span></div>
+        <div class="bstat-row" id="stat-done-row"><span class="k"><i class="fa-solid fa-check"></i> Done Today</span><span class="v" id="stat-done">0</span></div>
+        <div class="bstat-row" id="stat-avg-row"><span class="k"><i class="fa-regular fa-clock"></i> Avg Wait</span><span class="v" id="stat-avgwait">—</span></div>
+     </div>
+     <nav class="bnav">
+        <a href="recipes_view.php"><i class="fa-solid fa-book-open"></i> Drink Recipes</a>
+        <?php if (can('my_profile')): ?><a href="profile.php"><i class="fa-solid fa-circle-user"></i> Profile</a><?php endif; ?>
+        <button id="clockBtn" data-clocked="<?= $_is_clocked_in ? '1':'0' ?>" onclick="toggleClock()">
+           <i class="fa-solid fa-<?= $_is_clocked_in ? 'right-from-bracket':'fingerprint' ?>"></i> <?= $_is_clocked_in ? 'Clock Out':'Clock In' ?>
+        </button>
+        <a href="shift_report.php" style="color:#ff6b6b"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+     </nav>
+  </aside>
+  <main class="bmain">
+     <div class="bmain-head">
+        <h1><i class="fa-solid fa-receipt"></i> Orders <span class="vo-live-badge"><span class="dot"></span> Live</span></h1>
+        <input type="text" id="searchInput" placeholder="Search name, order #, drink…" oninput="searchOrders()"
+               style="width:280px;max-width:100%;padding:10px 16px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text);font-family:'Poppins',sans-serif;font-size:14px;outline:none">
+     </div>
+     <div id="annContainer" style="margin-bottom:14px"></div>
+     <div class="container" style="max-width:none;margin:0">
+        <div class="orders-grid" id="ordersBody"></div>
+     </div>
+  </main>
+</div>
+<?php else: ?>
+<!-- Top-left: Nav + Identity -->
+<div style="position:fixed;top:24px;left:24px;display:flex;flex-direction:column;gap:18px;z-index:100;">
+    <div style="display:flex;gap:10px;">
+        <?php if (($_SESSION['role'] ?? '') !== 'barista'): ?>
+        <a href="menu.php" class="back" style="position:static;">
+            <i class="fa-solid fa-mug-hot"></i> Menu
+        </a>
+        <?php endif; ?>
+        <?php if (($_SESSION['role'] ?? '') === 'barista'): ?>
+        <a href="recipes_view.php" class="back" style="position:static;">
+            <i class="fa-solid fa-book-open"></i> Drink Recipe
+        </a>
+        <?php else: ?>
+        <a href="dashboard.php" class="back" style="position:static;">
+            <i class="fa-solid fa-gauge"></i> Dashboard
+        </a>
+        <?php endif; ?>
+    </div>
+    <div style="padding-left:4px;">
+        <div style="font-size:16px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:3px;">
+            <?= $_greeting ?>, <span style="color:var(--accent);"><?= $_vo_username ?></span>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px;margin-bottom:7px;">
+            <i class="fa-regular fa-calendar" style="font-size:11px;"></i> <?= $_date_str ?>
+        </div>
+        <div style="display:inline-flex;align-items:center;gap:6px;
+                    padding:4px 12px;border-radius:50px;font-size:12px;font-weight:600;
+                    color:<?= $_role_color ?>;
+                    background:<?= $_role_color ?>18;
+                    border:1px solid <?= $_role_color ?>40;
+                    letter-spacing:.3px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:<?= $_role_color ?>;
+                         box-shadow:0 0 5px <?= $_role_color ?>;
+                         animation:pulse-dot 2s infinite;display:inline-block;"></span>
+            <?= $_role_label ?>
+        </div>
+    </div>
+</div>
+
+<!-- Top-right: Clock + Profile + Logout -->
+<div style="position:fixed;top:24px;right:24px;display:flex;gap:8px;z-index:100;">
+    <?php
+    $clocked = $_is_clocked_in;
+    $clkBg    = $clocked ? 'rgba(255,95,95,.08)'   : 'rgba(85,224,135,.08)';
+    $clkBr    = $clocked ? 'rgba(255,95,95,.25)'   : 'rgba(85,224,135,.25)';
+    $clkColor = $clocked ? '#ff6b6b'               : '#55e087';
+    $clkIcon  = $clocked ? 'right-from-bracket'    : 'fingerprint';
+    $clkLabel = $clocked ? 'Clock Out'             : 'Clock In';
+    $clkTitle = $clocked ? 'Clocked in at ' . $_clock_since : 'Not clocked in';
+    ?>
+    <button id="clockBtn" data-clocked="<?= $clocked ? '1' : '0' ?>"
+        onclick="toggleClock()"
+        title="<?= htmlspecialchars($clkTitle) ?>"
+        style="position:static;display:inline-flex;align-items:center;gap:7px;
+               padding:7px 14px;border-radius:8px;font-size:13px;font-family:'Poppins',sans-serif;font-weight:500;cursor:pointer;
+               background:<?= $clkBg ?>;border:1px solid <?= $clkBr ?>;color:<?= $clkColor ?>;transition:all .2s;">
+        <i class="fa-solid fa-<?= $clkIcon ?>"></i> <?= $clkLabel ?>
+    </button>
+    <?php if (can('my_profile')): ?>
+    <a href="profile.php" class="back" style="position:static;" title="My Profile">
+        <i class="fa-solid fa-circle-user"></i> Profile
+    </a>
+    <?php endif; ?>
+    <a href="shift_report.php" class="back" style="position:static;background:rgba(255,95,95,.08);border-color:rgba(255,95,95,.25);color:#ff6b6b;" title="View shift report &amp; log out">
+        <i class="fa-solid fa-right-from-bracket"></i> Logout
+    </a>
+</div>
+
+<!-- Header -->
+<div style="text-align:center;padding-top:28px;margin-bottom:32px;">
+    <h1 style="color:var(--accent);font-size:28px;font-weight:800;display:inline-flex;align-items:center;
+               gap:10px;margin:0 0 8px;text-shadow:0 0 24px rgba(209,144,75,.2);">
+        <i class="fa-solid fa-receipt"></i> Orders
+    </h1>
+    <br>
+    <div class="vo-live-badge" style="display:inline-flex;">
+        <span class="dot"></span> Live
+    </div>
+</div>
+
+<!-- Announcements -->
+<div id="annContainer" style="max-width:900px;margin:0 auto 0;padding:0 20px;"></div>
+
 <!-- Status Tabs -->
-<?php $r = $_SESSION['role'] ?? ''; ?>
 <div class="status-tabs" id="statusTabs">
     <?php if ($r !== 'staff' && $r !== 'barista'): ?>
     <button class="status-tab active" data-status="all" onclick="filterStatus('all')">
@@ -1490,6 +1582,7 @@ function showClockToast(msg, isErr) {
 <div class="container">
     <div class="orders-grid" id="ordersBody"></div>
 </div>
+<?php endif; ?>
 
 <!-- Call Notification Modal -->
 <div class="call-modal" id="callModal">
