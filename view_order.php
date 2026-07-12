@@ -1455,7 +1455,7 @@ function showClockToast(msg, isErr) {
         <button id="clockBtn" data-clocked="<?= $_is_clocked_in ? '1':'0' ?>" onclick="toggleClock()">
            <i class="fa-solid fa-<?= $_is_clocked_in ? 'right-from-bracket':'fingerprint' ?>"></i> <?= $_is_clocked_in ? 'Clock Out':'Clock In' ?>
         </button>
-        <a href="shift_report.php" style="color:#ff6b6b"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+        <a href="logout.php" style="color:#ff6b6b" title="Log out &amp; clock out"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
      </nav>
   </aside>
   <main class="bmain">
