@@ -233,7 +233,11 @@ _migrate($conn, 'announcements_starts_at_v1', function($db) {
     }
 });
 
-$conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
+$conn->query("CREATE TABLE IF NOT EXISTS login_attempts (id INT AUTO_INCREMENT PRIMARY KEY, ip VARCHAR(45) NOT NULL, username VARCHAR(255) NOT NULL DEFAULT '', attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX idx_ip_time (ip, attempted_at)) DEFAULT CHARSET=utf8mb4");
+_migrate($conn, 'login_attempts_username_v1', function($db) {
+    $db->query("ALTER TABLE login_attempts ADD COLUMN IF NOT EXISTS username VARCHAR(255) NOT NULL DEFAULT '' AFTER ip");
+    $db->query("ALTER TABLE login_attempts ADD INDEX IF NOT EXISTS idx_user_time (username, attempted_at)");
+});
 
 // Canonical table is cash_counts (renamed from the legacy cash_reconciliations).
 // Create it under the real name so we never recreate the old zombie every load.
