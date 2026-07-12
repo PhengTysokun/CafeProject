@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked) {
     if ($action === 'find_user') {
         $username = trim($_POST['username'] ?? '');
         $stmt = $conn->prepare(
-            "SELECT user_id, security_question FROM users WHERE username = ? AND role != 'customer' LIMIT 1"
+            "SELECT user_id, security_question FROM users WHERE username = ? LIMIT 1"
         );
         $stmt->bind_param("s", $username);
         $stmt->execute();
