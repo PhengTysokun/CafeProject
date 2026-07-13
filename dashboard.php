@@ -1054,11 +1054,16 @@ body.no-sidebar{--sidebar-w:0px;}
 .inv-logoutbtn{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:10px;border:1px solid #a33;background:transparent;color:#ff6b6b;font-weight:600;font-size:13px;text-decoration:none}
 .inv-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 18px;border-radius:12px;background:rgba(255,107,107,.09);border:1px solid rgba(255,107,107,.28);color:#ff9a9a;text-decoration:none;font-size:14px;font-weight:600}
 .inv-banner-cta{color:#ff6b6b;white-space:nowrap}
-[data-theme=light] .inv-navitem.active{color:#fff}
 [data-theme=light] .inv-avatar,[data-theme=light] .inv-navitem.active{color:#3a2600}
+body.inv-mode .main{padding:0;max-width:none;margin:0}
 </style>
 </head>
-<body<?= $_is_mgr ? '' : ' class="no-sidebar"' ?>>
+<?php
+$_bodyClasses = [];
+if (!$_is_mgr) { $_bodyClasses[] = 'no-sidebar'; }
+if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mode'; }
+?>
+<body<?= $_bodyClasses ? ' class="' . htmlspecialchars(implode(' ', $_bodyClasses)) . '"' : '' ?>>
 
 <?php if ($_is_mgr): ?>
 <button class="menu-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
@@ -1363,6 +1368,7 @@ body.no-sidebar{--sidebar-w:0px;}
     </script>
     <?php endif; ?>
 
+    <?php if (($_SESSION['role'] ?? '') !== 'inventory_clerk'): ?>
     <!-- HEADER -->
     <div class="dash-header fu" style="animation-delay:.0s">
         <div>
@@ -1424,6 +1430,7 @@ body.no-sidebar{--sidebar-w:0px;}
         </a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
     <?php endif; ?>
 
     <?php if ($_is_mgr): ?>
@@ -1646,7 +1653,13 @@ body.no-sidebar{--sidebar-w:0px;}
               </button>
               <div class="inv-notifpanel" id="invNotifPanel"><!-- filled in Task 6 --></div>
             </div>
-            <button class="inv-clockbtn" id="clockBtn" data-clocked="0"><i class="fa-solid fa-clock"></i> Clock In</button>
+            <?php
+            $_invClocked  = $_is_clocked_in;
+            $_invClkIcon  = $_invClocked ? 'right-from-bracket' : 'fingerprint';
+            $_invClkLabel = $_invClocked ? 'Clock Out' : 'Clock In';
+            $_invClkTitle = $_invClocked ? 'Clocked in at ' . $_clock_since : 'Not clocked in';
+            ?>
+            <button class="inv-clockbtn" id="clockBtn" onclick="toggleClock()" data-clocked="<?= $_invClocked ? '1' : '0' ?>" title="<?= htmlspecialchars($_invClkTitle) ?>"><i class="fa-solid fa-<?= $_invClkIcon ?>"></i> <?= $_invClkLabel ?></button>
             <a class="inv-logoutbtn" href="logout.php"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
           </div>
         </header>
@@ -1917,9 +1930,11 @@ setInterval(updateSidebarClock,1000);
 
 /* ── Time of day greeting ── */
 (function(){
+    const el=document.getElementById('timeOfDay');
+    if(!el)return;
     const h=new Date().getHours();
     const g=h<12?'morning':h<17?'afternoon':'evening';
-    document.getElementById('timeOfDay').textContent=g;
+    el.textContent=g;
 })();
 
 
@@ -1965,8 +1980,10 @@ function toggleTheme(){
 document.addEventListener('DOMContentLoaded',()=>{
     if(localStorage.getItem('theme')==='light'){
         document.documentElement.setAttribute('data-theme','light');
-        document.getElementById('themeIcon').className='fa-solid fa-sun';
-        document.getElementById('themeText').textContent='Light';
+        const icon=document.getElementById('themeIcon');
+        const text=document.getElementById('themeText');
+        if(icon) icon.className='fa-solid fa-sun';
+        if(text) text.textContent='Light';
     }
 });
 
