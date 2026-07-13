@@ -1920,13 +1920,19 @@ function buildBaristaCardInner(o) {
             </div>
             <div class="bchips">${baristaItemChips(i)}</div>
         </div>`).join('') || '<div style="color:var(--text-muted);font-size:12px;padding-left:8px">No items</div>';
+    // Fulfilment type from order_type (drink_in / drink_out); real name + stand no. when present
+    const isOut     = o.order_type === 'drink_out';
+    const typeLabel = isOut ? 'Drink Out' : 'Drink In';
+    const typeIcon  = isOut ? 'fa-bag-shopping' : 'fa-mug-hot';
+    const standTag  = (!isOut && o.table_number) ? ` · Stand ${escapeHtml(o.table_number)}` : '';
+    const realName  = (o.customer_name && o.customer_name !== 'Guest') ? ` · ${escapeHtml(o.customer_name)}` : '';
     return `
         <div class="bcard-top">
             <span class="bcard-num">#${escapeHtml(String(o.daily_order_no))}</span>
             ${badge}
         </div>
         <div class="bcard-sub">
-            <span><i class="fa-regular fa-user"></i>${(o.customer_name && o.customer_name !== 'Guest') ? escapeHtml(o.customer_name) : 'Walk-in'}</span>
+            <span><i class="fa-solid ${typeIcon}"></i> ${typeLabel}${standTag}${realName}</span>
             <span data-bts="${escapeHtml(o.started_at || o.order_date)}"><i class="fa-regular fa-clock"></i>${elapsedShort(o.started_at || o.order_date)}</span>
         </div>
         ${items}
@@ -2098,6 +2104,8 @@ function applyFilters() {
             // While searching, cross all tabs — match on text content
             const text = card.textContent.toLowerCase();
             visible = text.includes(query);
+            // Barista queue is Preparing-only: search must not resurrect Completed/Cancelled cards
+            if (userRole === 'barista' && cardStatus !== 'Preparing') visible = false;
         } else {
             // Normal tab + showCompleted filtering
             if (currentFilter !== 'all' && cardStatus !== currentFilter) visible = false;
@@ -2801,6 +2809,7 @@ if ($action === "fetch") {
             o.prepared_by,
             o.prepared_by_role,
             o.table_number,
+            o.order_type,
             COUNT(rm.id) AS remake_count,
             oc.cancel_reason,
             oc.cancelled_by,
@@ -2876,6 +2885,7 @@ if ($action === "fetch") {
             if ($__isBarista) {
                 $map[$id]["started_at"]   = $r['started_at'];
                 $map[$id]["completed_at"] = $r['completed_at'];
+                $map[$id]["order_type"]   = $r['order_type'];
             }
         }
 
