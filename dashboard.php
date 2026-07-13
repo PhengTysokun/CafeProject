@@ -1052,6 +1052,13 @@ body.no-sidebar{--sidebar-w:0px;}
 .inv-clockbtn{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:10px;border:1px solid #2e8b57;background:transparent;color:#3ecf8e;font-weight:600;font-size:13px;cursor:pointer}
 .inv-clockbtn[data-clocked="1"]{border-color:var(--amber);color:var(--amber)}
 .inv-logoutbtn{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:10px;border:1px solid #a33;background:transparent;color:#ff6b6b;font-weight:600;font-size:13px;text-decoration:none}
+.inv-notifpanel{position:absolute;top:46px;right:0;width:320px;max-height:420px;overflow:auto;background:var(--surface-2);border:1px solid var(--border-hi);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.4);display:none;z-index:60}
+.inv-notifpanel.open{display:block}
+.inv-notif-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;color:var(--text)}
+.inv-notif-clear{border:none;background:transparent;color:var(--amber);font-size:12px;font-weight:600;cursor:pointer}
+.inv-notif-item{display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.inv-notif-msg{font-size:12px;color:var(--text-muted);margin-top:2px}
+.inv-notif-foot{display:block;text-align:center;padding:12px;color:var(--amber);text-decoration:none;font-size:13px}
 .inv-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 18px;border-radius:12px;background:rgba(255,107,107,.09);border:1px solid rgba(255,107,107,.28);color:#ff9a9a;text-decoration:none;font-size:14px;font-weight:600}
 .inv-banner-cta{color:#ff6b6b;white-space:nowrap}
 [data-theme=light] .inv-avatar,[data-theme=light] .inv-navitem.active{color:#3a2600}
@@ -1688,7 +1695,25 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
               <button class="inv-iconbtn" id="invBell"><i class="fa-solid fa-bell"></i>
                 <?php if ($_unread_ann > 0): ?><span class="inv-bellcount" id="invBellCount"><?= $_unread_ann ?></span><?php endif; ?>
               </button>
-              <div class="inv-notifpanel" id="invNotifPanel"><!-- filled in Task 6 --></div>
+              <div class="inv-notifpanel" id="invNotifPanel">
+                <div class="inv-notif-head"><span>Notifications</span><button class="inv-notif-clear" onclick="invMarkAllRead()">Mark all read</button></div>
+                <div class="inv-notif-list" id="invNotifList">
+                  <?php
+                  $nres = $conn->query("SELECT id, title, message, type, created_at FROM announcements
+                     WHERE is_active=1 AND (expires_at IS NULL OR expires_at>=CURDATE())
+                       AND (starts_at IS NULL OR starts_at<=CURDATE())
+                     ORDER BY created_at DESC LIMIT 6");
+                  if (!$nres || !$nres->num_rows): ?>
+                    <div class="inv-empty" style="padding:14px">You're all caught up.</div>
+                  <?php else: while ($n=$nres->fetch_assoc()):
+                    $tc = $n['type']==='urgent'?'#ff6b6b':($n['type']==='warning'?'#f0b429':'#5b9bd5'); ?>
+                    <div class="inv-notif-item"><span class="inv-actdot" style="background:<?= $tc ?>"></span>
+                      <div><div class="inv-acttext"><?= htmlspecialchars($n['title']) ?></div>
+                      <div class="inv-notif-msg"><?= htmlspecialchars($n['message']) ?></div></div></div>
+                  <?php endwhile; endif; ?>
+                </div>
+                <a class="inv-notif-foot" href="announcements.php">View all notifications</a>
+              </div>
             </div>
             <?php
             $_invClocked  = $_is_clocked_in;
@@ -2174,19 +2199,24 @@ async function toggleClock(){
         var data = await resp.json();
 
         if (data.ok) {
+            var isInv = btn.classList.contains('inv-clockbtn');
             if (!clocked) {
                 btn.dataset.clocked = '1';
                 btn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Clock Out';
-                btn.style.background = 'rgba(255,95,95,.08)';
-                btn.style.borderColor = 'rgba(255,95,95,.25)';
-                btn.style.color = '#ff6b6b';
+                if (!isInv) {
+                    btn.style.background = 'rgba(255,95,95,.08)';
+                    btn.style.borderColor = 'rgba(255,95,95,.25)';
+                    btn.style.color = '#ff6b6b';
+                }
                 btn.title = 'Clocked in at ' + (data.time || '');
             } else {
                 btn.dataset.clocked = '0';
                 btn.innerHTML = '<i class="fa-solid fa-fingerprint"></i> Clock In';
-                btn.style.background = 'rgba(85,224,135,.08)';
-                btn.style.borderColor = 'rgba(85,224,135,.25)';
-                btn.style.color = '#55e087';
+                if (!isInv) {
+                    btn.style.background = 'rgba(85,224,135,.08)';
+                    btn.style.borderColor = 'rgba(85,224,135,.25)';
+                    btn.style.color = '#55e087';
+                }
                 btn.title = 'Not clocked in';
             }
             showToast(data.msg, 'success');
@@ -2298,6 +2328,23 @@ function invFilterLow(mode, btn){
     const sev=r.dataset.sev; let show = mode==='all' || (mode==='critical'&&sev==='critical') || (mode==='low'&&(sev==='low'||sev==='critical'));
     r.style.display = show ? '' : 'none';
   });
+}
+</script>
+<script>
+(function(){
+  var bell=document.getElementById('invBell'), panel=document.getElementById('invNotifPanel');
+  if(bell){bell.addEventListener('click',function(e){e.stopPropagation();panel.classList.toggle('open');});
+    document.addEventListener('click',function(){panel.classList.remove('open');});
+    panel.addEventListener('click',function(e){e.stopPropagation();});}
+  var tbtn=document.getElementById('invThemeBtn');
+  if(tbtn){tbtn.addEventListener('click',function(){
+    var cur=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
+    document.documentElement.setAttribute('data-theme',cur); localStorage.setItem('theme',cur);});}
+})();
+function invMarkAllRead(){
+  var c=document.getElementById('invBellCount'); if(c)c.style.display='none';
+  fetch('mark_announcements_read.php',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'}}).catch(function(){});
+  document.getElementById('invNotifPanel').classList.remove('open');
 }
 </script>
 </body>
