@@ -1062,6 +1062,8 @@ body.no-sidebar{--sidebar-w:0px;}
 .inv-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 18px;border-radius:12px;background:rgba(255,107,107,.09);border:1px solid rgba(255,107,107,.28);color:#ff9a9a;text-decoration:none;font-size:14px;font-weight:600}
 .inv-banner-cta{color:#ff6b6b;white-space:nowrap}
 [data-theme=light] .inv-avatar,[data-theme=light] .inv-navitem.active{color:#3a2600}
+[data-theme=light] .inv-banner{background:rgba(214,58,58,.08);border-color:rgba(214,58,58,.32);color:#b91c1c}
+[data-theme=light] .inv-banner-cta{color:#b91c1c}
 body.inv-mode .main{padding:0;max-width:none;margin:0}
 .inv-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 .inv-card{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:20px}
@@ -1100,6 +1102,15 @@ body.inv-mode .main{padding:0;max-width:none;margin:0}
 .inv-acttext{font-size:13px;color:var(--text)}
 .inv-actago{font-size:11px;color:var(--text-muted);margin-top:2px}
 .inv-empty{font-size:13px;color:var(--text-muted);padding:6px 0}
+@media(max-width:1000px){
+  .inv-body{grid-template-columns:1fr}
+  .inv-stats{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:640px){
+  .inv-sidebar{display:none}
+  .inv-stats{grid-template-columns:1fr}
+  .inv-main{padding:16px}
+}
 </style>
 </head>
 <?php
