@@ -1910,7 +1910,7 @@ function buildBaristaCardInner(o) {
     const age = orderAgeMin(o);
     const overdue = o.status === 'Preparing' && age >= OVERDUE_MINUTES;
     const badge = o.status === 'Preparing'
-        ? `<span class="bcard-badge ${overdue ? 'overdue' : 'prep'}">${overdue ? '<i class="fa-solid fa-triangle-exclamation"></i> Overdue' : '<i class="fa-solid fa-hourglass-half"></i> Preparing'}</span>`
+        ? `<span class="bcard-badge ${overdue ? 'overdue' : 'prep'}">${overdue ? '<i class="fa-solid fa-circle-exclamation"></i> Overdue' : '<i class="fa-solid fa-hourglass-half"></i> Preparing'}</span>`
         : getStatusBadge(o.status);
     const items = (o.items || []).map(i => `
         <div class="bitem">
