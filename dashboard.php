@@ -1024,6 +1024,38 @@ body.no-sidebar{--sidebar-w:0px;}
     .qx-tile i{width:42px;height:42px;font-size:20px;}
     .qx-hero{font-size:15px;min-height:54px;padding:14px 20px;max-width:none;}
 }
+
+/* ── INVENTORY-CLERK DASHBOARD (StockMate layout) ── */
+.inv-shell{display:flex;gap:0;min-height:100vh}
+.inv-sidebar{width:230px;flex:0 0 230px;background:var(--surface-2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 14px;gap:6px}
+.inv-brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;color:var(--text);padding:6px 8px 14px}
+.inv-brand i{color:var(--amber)}
+.inv-nav{display:flex;flex-direction:column;gap:2px;flex:1}
+.inv-navitem{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:var(--text-muted);text-decoration:none;font-size:14px;font-weight:500;transition:background .12s,color .12s}
+.inv-navitem i{width:18px;text-align:center}
+.inv-navitem:hover{background:var(--border);color:var(--text)}
+.inv-navitem.active{background:var(--amber);color:#1a1205;font-weight:700}
+.inv-userchip{display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;border:1px solid var(--border);text-decoration:none;color:var(--text)}
+.inv-avatar{width:36px;height:36px;border-radius:9px;background:var(--amber);color:#1a1205;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+.inv-uname{font-size:13px;font-weight:700;color:var(--text)}
+.inv-urole{font-size:11px;color:var(--text-muted)}
+.inv-main{flex:1;min-width:0;padding:24px 28px;display:flex;flex-direction:column;gap:20px}
+.inv-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.inv-greet{font-size:22px;font-weight:800;color:var(--text)}
+.inv-greet span{color:var(--amber)}
+.inv-date{font-size:13px;color:var(--text-muted);margin-top:2px}
+.inv-hcluster{display:flex;align-items:center;gap:10px}
+.inv-iconbtn{position:relative;width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:15px}
+.inv-iconbtn:hover{color:var(--text);border-color:var(--border-hi)}
+.inv-bellwrap{position:relative}
+.inv-bellcount{position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px}
+.inv-clockbtn{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:10px;border:1px solid #2e8b57;background:transparent;color:#3ecf8e;font-weight:600;font-size:13px;cursor:pointer}
+.inv-clockbtn[data-clocked="1"]{border-color:var(--amber);color:var(--amber)}
+.inv-logoutbtn{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:10px;border:1px solid #a33;background:transparent;color:#ff6b6b;font-weight:600;font-size:13px;text-decoration:none}
+.inv-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 18px;border-radius:12px;background:rgba(255,107,107,.09);border:1px solid rgba(255,107,107,.28);color:#ff9a9a;text-decoration:none;font-size:14px;font-weight:600}
+.inv-banner-cta{color:#ff6b6b;white-space:nowrap}
+[data-theme=light] .inv-navitem.active{color:#fff}
+[data-theme=light] .inv-avatar,[data-theme=light] .inv-navitem.active{color:#3a2600}
 </style>
 </head>
 <body<?= $_is_mgr ? '' : ' class="no-sidebar"' ?>>
@@ -1573,6 +1605,65 @@ body.no-sidebar{--sidebar-w:0px;}
     </div>
 
     <?php else: /* non-admin/manager: role-aware focus + quick-access tiles */ ?>
+    <?php if (($_SESSION['role'] ?? '') === 'inventory_clerk'): ?>
+
+    <!-- ═══ INVENTORY-CLERK DASHBOARD (StockMate layout) ═══ -->
+    <div class="inv-shell">
+      <aside class="inv-sidebar">
+        <div class="inv-brand"><i class="fa-solid fa-mug-hot"></i><span>Bird's Nest</span></div>
+        <nav class="inv-nav">
+          <a class="inv-navitem active" href="dashboard.php"><i class="fa-solid fa-gauge-high"></i><span>Dashboard</span></a>
+          <?php if (can('products')): ?><a class="inv-navitem" href="products.php"><i class="fa-solid fa-cube"></i><span>Products</span></a><?php endif; ?>
+          <?php if (can('ingredients')): ?><a class="inv-navitem" href="ingredients.php"><i class="fa-solid fa-flask"></i><span>Ingredients</span></a><?php endif; ?>
+          <?php if (can('recipes')): ?><a class="inv-navitem" href="recipes_view.php"><i class="fa-solid fa-utensils"></i><span>Recipes</span></a><?php endif; ?>
+          <?php if (can('suppliers')): ?><a class="inv-navitem" href="suppliers.php"><i class="fa-solid fa-truck-ramp-box"></i><span>Suppliers</span></a><?php endif; ?>
+          <?php if (can('purchase_orders')): ?><a class="inv-navitem" href="purchase_orders.php"><i class="fa-solid fa-file-invoice"></i><span>Purchase Orders</span></a><?php endif; ?>
+          <?php if (can('report')): ?><a class="inv-navitem" href="report.php"><i class="fa-solid fa-chart-column"></i><span>Reports</span></a><?php endif; ?>
+          <a class="inv-navitem" href="settings.php"><i class="fa-solid fa-gear"></i><span>Settings</span></a>
+        </nav>
+        <?php if (can('my_profile')): ?>
+        <a href="profile.php" class="inv-userchip">
+        <?php else: ?><div class="inv-userchip" style="cursor:default"><?php endif; ?>
+          <div class="inv-avatar"><?= strtoupper(substr($admin_name,0,2)) ?></div>
+          <div><div class="inv-uname"><?= htmlspecialchars($admin_name) ?></div>
+          <div class="inv-urole"><?= htmlspecialchars($_cur_role_name) ?></div></div>
+        <?php if (can('my_profile')): ?></a><?php else: ?></div><?php endif; ?>
+      </aside>
+
+      <main class="inv-main">
+        <header class="inv-header">
+          <div>
+            <div class="inv-greet"><?php
+              $h=(int)date('G'); echo $h<12?'Good morning':($h<18?'Good afternoon':'Good evening');
+            ?>, <span><?= htmlspecialchars($admin_name) ?></span></div>
+            <div class="inv-date"><?= date('l, F j, Y') ?></div>
+          </div>
+          <div class="inv-hcluster">
+            <button class="inv-iconbtn" id="invThemeBtn" title="Toggle theme"><i class="fa-solid fa-sun"></i></button>
+            <div class="inv-bellwrap">
+              <button class="inv-iconbtn" id="invBell"><i class="fa-solid fa-bell"></i>
+                <?php if ($_unread_ann > 0): ?><span class="inv-bellcount" id="invBellCount"><?= $_unread_ann ?></span><?php endif; ?>
+              </button>
+              <div class="inv-notifpanel" id="invNotifPanel"><!-- filled in Task 6 --></div>
+            </div>
+            <button class="inv-clockbtn" id="clockBtn" data-clocked="0"><i class="fa-solid fa-clock"></i> Clock In</button>
+            <a class="inv-logoutbtn" href="logout.php"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+          </div>
+        </header>
+
+        <?php if ((int)$low_stock > 0): ?>
+        <a class="inv-banner" href="ingredients.php">
+          <span><i class="fa-solid fa-triangle-exclamation"></i> <?= (int)$low_stock ?> item<?= $low_stock==1?'':'s' ?> low on stock — restock needed soon</span>
+          <span class="inv-banner-cta">Review Stock <i class="fa-solid fa-chevron-right"></i></span>
+        </a>
+        <?php endif; ?>
+
+        <!-- stat cards → Task 3 -->
+        <!-- tiles + rail → Task 4 & 5 -->
+      </main>
+    </div>
+
+    <?php else: ?>
 
     <?php
     // ── Role-aware focus card: surface each role's single most relevant task on landing ──
@@ -1802,6 +1893,8 @@ body.no-sidebar{--sidebar-w:0px;}
         </div>
         <?php endif; ?>
     </div>
+
+    <?php endif; ?>
 
     <?php endif; /* end admin/manager vs employee view */ ?>
 
