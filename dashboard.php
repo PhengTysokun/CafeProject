@@ -1056,6 +1056,12 @@ body.no-sidebar{--sidebar-w:0px;}
 .inv-banner-cta{color:#ff6b6b;white-space:nowrap}
 [data-theme=light] .inv-avatar,[data-theme=light] .inv-navitem.active{color:#3a2600}
 body.inv-mode .main{padding:0;max-width:none;margin:0}
+.inv-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.inv-card{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:20px}
+.inv-card-ico{font-size:20px;margin-bottom:14px}
+.inv-card-val{font-size:30px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
+.inv-card-lbl{font-size:13px;color:var(--text-muted);margin-top:6px}
+.inv-card-sub{font-size:12px;color:var(--text-muted);margin-top:8px}
 </style>
 </head>
 <?php
@@ -1671,7 +1677,38 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
         </a>
         <?php endif; ?>
 
-        <!-- stat cards → Task 3 -->
+        <section class="inv-stats">
+          <div class="inv-card">
+            <div class="inv-card-ico" style="color:var(--amber)"><i class="fa-solid fa-cube"></i></div>
+            <div class="inv-card-val"><?= number_format($inv_total_products) ?></div>
+            <div class="inv-card-lbl">Total Products</div>
+            <div class="inv-card-sub">Active catalog</div>
+          </div>
+          <div class="inv-card">
+            <div class="inv-card-ico" style="color:#ff6b6b"><i class="fa-solid fa-arrow-trend-down"></i></div>
+            <div class="inv-card-val" style="color:<?= $low_stock>0?'#ff6b6b':'var(--text)' ?>"><?= (int)$low_stock ?></div>
+            <div class="inv-card-lbl">Low Stock Items</div>
+            <div class="inv-card-sub"><?= $low_stock>0?'Restock needed soon':'Stock levels healthy' ?></div>
+          </div>
+          <div class="inv-card">
+            <div class="inv-card-ico" style="color:#5b9bd5"><i class="fa-solid fa-cart-shopping"></i></div>
+            <div class="inv-card-val"><?= (int)$inv_pending_po ?></div>
+            <div class="inv-card-lbl">Pending Orders</div>
+            <div class="inv-card-sub"><?= (int)$inv_pending_po ?> awaiting delivery</div>
+          </div>
+          <div class="inv-card">
+            <div class="inv-card-ico" style="color:#3ecf8e"><i class="fa-solid fa-chart-column"></i></div>
+            <div class="inv-card-val"><?= number_format($inv_usage_this) ?></div>
+            <div class="inv-card-lbl">Monthly Usage</div>
+            <div class="inv-card-sub">
+              <?php if ($inv_usage_delta !== null): ?>
+                <span style="color:<?= $inv_usage_delta>=0?'#3ecf8e':'#ff6b6b' ?>">
+                  <i class="fa-solid fa-arrow-<?= $inv_usage_delta>=0?'up':'down' ?>"></i>
+                  <?= abs($inv_usage_delta) ?>% vs last month</span>
+              <?php else: ?>units deducted this month<?php endif; ?>
+            </div>
+          </div>
+        </section>
         <!-- tiles + rail → Task 4 & 5 -->
       </main>
     </div>
