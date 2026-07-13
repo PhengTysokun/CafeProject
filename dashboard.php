@@ -1062,6 +1062,18 @@ body.inv-mode .main{padding:0;max-width:none;margin:0}
 .inv-card-val{font-size:30px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
 .inv-card-lbl{font-size:13px;color:var(--text-muted);margin-top:6px}
 .inv-card-sub{font-size:12px;color:var(--text-muted);margin-top:8px}
+.inv-body{display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start}
+.inv-content{display:flex;flex-direction:column;gap:12px}
+.inv-sec-label{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-top:8px}
+.inv-tiles{display:flex;flex-direction:column;gap:10px}
+.inv-tile{display:flex;align-items:center;gap:16px;padding:16px 18px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;text-decoration:none;transition:transform .12s,border-color .12s}
+.inv-tile:hover{transform:translateY(-1px);border-color:var(--border-hi)}
+.inv-tile-ico{flex:0 0 auto;width:44px;height:44px;border-radius:11px;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;font-size:18px}
+.inv-tile>span:nth-child(2){flex:1;display:flex;flex-direction:column;gap:3px}
+.inv-tile-t{font-size:15px;font-weight:700;color:var(--text)}
+.inv-tile-d{font-size:12px;color:var(--text-muted)}
+.inv-tile-arw{color:var(--text-muted);font-size:13px}
+.inv-tile-badge{font-size:11px;font-weight:700;color:#ff9a3d;background:rgba(255,138,61,.15);padding:1px 7px;border-radius:8px;margin-left:4px}
 </style>
 </head>
 <?php
@@ -1709,7 +1721,42 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             </div>
           </div>
         </section>
-        <!-- tiles + rail → Task 4 & 5 -->
+        <div class="inv-body">
+          <div class="inv-content">
+            <?php if (can('products')||can('ingredients')||can('recipes')): ?>
+            <div class="inv-sec-label">Inventory</div>
+            <div class="inv-tiles">
+              <?php if (can('products')): ?>
+              <a class="inv-tile" href="products.php"><span class="inv-tile-ico" style="color:var(--amber)"><i class="fa-solid fa-cube"></i></span>
+                <span><span class="inv-tile-t">Products</span><span class="inv-tile-d">Manage all finished goods</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
+              <?php endif; ?>
+              <?php if (can('ingredients')): ?>
+              <a class="inv-tile" href="ingredients.php"><span class="inv-tile-ico" style="color:#3ecf8e"><i class="fa-solid fa-flask"></i></span>
+                <span><span class="inv-tile-t">Ingredients</span><span class="inv-tile-d">Raw materials &amp; components</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
+              <?php endif; ?>
+              <?php if (can('recipes')): ?>
+              <a class="inv-tile" href="recipes_view.php"><span class="inv-tile-ico" style="color:#b98add"><i class="fa-solid fa-utensils"></i></span>
+                <span><span class="inv-tile-t">Drink Recipes<?php if ($low_recipe_count>0): ?> <span class="inv-tile-badge"><?= (int)$low_recipe_count ?> low</span><?php endif; ?></span><span class="inv-tile-d">Beverage formulations</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
+              <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
+            <?php if (can('suppliers')||can('purchase_orders')): ?>
+            <div class="inv-sec-label">Procurement</div>
+            <div class="inv-tiles">
+              <?php if (can('suppliers')): ?>
+              <a class="inv-tile" href="suppliers.php"><span class="inv-tile-ico" style="color:#5b9bd5"><i class="fa-solid fa-truck-ramp-box"></i></span>
+                <span><span class="inv-tile-t">Suppliers</span><span class="inv-tile-d">Vendor management</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
+              <?php endif; ?>
+              <?php if (can('purchase_orders')): ?>
+              <a class="inv-tile" href="purchase_orders.php"><span class="inv-tile-ico" style="color:var(--amber)"><i class="fa-solid fa-file-invoice"></i></span>
+                <span><span class="inv-tile-t">Purchase Orders</span><span class="inv-tile-d">Track and manage POs</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
+              <?php endif; ?>
+            </div>
+            <?php endif; ?>
+          </div>
+          <aside class="inv-rail"><!-- Task 5 --></aside>
+        </div>
       </main>
     </div>
 
