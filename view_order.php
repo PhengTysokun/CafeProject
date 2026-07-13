@@ -1262,6 +1262,17 @@ body.barista-mode { padding: 0; }
 .bhead-btn { position:relative; width:40px; height:40px; border-radius:10px; border:1px solid var(--border); background:rgba(255,255,255,.03); color:var(--text-muted); display:flex; align-items:center; justify-content:center; cursor:pointer; text-decoration:none; font-size:15px; transition:all .18s; }
 .bhead-btn:hover { color:var(--text); border-color:rgba(255,255,255,.15); background:rgba(255,255,255,.06); }
 .bhead-badge { position:absolute; top:-5px; right:-5px; min-width:17px; height:17px; padding:0 4px; border-radius:9px; background:var(--danger); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; line-height:1; }
+/* Notifications dropdown (barista bell) */
+.bnotif-wrap { position:relative; }
+@keyframes bnotifIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+.bnotif-panel { display:none; position:absolute; top:48px; right:0; width:340px; max-width:86vw; max-height:62vh; overflow-y:auto; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px; box-shadow:0 14px 36px rgba(0,0,0,.55); z-index:200; }
+.bnotif-panel.open { display:block; animation:bnotifIn .18s ease both; }
+.bnotif-head { font-size:13px; font-weight:700; color:var(--text); padding:2px 4px 10px; border-bottom:1px solid var(--border); margin-bottom:8px; }
+.bnotif-panel .ann-banner { padding:10px 12px !important; margin-bottom:8px !important; border-radius:10px !important; }
+.bnotif-empty { text-align:center; color:var(--text-muted); font-size:12.5px; padding:20px 8px; }
+.bnotif-foot { border-top:1px solid var(--border); margin-top:6px; padding-top:8px; text-align:center; }
+.bnotif-foot button { background:none; border:none; color:var(--text-muted); font-size:12px; cursor:pointer; font-family:'Poppins',sans-serif; }
+.bnotif-foot button:hover { color:var(--accent); }
 @media (max-width:820px){ .bclock-date{ display:none; } }
 .barista-mode .orders-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 @media (max-width: 820px) {
@@ -1477,14 +1488,21 @@ function showClockToast(msg, isErr) {
            <input type="text" id="searchInput" placeholder="Search name, order #, drink…" oninput="searchOrders()"
                   style="width:240px;max-width:100%;padding:10px 16px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text);font-family:'Poppins',sans-serif;font-size:14px;outline:none">
            <div class="bclock" title="Current time"><i class="fa-regular fa-clock"></i> <span id="bClockTime">—</span> <span class="bclock-date" id="bClockDate"></span></div>
-           <button class="bhead-btn" id="bBell" type="button" onclick="baristaScrollAnnouncements()" title="Announcements">
-              <i class="fa-regular fa-bell"></i>
-              <span class="bhead-badge" id="bBellCount" style="display:none">0</span>
-           </button>
+           <div class="bnotif-wrap">
+              <button class="bhead-btn" id="bBell" type="button" onclick="toggleBaristaNotif(event)" title="Notifications">
+                 <i class="fa-regular fa-bell"></i>
+                 <span class="bhead-badge" id="bBellCount" style="display:none">0</span>
+              </button>
+              <div class="bnotif-panel" id="bNotifPanel">
+                 <div class="bnotif-head">Notifications</div>
+                 <div id="annContainer"></div>
+                 <div class="bnotif-empty" id="bNotifEmpty">You're all caught up.</div>
+                 <div class="bnotif-foot"><button type="button" onclick="baristaMarkAllRead()">Mark all as read</button></div>
+              </div>
+           </div>
            <a class="bhead-btn" href="profile.php" title="My Profile"><i class="fa-regular fa-circle-user"></i></a>
         </div>
      </div>
-     <div id="annContainer" style="margin-bottom:14px"></div>
      <div class="container" style="max-width:none;margin:0">
         <div class="orders-grid" id="ordersBody"></div>
      </div>
@@ -1975,18 +1993,40 @@ function updateBaristaBell() {
     const n = document.querySelectorAll('#annContainer .ann-banner').length;
     badge.textContent = n;
     badge.style.display = n > 0 ? 'flex' : 'none';
+    const empty = document.getElementById('bNotifEmpty');
+    const foot  = document.querySelector('.bnotif-foot');
+    if (empty) empty.style.display = n > 0 ? 'none' : 'block';
+    if (foot)  foot.style.display  = n > 0 ? 'block' : 'none';
 }
-function baristaScrollAnnouncements() {
-    const c = document.getElementById('annContainer');
-    if (c && c.querySelector('.ann-banner')) {
-        c.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-        showToast('No announcements right now', 'success');
-    }
+function toggleBaristaNotif(e) {
+    if (e) e.stopPropagation();
+    const p = document.getElementById('bNotifPanel');
+    if (!p) return;
+    const open = !p.classList.contains('open');
+    p.classList.toggle('open', open);
+    if (open) setTimeout(() => document.addEventListener('click', _closeNotifOutside), 0);
+    else document.removeEventListener('click', _closeNotifOutside);
+}
+function _closeNotifOutside(e) {
+    const w = document.querySelector('.bnotif-wrap');
+    const p = document.getElementById('bNotifPanel');
+    if (w && !w.contains(e.target)) { if (p) p.classList.remove('open'); document.removeEventListener('click', _closeNotifOutside); }
+}
+function baristaMarkAllRead() {
+    document.querySelectorAll('#annContainer .ann-banner').forEach(b => {
+        const id = parseInt(b.dataset.id);
+        const dismissed = _annDismissed();
+        if (!dismissed.includes(id)) { dismissed.push(id); localStorage.setItem('ann_dismissed', JSON.stringify(dismissed)); }
+        b.remove();
+    });
+    updateBaristaBell();
+    const p = document.getElementById('bNotifPanel'); if (p) p.classList.remove('open');
+    document.removeEventListener('click', _closeNotifOutside);
 }
 if (userRole === 'barista') {
     updateBaristaClock();
     setInterval(updateBaristaClock, 15000);
+    updateBaristaBell();
 }
 
 // ── Barista sidebar stats (queue, overdue, done today, avg wait) ──
