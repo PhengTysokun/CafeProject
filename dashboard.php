@@ -1021,14 +1021,14 @@ body.no-sidebar{--sidebar-w:0px;}
 .inv-navitem{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:var(--text-muted);text-decoration:none;font-size:14px;font-weight:500;transition:background .12s,color .12s}
 .inv-navitem i{width:18px;text-align:center}
 .inv-navitem:hover{background:var(--border);color:var(--text)}
-.inv-navitem.active{background:var(--amber);color:#1a1205;font-weight:700}
+.inv-navitem.active,.inv-navitem.active:hover{background:var(--amber);color:#1a1205;font-weight:700}
 .inv-userchip{display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;border:1px solid var(--border);text-decoration:none;color:var(--text)}
 .inv-avatar{width:36px;height:36px;border-radius:9px;background:var(--amber);color:#1a1205;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
 .inv-uname{font-size:13px;font-weight:700;color:var(--text)}
 .inv-urole{font-size:11px;color:var(--text-muted)}
 .inv-main{flex:1;min-width:0;padding:14px 24px;display:flex;flex-direction:column;gap:12px}
 .inv-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.inv-greet{font-size:22px;font-weight:800;color:var(--text)}
+.inv-greet{font-size:22px;font-weight:800;color:var(--text);line-height:1.2}
 .inv-greet span{color:var(--amber)}
 .inv-date{font-size:13px;color:var(--text-muted);margin-top:2px}
 .inv-hcluster{display:flex;align-items:center;gap:10px}
@@ -1753,7 +1753,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             <div class="inv-card-ico" style="color:<?= $inv_out_of_stock>0?'#ff4d4d':'#3ecf8e' ?>"><i class="fa-solid fa-ban"></i></div>
             <div class="inv-card-val" style="color:<?= $inv_out_of_stock>0?'#ff4d4d':'var(--text)' ?>"><?= (int)$inv_out_of_stock ?></div>
             <div class="inv-card-lbl">Out of Stock</div>
-            <div class="inv-card-sub"><?= $inv_out_of_stock>0 ? 'Items at zero — order now' : 'Nothing out of stock' ?></div>
+            <div class="inv-card-sub"><?= $inv_out_of_stock>0 ? 'Items at zero — order now' : 'No shortages — nice work' ?></div>
           </div>
         </section>
         <div class="inv-body">
@@ -1809,13 +1809,14 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
                   $ratio = $min>0 ? max(0,min(1,$st/$min)) : 1;
                   $sev = $ratio < 0.10 ? 'critical' : 'low';
                   $pct = round($ratio*100);
-                  $barcol = $ratio<0.10 ? '#ff4d4d' : ($ratio<0.30 ? '#ff8a3d' : '#f0b429');
+                  $barcol = $ratio<0.10 ? '#ff4d4d' : ($ratio<0.50 ? '#ff8a3d' : '#f0b429');
+                  $barw = $ratio<0.10 ? max($pct,6) : $pct; // keep near-zero criticals visibly red
                   $qty = rtrim(rtrim(number_format($st,2,'.',''),'0'),'.');
                 ?>
                   <div class="inv-lsrow" data-sev="<?= $sev ?>">
                     <div class="inv-lsrow-top"><span class="inv-lsname"><?= htmlspecialchars($it['ingredient_name']) ?></span>
                       <span class="inv-lsqty"><?= $qty ?> <?= htmlspecialchars($it['unit']) ?></span></div>
-                    <div class="inv-lsbar"><span style="width:<?= $pct ?>%;background:<?= $barcol ?>"></span></div>
+                    <div class="inv-lsbar"><span style="width:<?= $barw ?>%;background:<?= $barcol ?>"></span></div>
                     <div class="inv-lssub"><?= $pct ?>% of threshold (<?= rtrim(rtrim(number_format($min,2,'.',''),'0'),'.') ?> <?= htmlspecialchars($it['unit']) ?>)</div>
                   </div>
                 <?php endforeach; endif; ?>
