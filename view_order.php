@@ -1255,6 +1255,14 @@ body.barista-mode { padding: 0; }
 .bmain { flex:1; min-width:0; padding: 24px 28px 60px; }
 .bmain-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; margin-bottom:20px; }
 .bmain-head h1 { font-size:22px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:10px; }
+.bhead-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.bclock { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color:var(--text-muted); padding:9px 13px; border-radius:10px; background:rgba(255,255,255,.03); border:1px solid var(--border); white-space:nowrap; }
+.bclock #bClockTime { color:var(--text); }
+.bclock-date { opacity:.65; font-weight:500; }
+.bhead-btn { position:relative; width:40px; height:40px; border-radius:10px; border:1px solid var(--border); background:rgba(255,255,255,.03); color:var(--text-muted); display:flex; align-items:center; justify-content:center; cursor:pointer; text-decoration:none; font-size:15px; transition:all .18s; }
+.bhead-btn:hover { color:var(--text); border-color:rgba(255,255,255,.15); background:rgba(255,255,255,.06); }
+.bhead-badge { position:absolute; top:-5px; right:-5px; min-width:17px; height:17px; padding:0 4px; border-radius:9px; background:var(--danger); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; line-height:1; }
+@media (max-width:820px){ .bclock-date{ display:none; } }
 .barista-mode .orders-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 @media (max-width: 820px) {
     .bstation { flex-direction: column; }
@@ -1313,7 +1321,7 @@ function dismissAnn(btn, id) {
     banner.style.transition = 'opacity .3s, transform .3s';
     banner.style.opacity = '0';
     banner.style.transform = 'translateY(-6px)';
-    setTimeout(function(){ banner.remove(); }, 300);
+    setTimeout(function(){ banner.remove(); if (typeof updateBaristaBell === 'function') updateBaristaBell(); }, 300);
     var dismissed = _annDismissed();
     if (!dismissed.includes(id)) { dismissed.push(id); localStorage.setItem('ann_dismissed', JSON.stringify(dismissed)); }
 }
@@ -1357,6 +1365,7 @@ function updateAnnouncements(list) {
             container.insertBefore(_buildAnnBanner(ann), container.firstChild);
         }
     });
+    if (typeof updateBaristaBell === 'function') updateBaristaBell();
 }
 </script>
 
@@ -1464,8 +1473,16 @@ function showClockToast(msg, isErr) {
   <main class="bmain">
      <div class="bmain-head">
         <h1><i class="fa-solid fa-receipt"></i> Orders <span class="vo-live-badge"><span class="dot"></span> Live</span></h1>
-        <input type="text" id="searchInput" placeholder="Search name, order #, drink…" oninput="searchOrders()"
-               style="width:280px;max-width:100%;padding:10px 16px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text);font-family:'Poppins',sans-serif;font-size:14px;outline:none">
+        <div class="bhead-right">
+           <input type="text" id="searchInput" placeholder="Search name, order #, drink…" oninput="searchOrders()"
+                  style="width:240px;max-width:100%;padding:10px 16px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text);font-family:'Poppins',sans-serif;font-size:14px;outline:none">
+           <div class="bclock" title="Current time"><i class="fa-regular fa-clock"></i> <span id="bClockTime">—</span> <span class="bclock-date" id="bClockDate"></span></div>
+           <button class="bhead-btn" id="bBell" type="button" onclick="baristaScrollAnnouncements()" title="Announcements">
+              <i class="fa-regular fa-bell"></i>
+              <span class="bhead-badge" id="bBellCount" style="display:none">0</span>
+           </button>
+           <a class="bhead-btn" href="profile.php" title="My Profile"><i class="fa-regular fa-circle-user"></i></a>
+        </div>
      </div>
      <div id="annContainer" style="margin-bottom:14px"></div>
      <div class="container" style="max-width:none;margin:0">
@@ -1941,6 +1958,35 @@ function buildBaristaCardInner(o) {
         </div>
         <div class="card-actions">${getActionButtons(o)}</div>
     `;
+}
+
+// ── Barista header: live clock + announcements bell ──
+function updateBaristaClock() {
+    const t = document.getElementById('bClockTime');
+    if (!t) return;
+    const now = new Date();
+    t.textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const d = document.getElementById('bClockDate');
+    if (d) d.textContent = '· ' + now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function updateBaristaBell() {
+    const badge = document.getElementById('bBellCount');
+    if (!badge) return;
+    const n = document.querySelectorAll('#annContainer .ann-banner').length;
+    badge.textContent = n;
+    badge.style.display = n > 0 ? 'flex' : 'none';
+}
+function baristaScrollAnnouncements() {
+    const c = document.getElementById('annContainer');
+    if (c && c.querySelector('.ann-banner')) {
+        c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+        showToast('No announcements right now', 'success');
+    }
+}
+if (userRole === 'barista') {
+    updateBaristaClock();
+    setInterval(updateBaristaClock, 15000);
 }
 
 // ── Barista sidebar stats (queue, overdue, done today, avg wait) ──
