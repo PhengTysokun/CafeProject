@@ -1074,6 +1074,25 @@ body.inv-mode .main{padding:0;max-width:none;margin:0}
 .inv-tile-d{font-size:12px;color:var(--text-muted)}
 .inv-tile-arw{color:var(--text-muted);font-size:13px}
 .inv-tile-badge{font-size:11px;font-weight:700;color:#ff9a3d;background:rgba(255,138,61,.15);padding:1px 7px;border-radius:8px;margin-left:4px}
+.inv-rail{display:flex;flex-direction:column;gap:16px}
+.inv-panel{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:16px}
+.inv-panel-head{display:flex;align-items:center;justify-content:space-between;font-weight:700;color:var(--text);font-size:14px;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.inv-filter{display:flex;align-items:center;gap:6px}
+.inv-fbtn{border:none;background:transparent;color:var(--text-muted);font-size:12px;font-weight:600;padding:3px 9px;border-radius:7px;cursor:pointer}
+.inv-fbtn.active{background:rgba(255,255,255,.08);color:var(--text)}
+.inv-viewall{font-size:12px;color:var(--amber);text-decoration:none;margin-left:2px}
+.inv-lslist,.inv-actlist{display:flex;flex-direction:column;gap:14px}
+.inv-lsrow-top{display:flex;justify-content:space-between;font-size:13px}
+.inv-lsname{font-weight:600;color:var(--text)}
+.inv-lsqty{color:var(--text-muted)}
+.inv-lsbar{height:5px;border-radius:3px;background:var(--border);margin:6px 0 4px;overflow:hidden}
+.inv-lsbar span{display:block;height:100%;border-radius:3px}
+.inv-lssub{font-size:11px;color:var(--text-muted)}
+.inv-actrow{display:flex;gap:10px;align-items:flex-start}
+.inv-actdot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-top:5px}
+.inv-acttext{font-size:13px;color:var(--text)}
+.inv-actago{font-size:11px;color:var(--text-muted);margin-top:2px}
+.inv-empty{font-size:13px;color:var(--text-muted);padding:6px 0}
 </style>
 </head>
 <?php
@@ -1755,7 +1774,61 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             </div>
             <?php endif; ?>
           </div>
-          <aside class="inv-rail"><!-- Task 5 --></aside>
+          <aside class="inv-rail">
+            <div class="inv-panel">
+              <div class="inv-panel-head">
+                <span><i class="fa-solid fa-arrow-trend-down" style="color:#ff6b6b"></i> Low Stock</span>
+                <div class="inv-filter">
+                  <button class="inv-fbtn active" data-mode="all" onclick="invFilterLow('all',this)">All</button>
+                  <button class="inv-fbtn" data-mode="low" onclick="invFilterLow('low',this)">Low</button>
+                  <button class="inv-fbtn" data-mode="critical" onclick="invFilterLow('critical',this)">Critical</button>
+                  <a class="inv-viewall" href="ingredients.php">View all</a>
+                </div>
+              </div>
+              <div class="inv-lslist" id="invLsList">
+                <?php if (!$inv_low_list): ?>
+                  <div class="inv-empty">Stock levels look healthy.</div>
+                <?php else: foreach ($inv_low_list as $it):
+                  $min=(float)$it['minimum_stock']; $st=(float)$it['stock_quantity'];
+                  $ratio = $min>0 ? max(0,min(1,$st/$min)) : 1;
+                  $sev = $ratio < 0.10 ? 'critical' : 'low';
+                  $pct = round($ratio*100);
+                  $barcol = $ratio<0.10 ? '#ff4d4d' : ($ratio<0.30 ? '#ff8a3d' : '#f0b429');
+                  $qty = rtrim(rtrim(number_format($st,2,'.',''),'0'),'.');
+                ?>
+                  <div class="inv-lsrow" data-sev="<?= $sev ?>">
+                    <div class="inv-lsrow-top"><span class="inv-lsname"><?= htmlspecialchars($it['ingredient_name']) ?></span>
+                      <span class="inv-lsqty"><?= $qty ?> <?= htmlspecialchars($it['unit']) ?></span></div>
+                    <div class="inv-lsbar"><span style="width:<?= $pct ?>%;background:<?= $barcol ?>"></span></div>
+                    <div class="inv-lssub"><?= $pct ?>% of threshold (<?= rtrim(rtrim(number_format($min,2,'.',''),'0'),'.') ?> <?= htmlspecialchars($it['unit']) ?>)</div>
+                  </div>
+                <?php endforeach; endif; ?>
+              </div>
+            </div>
+            <div class="inv-panel">
+              <div class="inv-panel-head"><span>Recent Activity</span></div>
+              <div class="inv-actlist">
+                <?php
+                $actMap = [
+                  'po_received'   => ['Purchase Order received', '#5b9bd5'],
+                  'quick_restock' => ['Restocked',               '#3ecf8e'],
+                  'count_adjust'  => ['Stock count adjusted',    '#b98add'],
+                  'manual_adjust' => ['Stock adjusted',          '#f0b429'],
+                ];
+                if (!$inv_activity): ?>
+                  <div class="inv-empty">No recent stock activity.</div>
+                <?php else: foreach ($inv_activity as $a):
+                  [$label,$dot] = $actMap[$a['change_type']] ?? ['Inventory updated','#888'];
+                  $ts = strtotime($a['created_at']); $diff = time()-$ts;
+                  $ago = $diff<3600 ? max(1,floor($diff/60)).'m' : ($diff<86400 ? floor($diff/3600).'h' : floor($diff/86400).'d');
+                ?>
+                  <div class="inv-actrow"><span class="inv-actdot" style="background:<?= $dot ?>"></span>
+                    <div><div class="inv-acttext"><?= htmlspecialchars($label) ?> — <?= htmlspecialchars($a['ingredient_name']) ?></div>
+                    <div class="inv-actago"><?= $ago ?> ago</div></div></div>
+                <?php endforeach; endif; ?>
+              </div>
+            </div>
+          </aside>
         </div>
       </main>
     </div>
@@ -2217,6 +2290,15 @@ document.addEventListener('DOMContentLoaded', initNavGroups);
     ['mousemove','keydown','click','scroll','touchstart'].forEach(ev=>document.addEventListener(ev,reset,{passive:true}));
     reset();
 })();
+</script>
+<script>
+function invFilterLow(mode, btn){
+  document.querySelectorAll('.inv-fbtn').forEach(b=>b.classList.toggle('active', b===btn));
+  document.querySelectorAll('#invLsList .inv-lsrow').forEach(r=>{
+    const sev=r.dataset.sev; let show = mode==='all' || (mode==='critical'&&sev==='critical') || (mode==='low'&&(sev==='low'||sev==='critical'));
+    r.style.display = show ? '' : 'none';
+  });
+}
 </script>
 </body>
 </html>
