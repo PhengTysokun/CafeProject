@@ -1249,6 +1249,9 @@ body.barista-mode { padding: 0; }
     transition:all .18s;
 }
 .bnav a:hover, .bnav button:hover { color:var(--text); background:rgba(255,255,255,.04); }
+/* Clock-In is the first action of a shift — make it an obvious amber CTA until clocked in */
+.bnav #clockBtn[data-clocked="0"] { background:rgba(209,144,75,.18) !important; color:var(--accent) !important; border-color:rgba(209,144,75,.35) !important; font-weight:700; }
+.bnav #clockBtn[data-clocked="0"]:hover { background:rgba(209,144,75,.28) !important; }
 .bmain { flex:1; min-width:0; padding: 24px 28px 60px; }
 .bmain-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; margin-bottom:20px; }
 .bmain-head h1 { font-size:22px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:10px; }
@@ -1704,7 +1707,7 @@ function showClockToast(msg, isErr) {
 <script>
 const tbody = document.getElementById("ordersBody");
 const known = new Set();
-let currentFilter = '<?= ($_SESSION['role'] ?? '') === 'staff' ? 'PendingPayment' : 'all' ?>';
+let currentFilter = '<?= ($_SESSION['role'] ?? '') === 'staff' ? 'PendingPayment' : (($_SESSION['role'] ?? '') === 'barista' ? 'Preparing' : 'all') ?>';
 let showCompleted = true;
 let searchQuery = '';
 let currentCancelId = 0;
@@ -1743,6 +1746,18 @@ function truncReason(text, max = 80) {
 function roleLabel(role) {
     const map = <?= json_encode(array_map(fn($r) => $r['name'], $_all_roles), JSON_UNESCAPED_UNICODE) ?>;
     return map[role] || role;
+}
+
+// ── Empty-state markup (role-aware, circle-wrapped icon) ──
+function ordersEmptyHtml() {
+    const barista = userRole === 'barista';
+    const iconClass = barista ? 'fa-solid fa-mug-hot' : 'fa-regular fa-rectangle-list';
+    const title = barista ? 'All caught up' : 'No Orders Yet';
+    const sub   = barista ? "No orders in the queue right now — take a breather." : 'Orders will appear here in real-time.';
+    return '<div style="width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;margin:0 auto 18px">'
+        + '<i class="' + iconClass + '" style="font-size:30px;color:var(--text-muted);opacity:.75"></i></div>'
+        + '<h3 style="color:var(--text);margin-bottom:6px;font-size:18px">' + title + '</h3>'
+        + '<p style="font-size:13.5px">' + sub + '</p>';
 }
 
 // ── Build Items HTML ──
@@ -1911,7 +1926,7 @@ function buildBaristaCardInner(o) {
             ${badge}
         </div>
         <div class="bcard-sub">
-            <span><i class="fa-regular fa-user"></i>${escapeHtml(o.customer_name || 'Guest')}</span>
+            <span><i class="fa-regular fa-user"></i>${(o.customer_name && o.customer_name !== 'Guest') ? escapeHtml(o.customer_name) : 'Walk-in'}</span>
             <span data-bts="${escapeHtml(o.started_at || o.order_date)}"><i class="fa-regular fa-clock"></i>${elapsedShort(o.started_at || o.order_date)}</span>
         </div>
         ${items}
@@ -2099,8 +2114,8 @@ function applyFilters() {
         if (!emptyEl) {
             emptyEl = document.createElement('div');
             emptyEl.id = 'ordersEmptyState';
-            emptyEl.style.cssText = 'grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--text-muted);';
-            emptyEl.innerHTML = '<i class="fa-regular fa-rectangle-list" style="font-size:48px;display:block;margin-bottom:16px;color:var(--border)"></i><h3 style="color:var(--text);margin-bottom:8px">No Orders</h3><p style="font-size:14px">No orders match the current filter.</p>';
+            emptyEl.style.cssText = 'grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--text-muted);';
+            emptyEl.innerHTML = ordersEmptyHtml();
             tbody.appendChild(emptyEl);
         }
     } else if (emptyEl) {
@@ -2167,8 +2182,8 @@ async function loadOrders() {
             if (tbody.children.length === 0) {
                 const empty = document.createElement("div");
                 empty.id = "ordersEmptyState";
-                empty.style.cssText = 'grid-column:1/-1;text-align:center;padding:80px 20px;color:var(--text-muted);';
-                empty.innerHTML = '<i class="fa-regular fa-rectangle-list" style="font-size:56px;display:block;margin-bottom:16px;color:var(--border)"></i><h3 style="color:var(--text);margin-bottom:8px;font-size:20px">No Orders Yet</h3><p style="font-size:14px">Orders will appear here in real-time.</p>';
+                empty.style.cssText = 'grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--text-muted);';
+                empty.innerHTML = ordersEmptyHtml();
                 tbody.appendChild(empty);
             }
             return;
@@ -2465,6 +2480,8 @@ function showToast(message, type = 'success') {
             background: type === 'success' ? '#55e087' : '#ff5c5c',
             color: '#000',
             fontWeight: '600',
+            borderRadius: '10px',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.45)',
         }
     }).showToast();
 }
