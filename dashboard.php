@@ -1039,7 +1039,7 @@ body.no-sidebar{--sidebar-w:0px;}
 .inv-avatar{width:36px;height:36px;border-radius:9px;background:var(--amber);color:#1a1205;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
 .inv-uname{font-size:13px;font-weight:700;color:var(--text)}
 .inv-urole{font-size:11px;color:var(--text-muted)}
-.inv-main{flex:1;min-width:0;padding:24px 28px;display:flex;flex-direction:column;gap:20px}
+.inv-main{flex:1;min-width:0;padding:14px 24px;display:flex;flex-direction:column;gap:12px}
 .inv-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .inv-greet{font-size:22px;font-weight:800;color:var(--text)}
 .inv-greet span{color:var(--amber)}
@@ -1066,18 +1066,18 @@ body.no-sidebar{--sidebar-w:0px;}
 [data-theme=light] .inv-banner-cta{color:#b91c1c}
 body.inv-mode .main{padding:0;max-width:none;margin:0}
 .inv-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
-.inv-card{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:20px}
+.inv-card{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:14px 18px}
 .inv-card-ico{font-size:20px;margin-bottom:14px}
 .inv-card-val{font-size:30px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
 .inv-card-lbl{font-size:13px;color:var(--text-muted);margin-top:6px}
 .inv-card-sub{font-size:12px;color:var(--text-muted);margin-top:8px}
-.inv-body{display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start}
+.inv-body{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
 .inv-content{display:flex;flex-direction:column;gap:12px}
-.inv-sec-label{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-top:8px}
-.inv-tiles{display:flex;flex-direction:column;gap:10px}
-.inv-tile{display:flex;align-items:center;gap:16px;padding:16px 18px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;text-decoration:none;transition:transform .12s,border-color .12s}
+.inv-sec-label{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-top:2px}
+.inv-tiles{display:flex;flex-direction:column;gap:8px}
+.inv-tile{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;text-decoration:none;transition:transform .12s,border-color .12s}
 .inv-tile:hover{transform:translateY(-1px);border-color:var(--border-hi)}
-.inv-tile-ico{flex:0 0 auto;width:44px;height:44px;border-radius:11px;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;font-size:18px}
+.inv-tile-ico{flex:0 0 auto;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;font-size:16px}
 .inv-tile>span:nth-child(2){flex:1;display:flex;flex-direction:column;gap:3px}
 .inv-tile-t{font-size:15px;font-weight:700;color:var(--text)}
 .inv-tile-d{font-size:12px;color:var(--text-muted)}
@@ -1090,7 +1090,7 @@ body.inv-mode .main{padding:0;max-width:none;margin:0}
 .inv-fbtn{border:none;background:transparent;color:var(--text-muted);font-size:12px;font-weight:600;padding:3px 9px;border-radius:7px;cursor:pointer}
 .inv-fbtn.active{background:rgba(255,255,255,.08);color:var(--text)}
 .inv-viewall{font-size:12px;color:var(--amber);text-decoration:none;margin-left:2px}
-.inv-lslist,.inv-actlist{display:flex;flex-direction:column;gap:14px}
+.inv-lslist,.inv-actlist{display:flex;flex-direction:column;gap:9px}
 .inv-lsrow-top{display:flex;justify-content:space-between;font-size:13px}
 .inv-lsname{font-weight:600;color:var(--text)}
 .inv-lsqty{color:var(--text-muted)}
@@ -1824,7 +1824,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
               <div class="inv-lslist" id="invLsList">
                 <?php if (!$inv_low_list): ?>
                   <div class="inv-empty">Stock levels look healthy.</div>
-                <?php else: foreach ($inv_low_list as $it):
+                <?php else: foreach (array_slice($inv_low_list, 0, 5) as $it):
                   $min=(float)$it['minimum_stock']; $st=(float)$it['stock_quantity'];
                   $ratio = $min>0 ? max(0,min(1,$st/$min)) : 1;
                   $sev = $ratio < 0.10 ? 'critical' : 'low';
@@ -1853,7 +1853,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
                 ];
                 if (!$inv_activity): ?>
                   <div class="inv-empty">No recent stock activity.</div>
-                <?php else: foreach ($inv_activity as $a):
+                <?php else: foreach (array_slice($inv_activity, 0, 3) as $a):
                   [$label,$dot] = $actMap[$a['change_type']] ?? ['Inventory updated','#888'];
                   $ts = strtotime($a['created_at']); $diff = time()-$ts;
                   $ago = $diff<3600 ? max(1,floor($diff/60)).'m' : ($diff<86400 ? floor($diff/3600).'h' : floor($diff/86400).'d');
