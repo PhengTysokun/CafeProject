@@ -56,6 +56,51 @@ $low_recipe_result = mysqli_query($conn, "
 ");
 $low_recipe_count = mysqli_fetch_assoc($low_recipe_result)['low_recipe_count'];
 
+// ── Inventory-clerk dashboard metrics (only computed for that role) ──
+$inv_total_products = 0; $inv_pending_po = 0;
+$inv_usage_this = 0.0;   $inv_usage_last = 0.0; $inv_usage_delta = null;
+$inv_low_list = [];      $inv_activity = [];
+if (($_SESSION['role'] ?? '') === 'inventory_clerk') {
+    $inv_total_products = (int)($conn->query("SELECT COUNT(*) c FROM products")->fetch_assoc()['c'] ?? 0);
+
+    $inv_pending_po = (int)($conn->query(
+        "SELECT COUNT(*) c FROM purchase_orders WHERE status IN ('Draft','Ordered')"
+    )->fetch_assoc()['c'] ?? 0);
+
+    // Monthly usage = magnitude of order_deduct rows this month vs last month
+    $inv_usage_this = (float)($conn->query(
+        "SELECT IFNULL(SUM(ABS(amount)),0) s FROM ingredient_history
+         WHERE change_type='order_deduct'
+           AND YEAR(created_at)=YEAR(CURDATE()) AND MONTH(created_at)=MONTH(CURDATE())"
+    )->fetch_assoc()['s'] ?? 0);
+    $inv_usage_last = (float)($conn->query(
+        "SELECT IFNULL(SUM(ABS(amount)),0) s FROM ingredient_history
+         WHERE change_type='order_deduct'
+           AND YEAR(created_at)=YEAR(CURDATE() - INTERVAL 1 MONTH)
+           AND MONTH(created_at)=MONTH(CURDATE() - INTERVAL 1 MONTH)"
+    )->fetch_assoc()['s'] ?? 0);
+    // delta: null when last month = 0 (no base) OR this month = 0 (avoid misleading -100%)
+    if ($inv_usage_last > 0 && $inv_usage_this > 0) {
+        $inv_usage_delta = (int)round(($inv_usage_this - $inv_usage_last) / $inv_usage_last * 100);
+    }
+
+    $lr = $conn->query(
+        "SELECT ingredient_name, stock_quantity, minimum_stock, unit
+         FROM ingredients WHERE stock_quantity < minimum_stock
+         ORDER BY (stock_quantity/NULLIF(minimum_stock,0)) ASC"
+    );
+    while ($lr && $row = $lr->fetch_assoc()) $inv_low_list[] = $row;
+
+    $ar = $conn->query(
+        "SELECT ih.change_type, ih.amount, ih.created_at, i.ingredient_name
+         FROM ingredient_history ih
+         JOIN ingredients i ON ih.ingredient_id = i.ingredient_id
+         WHERE ih.change_type NOT IN ('order_deduct','order_restore')
+         ORDER BY ih.created_at DESC LIMIT 6"
+    );
+    while ($ar && $row = $ar->fetch_assoc()) $inv_activity[] = $row;
+}
+
 // Cash reconciliation alert — short/over records today
 $_recon_alerts = 0;
 if (can('cash_reconciliation')) {
