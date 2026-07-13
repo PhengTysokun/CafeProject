@@ -1686,7 +1686,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
         <?php if (can('my_profile')): ?>
         <a href="profile.php" class="inv-userchip">
         <?php else: ?><div class="inv-userchip" style="cursor:default"><?php endif; ?>
-          <div class="inv-avatar"><?= strtoupper(substr($admin_name,0,2)) ?></div>
+          <div class="inv-avatar"><?= htmlspecialchars(strtoupper(substr($admin_name,0,2))) ?></div>
           <div><div class="inv-uname"><?= htmlspecialchars($admin_name) ?></div>
           <div class="inv-urole"><?= htmlspecialchars($_cur_role_name) ?></div></div>
         <?php if (can('my_profile')): ?></a><?php else: ?></div><?php endif; ?>
@@ -2332,6 +2332,7 @@ document.addEventListener('DOMContentLoaded', initNavGroups);
     reset();
 })();
 </script>
+<?php if (($_SESSION['role'] ?? '') === 'inventory_clerk'): ?>
 <script>
 function invFilterLow(mode, btn){
   document.querySelectorAll('.inv-fbtn').forEach(b=>b.classList.toggle('active', b===btn));
@@ -2348,9 +2349,13 @@ function invFilterLow(mode, btn){
     document.addEventListener('click',function(){panel.classList.remove('open');});
     panel.addEventListener('click',function(e){e.stopPropagation();});}
   var tbtn=document.getElementById('invThemeBtn');
-  if(tbtn){tbtn.addEventListener('click',function(){
-    var cur=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
-    document.documentElement.setAttribute('data-theme',cur); localStorage.setItem('theme',cur);});}
+  if(tbtn){
+    var syncIcon=function(){var i=tbtn.querySelector('i');if(i)i.className='fa-solid '+(document.documentElement.getAttribute('data-theme')==='light'?'fa-moon':'fa-sun');};
+    syncIcon();
+    tbtn.addEventListener('click',function(){
+      var cur=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
+      document.documentElement.setAttribute('data-theme',cur); localStorage.setItem('theme',cur); syncIcon();});
+  }
 })();
 function invMarkAllRead(){
   var c=document.getElementById('invBellCount'); if(c)c.style.display='none';
@@ -2358,5 +2363,6 @@ function invMarkAllRead(){
   document.getElementById('invNotifPanel').classList.remove('open');
 }
 </script>
+<?php endif; ?>
 </body>
 </html>
