@@ -57,8 +57,7 @@ $low_recipe_result = mysqli_query($conn, "
 $low_recipe_count = mysqli_fetch_assoc($low_recipe_result)['low_recipe_count'];
 
 // ── Inventory-clerk dashboard metrics (only computed for that role) ──
-$inv_total_products = 0; $inv_pending_po = 0;
-$inv_usage_this = 0.0;   $inv_usage_last = 0.0; $inv_usage_delta = null;
+$inv_total_products = 0; $inv_pending_po = 0; $inv_out_of_stock = 0;
 $inv_low_list = [];      $inv_activity = [];
 if (($_SESSION['role'] ?? '') === 'inventory_clerk') {
     $inv_total_products = (int)($conn->query("SELECT COUNT(*) c FROM products")->fetch_assoc()['c'] ?? 0);
@@ -67,22 +66,10 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') {
         "SELECT COUNT(*) c FROM purchase_orders WHERE status IN ('Draft','Ordered')"
     )->fetch_assoc()['c'] ?? 0);
 
-    // Monthly usage = magnitude of order_deduct rows this month vs last month
-    $inv_usage_this = (float)($conn->query(
-        "SELECT IFNULL(SUM(ABS(amount)),0) s FROM ingredient_history
-         WHERE change_type='order_deduct'
-           AND YEAR(created_at)=YEAR(CURDATE()) AND MONTH(created_at)=MONTH(CURDATE())"
-    )->fetch_assoc()['s'] ?? 0);
-    $inv_usage_last = (float)($conn->query(
-        "SELECT IFNULL(SUM(ABS(amount)),0) s FROM ingredient_history
-         WHERE change_type='order_deduct'
-           AND YEAR(created_at)=YEAR(CURDATE() - INTERVAL 1 MONTH)
-           AND MONTH(created_at)=MONTH(CURDATE() - INTERVAL 1 MONTH)"
-    )->fetch_assoc()['s'] ?? 0);
-    // delta: null when last month = 0 (no base) OR this month = 0 (avoid misleading -100%)
-    if ($inv_usage_last > 0 && $inv_usage_this > 0) {
-        $inv_usage_delta = (int)round(($inv_usage_this - $inv_usage_last) / $inv_usage_last * 100);
-    }
+    // Out of stock = ingredients currently at (or below) zero — the "order now" alarm
+    $inv_out_of_stock = (int)($conn->query(
+        "SELECT COUNT(*) c FROM ingredients WHERE stock_quantity <= 0"
+    )->fetch_assoc()['c'] ?? 0);
 
     $lr = $conn->query(
         "SELECT ingredient_name, stock_quantity, minimum_stock, unit
@@ -1681,7 +1668,6 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
           <?php if (can('suppliers')): ?><a class="inv-navitem" href="suppliers.php"><i class="fa-solid fa-truck-ramp-box"></i><span>Suppliers</span></a><?php endif; ?>
           <?php if (can('purchase_orders')): ?><a class="inv-navitem" href="purchase_orders.php"><i class="fa-solid fa-file-invoice"></i><span>Purchase Orders</span></a><?php endif; ?>
           <?php if (can('report')): ?><a class="inv-navitem" href="report.php"><i class="fa-solid fa-chart-column"></i><span>Reports</span></a><?php endif; ?>
-          <a class="inv-navitem" href="settings.php"><i class="fa-solid fa-gear"></i><span>Settings</span></a>
         </nav>
         <?php if (can('my_profile')): ?>
         <a href="profile.php" class="inv-userchip">
@@ -1764,16 +1750,10 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             <div class="inv-card-sub"><?= (int)$inv_pending_po ?> awaiting delivery</div>
           </div>
           <div class="inv-card">
-            <div class="inv-card-ico" style="color:#3ecf8e"><i class="fa-solid fa-chart-column"></i></div>
-            <div class="inv-card-val"><?= number_format($inv_usage_this) ?></div>
-            <div class="inv-card-lbl">Monthly Usage</div>
-            <div class="inv-card-sub">
-              <?php if ($inv_usage_delta !== null): ?>
-                <span style="color:<?= $inv_usage_delta>=0?'#3ecf8e':'#ff6b6b' ?>">
-                  <i class="fa-solid fa-arrow-<?= $inv_usage_delta>=0?'up':'down' ?>"></i>
-                  <?= abs($inv_usage_delta) ?>% vs last month</span>
-              <?php else: ?>units deducted this month<?php endif; ?>
-            </div>
+            <div class="inv-card-ico" style="color:<?= $inv_out_of_stock>0?'#ff4d4d':'#3ecf8e' ?>"><i class="fa-solid fa-ban"></i></div>
+            <div class="inv-card-val" style="color:<?= $inv_out_of_stock>0?'#ff4d4d':'var(--text)' ?>"><?= (int)$inv_out_of_stock ?></div>
+            <div class="inv-card-lbl">Out of Stock</div>
+            <div class="inv-card-sub"><?= $inv_out_of_stock>0 ? 'Items at zero — order now' : 'Nothing out of stock' ?></div>
           </div>
         </section>
         <div class="inv-body">
