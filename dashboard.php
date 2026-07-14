@@ -1666,6 +1666,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
           <a class="inv-navitem active" href="dashboard.php"><i class="fa-solid fa-gauge-high"></i><span>Dashboard</span></a>
           <?php if (can('products')): ?><a class="inv-navitem" href="products.php"><i class="fa-solid fa-cube"></i><span>Products</span></a><?php endif; ?>
           <?php if (can('ingredients')): ?><a class="inv-navitem" href="ingredients.php"><i class="fa-solid fa-flask"></i><span>Ingredients</span></a><?php endif; ?>
+          <?php if (can('stock_count')): ?><a class="inv-navitem" href="stock_count.php"><i class="fa-solid fa-clipboard-list"></i><span>Stock Count</span></a><?php endif; ?>
           <?php if (can('recipes')): ?><a class="inv-navitem" href="recipes_view.php"><i class="fa-solid fa-utensils"></i><span>Recipes</span></a><?php endif; ?>
           <?php if (can('suppliers')): ?><a class="inv-navitem" href="suppliers.php"><i class="fa-solid fa-truck-ramp-box"></i><span>Suppliers</span></a><?php endif; ?>
           <?php if (can('purchase_orders')): ?><a class="inv-navitem" href="purchase_orders.php"><i class="fa-solid fa-file-invoice"></i><span>Purchase Orders</span></a><?php endif; ?>
@@ -1760,7 +1761,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
         </section>
         <div class="inv-body">
           <div class="inv-content">
-            <?php if (can('products')||can('ingredients')||can('recipes')): ?>
+            <?php if (can('products')||can('ingredients')||can('recipes')||can('stock_count')): ?>
             <div class="inv-sec-label">Inventory</div>
             <div class="inv-tiles">
               <?php if (can('products')): ?>
@@ -1770,6 +1771,10 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
               <?php if (can('ingredients')): ?>
               <a class="inv-tile" href="ingredients.php"><span class="inv-tile-ico" style="color:#3ecf8e"><i class="fa-solid fa-flask"></i></span>
                 <span><span class="inv-tile-t">Ingredients</span><span class="inv-tile-d">Raw materials &amp; components</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
+              <?php endif; ?>
+              <?php if (can('stock_count')): ?>
+              <a class="inv-tile" href="stock_count.php"><span class="inv-tile-ico" style="color:#e0b34a"><i class="fa-solid fa-clipboard-list"></i></span>
+                <span><span class="inv-tile-t">Stock Count</span><span class="inv-tile-d">Physical inventory count</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
               <?php endif; ?>
               <?php if (can('recipes')): ?>
               <a class="inv-tile" href="recipes_view.php"><span class="inv-tile-ico" style="color:#b98add"><i class="fa-solid fa-utensils"></i></span>
