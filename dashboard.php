@@ -1070,6 +1070,8 @@ body.inv-mode .main{padding:0;max-width:none;margin:0}
 .inv-tile-d{font-size:12px;color:var(--text-muted)}
 .inv-tile-arw{color:var(--text-muted);font-size:13px}
 .inv-tile-badge{font-size:11px;font-weight:700;color:#ff9a3d;background:rgba(255,138,61,.15);padding:1px 7px;border-radius:8px;margin-left:4px}
+.inv-tile-badge.count{color:var(--text-muted);background:rgba(255,255,255,.06)}
+body.inv-mode .toast-container{top:20px;bottom:auto;right:20px}
 .inv-rail{display:flex;flex-direction:column;gap:16px}
 .inv-panel{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:16px}
 .inv-panel-head{display:flex;align-items:center;justify-content:space-between;font-weight:700;color:var(--text);font-size:14px;margin-bottom:12px;flex-wrap:wrap;gap:8px}
@@ -1763,7 +1765,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             <div class="inv-tiles">
               <?php if (can('products')): ?>
               <a class="inv-tile" href="products.php"><span class="inv-tile-ico" style="color:var(--amber)"><i class="fa-solid fa-cube"></i></span>
-                <span><span class="inv-tile-t">Products</span><span class="inv-tile-d">Manage all finished goods</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
+                <span><span class="inv-tile-t">Products<?php if ($inv_total_products>0): ?> <span class="inv-tile-badge count"><?= (int)$inv_total_products ?></span><?php endif; ?></span><span class="inv-tile-d">Manage all finished goods</span></span><i class="fa-solid fa-chevron-right inv-tile-arw"></i></a>
               <?php endif; ?>
               <?php if (can('ingredients')): ?>
               <a class="inv-tile" href="ingredients.php"><span class="inv-tile-ico" style="color:#3ecf8e"><i class="fa-solid fa-flask"></i></span>
