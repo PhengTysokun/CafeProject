@@ -38,8 +38,10 @@ The `permissions` table already supplies **label** (`name`), **section** (`modul
 // Route/icon registry: permission slug => [href, icon, admin_only?]
 // Perms NOT listed here are non-navigable (sub-actions like manage_recipes,
 // or specially-placed items like my_profile) and never render as a nav link.
+// NOTE: `dashboard` is deliberately NOT in this registry. The home link is
+// hardcoded (indestructible) at the top of every layout, independent of can(),
+// so a corrupted/empty permission set can never trap a user without a way home.
 $NAV_REGISTRY = [
-    'dashboard'           => ['dashboard.php',              'fa-gauge-high'],      // home; always shown
     'find_orders'         => ['find_order.php',             'fa-magnifying-glass'],
     'view_orders'         => ['view_order.php',             'fa-receipt'],
     'loyalty'             => ['loyalty_dashboard.php',      'fa-star'],
@@ -61,22 +63,31 @@ $NAV_REGISTRY = [
     'manage_roles'        => ['manage_roles.php',           'fa-shield-halved', true], // admin_only
     // NOT navigable (no entry): manage_recipes (sub-action of recipes),
     // my_profile (rendered as the profile chip, not a nav link),
-    // dashboard is special-cased by each layout as the "home" item.
+    // dashboard (hardcoded home link per layout — see note above).
+];
+
+// Explicit section display order — do NOT rely on DB/module insertion order.
+// Sections absent here (or DB modules not listed) fall to the end, tie-broken by name.
+$SECTION_ORDER = [
+    'Orders', 'Operations', 'Inventory', 'Procurement', 'Reconciliation',
+    'Loyalty', 'Analytics', 'Staff', 'Admin',
 ];
 
 /**
  * Returns the nav items the current user may see, each as:
  *   ['slug','label','href','icon','section','order','admin_only']
- * Ordered by (section order, sort_order). Filtered by can() and admin_only.
+ * Filtered by can() (and admin_only). Sorted by ($SECTION_ORDER index of module,
+ * then permissions.sort_order, then id) — the DB's own module/row order is never
+ * trusted for display order.
  * Reads label/section/order from the permissions table; href/icon from registry.
  */
-function nav_items(mysqli $conn): array { /* join registry × permissions, filter can() */ }
+function nav_items(mysqli $conn): array { /* join registry × permissions, filter can(), sort */ }
 
-/** Same items grouped by section, preserving order: ['Inventory'=>[...], ...]. */
+/** Same items grouped by section in $SECTION_ORDER: ['Inventory'=>[...], ...]. */
 function nav_items_grouped(mysqli $conn): array { /* ... */ }
 ```
 
-Section display order is fixed in `nav_menu.php` (e.g. Overview, Orders, Operations, Inventory, Procurement, Reconciliation, Loyalty, Analytics, Staff, Admin) so every layout groups identically.
+Section display order is governed by the explicit `$SECTION_ORDER` array above (sorted via `usort`), so every layout groups identically regardless of DB indexing.
 
 ### How each layout consumes it
 All layouts call `nav_items()` / `nav_items_grouped()` — they never hardcode routes again.
@@ -86,7 +97,9 @@ All layouts call `nav_items()` / `nav_items_grouped()` — they never hardcode r
 - **Cashier / generic / custom roles**: render `nav_items_grouped()` as the `qx-grid` tile sections (group label = section, tiles = items). Replaces the partially-gated hardcoded tiles.
 
 ### Custom roles
-A custom role (`is_system = 0`, created via `manage_roles.php`) needs no bespoke code. It falls into the **generic dashboard branch** and renders `nav_items_grouped()` as tiles — showing exactly the permissions it was granted, grouped and ordered consistently. The role-aware focus card picks the highest-priority granted area (by section order) so even a brand-new role gets a sensible landing highlight.
+A custom role (`is_system = 0`, created via `manage_roles.php`) needs no bespoke code. It falls into the **generic dashboard branch** and renders `nav_items_grouped()` as tiles — showing exactly the permissions it was granted, grouped and ordered consistently.
+
+**Permission-driven focus card (replaces today's role-hardcoded focus):** the landing focus card is chosen from what the role actually has, not from a hardcoded role→focus mapping. Pick the first of these the role can do (in this priority): `view_orders`/`find_orders` → "Focus on Orders"; `products`/`ingredients`/`stock_count` → "Focus on Inventory"; `barista_station` → "Focus on Barista"; else fall through. If the role has **no** navigable permission, show the actionable empty state (below) instead of a focus card. This makes even a role an admin threw together in 30 seconds land somewhere sensible.
 
 ### Special items (not plain nav links)
 - **`dashboard`**: the home itself. Each layout renders a fixed "Dashboard" item at the top; it is not driven by a registry link (present for all authenticated users).
@@ -106,7 +119,7 @@ A custom role (`is_system = 0`, created via `manage_roles.php`) needs no bespoke
 ## Edge cases
 
 - **Permission granted but page missing/removed:** registry entry absent → no link (safe). If entry present but file deleted, link 404s — caught by the new-page checklist / a smoke check.
-- **Custom role with zero permissions:** generic dashboard shows only the Dashboard item + an empty-state ("No areas assigned yet — ask an admin"). No crash.
+- **Custom role with zero permissions:** generic dashboard shows the (indestructible) Dashboard home item + an **actionable** empty-state card — "No areas assigned yet. Contact your system administrator to adjust your permissions." — so the user is never a dead-end wondering what to do. No crash.
 - **Renamed permission (admin edits label):** label flows from the `permissions` table, so nav updates automatically; href/icon unaffected.
 - **New custom permission slug (future):** if an admin-defined perm has no registry entry, it simply doesn't appear in nav (documented); adding nav requires a registry line.
 - **`sort_order` collisions** (e.g. `cash_reconciliation` and `customer_display` both = 21): tie-break by `id` for stable ordering.
