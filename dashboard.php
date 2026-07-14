@@ -1664,13 +1664,34 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
         <div class="inv-brand"><i class="fa-solid fa-mug-hot"></i><span>Bird's Nest</span></div>
         <nav class="inv-nav">
           <a class="inv-navitem active" href="dashboard.php"><i class="fa-solid fa-gauge-high"></i><span>Dashboard</span></a>
-          <?php if (can('products')): ?><a class="inv-navitem" href="products.php"><i class="fa-solid fa-cube"></i><span>Products</span></a><?php endif; ?>
-          <?php if (can('ingredients')): ?><a class="inv-navitem" href="ingredients.php"><i class="fa-solid fa-flask"></i><span>Ingredients</span></a><?php endif; ?>
-          <?php if (can('stock_count')): ?><a class="inv-navitem" href="stock_count.php"><i class="fa-solid fa-clipboard-list"></i><span>Stock Count</span></a><?php endif; ?>
-          <?php if (can('recipes')): ?><a class="inv-navitem" href="recipes_view.php"><i class="fa-solid fa-utensils"></i><span>Recipes</span></a><?php endif; ?>
-          <?php if (can('suppliers')): ?><a class="inv-navitem" href="suppliers.php"><i class="fa-solid fa-truck-ramp-box"></i><span>Suppliers</span></a><?php endif; ?>
-          <?php if (can('purchase_orders')): ?><a class="inv-navitem" href="purchase_orders.php"><i class="fa-solid fa-file-invoice"></i><span>Purchase Orders</span></a><?php endif; ?>
-          <?php if (can('report')): ?><a class="inv-navitem" href="report.php"><i class="fa-solid fa-chart-column"></i><span>Reports</span></a><?php endif; ?>
+          <?php
+          // Permission-driven nav: any granted permission surfaces its link here.
+          // Inventory-relevant perms lead; cross-domain perms follow if explicitly granted.
+          $inv_nav = [
+              ['products',            'Products',        'products.php',              'fa-cube'],
+              ['ingredients',         'Ingredients',     'ingredients.php',           'fa-flask'],
+              ['stock_count',         'Stock Count',     'stock_count.php',           'fa-clipboard-list'],
+              ['recipes',             'Recipes',         'recipes_view.php',          'fa-utensils'],
+              ['suppliers',           'Suppliers',       'suppliers.php',             'fa-truck-ramp-box'],
+              ['purchase_orders',     'Purchase Orders', 'purchase_orders.php',       'fa-file-invoice'],
+              ['report',              'Reports',         'report.php',                'fa-chart-column'],
+              ['cash_reconciliation', 'Cash Count',      'reconciliation_report.php', 'fa-cash-register'],
+              ['loyalty',             'Loyalty',         'loyalty_dashboard.php',     'fa-star'],
+              ['find_orders',         'Find Orders',     'find_order.php',            'fa-magnifying-glass'],
+              ['view_orders',         'Orders',          'view_order.php',            'fa-receipt'],
+              ['barista_station',     'Barista Station', 'barista_display.php',       'fa-mug-hot'],
+              ['customer_display',    'Customer Display','customer_display.php',      'fa-display'],
+              ['employees',           'Employees',       'employees.php',             'fa-user-tie'],
+              ['attendance',          'Attendance',      'attendance.php',            'fa-fingerprint'],
+              ['announcements',       'Announcements',   'announcements.php',         'fa-bullhorn'],
+              ['reset_password',      'Reset Password',  'admin_reset_password.php',  'fa-key'],
+          ];
+          foreach ($inv_nav as [$slug, $label, $href, $icon]) {
+              if (can($slug)) {
+                  echo '<a class="inv-navitem" href="'.$href.'"><i class="fa-solid '.$icon.'"></i><span>'.htmlspecialchars($label).'</span></a>';
+              }
+          }
+          ?>
         </nav>
         <?php if (can('my_profile')): ?>
         <a href="profile.php" class="inv-userchip">
