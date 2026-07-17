@@ -100,6 +100,29 @@ _migrate($conn, 'employees_is_pos_v1', function($db) {
 _migrate($conn, 'products_badge_text', function($db) {
     $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_text VARCHAR(40) NULL DEFAULT NULL");
 });
+_migrate($conn, 'products_promo_percent', function($db) {
+    $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_percent TINYINT UNSIGNED NOT NULL DEFAULT 0");
+});
+_migrate($conn, 'order_items_promo_percent', function($db) {
+    $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS promo_percent TINYINT UNSIGNED NOT NULL DEFAULT 0");
+});
+_migrate($conn, 'order_items_orig_price', function($db) {
+    $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS orig_price DECIMAL(10,2) NOT NULL DEFAULT 0");
+});
+
+/**
+ * The badge label to show for a product: a non-zero promo auto-generates "N% OFF"
+ * and wins over the free-text badge; otherwise fall back to the manual badge_text.
+ * (function_exists guard mirrors config.php's existing _migrate guard — config can be
+ * required more than once in some flows; do not "simplify" it away.)
+ */
+if (!function_exists('product_badge_label')) {
+    function product_badge_label(array $row): string {
+        $promo = (int)($row['promo_percent'] ?? 0);
+        if ($promo > 0) return $promo . '% OFF';
+        return trim((string)($row['badge_text'] ?? ''));
+    }
+}
 
 // ── Add-ons (toppings) library + per-product mapping ──
 $conn->query("CREATE TABLE IF NOT EXISTS addons (
