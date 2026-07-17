@@ -4,7 +4,7 @@
 
 **Goal:** Give a product a real promotion percentage that discounts only that product's line in the cart, with an auto-generated "X% OFF" badge.
 
-**Architecture:** A new `products.promo_percent` column drives an auto badge and a per-line discount. The discount is applied once, at `add_to_cart.php`, by storing the **net** (post-promo) unit price as the cart line's `price` (plus `orig_price` for the struck display and `promo_percent` for the tag). Because `price` is net, every existing subtotal/report/receipt path stays correct with no money-logic change; `order_items.price` likewise stores net. Only display (struck price + an "Item Promos" summary row + badge) and one reporting figure (`promotion_discount`) are added.
+**Architecture:** A new `products.promo_percent` column drives an auto badge and a per-line discount. The discount is applied once, at `add_to_cart.php`, by storing the **net** (post-promo) unit price as the cart line's `price` (plus `orig_price` for the struck display and `promo_percent` for the tag). Because `price` is net, every existing subtotal/report/receipt path stays correct with no money-logic change; `order_items.price` likewise stores net, with `orig_price`/`promo_percent` alongside for display + recoverable reporting. `orders.promotion_discount` is **left unchanged** — the item promo is already in `total` via the net prices, and adding it there would double-subtract in the receipt breakdown. Only display is added (struck price + an "Item Promos" summary row + badge).
 
 **Tech Stack:** PHP 8 / MySQLi, vanilla JS + jQuery, XAMPP/Apache, MySQL. No automated test framework — verification is `php -l` lint + manual browser/curl E2E (project convention).
 
@@ -651,12 +651,12 @@ and extend the bind (line 208):
 
 Leave the `$final_discount = $buy3 + $happy_hour;` line (148) and `$after`/`$final_total` untouched — line prices are already net, so the charged total is correct and `promotion_discount` must stay `buy3 + happy_hour` per the box above.
 
-- [ ] **Step 5: Lint**
+- [ ] **Step 4: Lint**
 
 Run: `php -l confirm_order.php`
 Expected: `No syntax errors detected in confirm_order.php`
 
-- [ ] **Step 6: Browser E2E — place a real order**
+- [ ] **Step 5: Browser E2E — place a real order**
 
 Place an order containing the promo product + a normal product, pay by Cash. Then verify persistence:
 
@@ -669,7 +669,7 @@ Expected: `total` matches the net cart total shown at checkout; `promotion_disco
 Also verify the receipt breakdown reconciles (no double subtraction):
 Open `receipt_pdf.php?order_id=<id>` — the printed subtotal − discount + tax must equal the grand total shown.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add confirm_order.php
