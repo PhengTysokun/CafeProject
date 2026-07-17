@@ -704,7 +704,8 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
                  data-product-image="<?= e($t['image']) ?>"
                  data-product-category="<?= e($t['category']) ?>"
                  data-product-desc="<?= e($t['description']) ?>"
-                 data-product-badge="<?= e($t['badge_text'] ?? '') ?>"
+                 data-product-badge="<?= e(product_badge_label($t)) ?>"
+                 data-product-promo="<?= (int)($t['promo_percent'] ?? 0) ?>"
                  data-product-has-sizes="<?= (int)($t['has_sizes'] ?? 0) ?>"
                  data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$t['product_id']] ?? []), ENT_QUOTES) ?>'
                  data-product-addons='<?= htmlspecialchars(json_encode($addonsByProduct[(int)$t['product_id']] ?? []), ENT_QUOTES) ?>'
@@ -712,8 +713,8 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
                  role="button" tabindex="0">
               <div class="seller-img-wrap">
                 <img src="<?= e($t['image']) ?>" loading="lazy" alt="<?= e($t['name']) ?>">
-                <?php if (!empty($t['badge_text'])): ?>
-                <span class="product-badge seller-badge"><?= e($t['badge_text']) ?></span>
+                <?php $__badge = product_badge_label($t); if ($__badge !== ''): ?>
+                <span class="product-badge seller-badge"><?= e($__badge) ?></span>
                 <?php endif; ?>
               </div>
               <div class="seller-info">
@@ -749,7 +750,8 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
                    data-product-image="<?= e($p['image']) ?>"
                    data-product-category="<?= e($p['category']) ?>"
                    data-product-desc="<?= e($p['description']) ?>"
-                   data-product-badge="<?= e($p['badge_text'] ?? '') ?>"
+                   data-product-badge="<?= e(product_badge_label($p)) ?>"
+                   data-product-promo="<?= (int)($p['promo_percent'] ?? 0) ?>"
                    data-product-has-sizes="<?= (int)($p['has_sizes'] ?? 0) ?>"
                    data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
                    data-product-addons='<?= htmlspecialchars(json_encode($addonsByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
@@ -757,7 +759,7 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
                    role="button" tabindex="0">
                 <div class="card-img">
                   <?php if ($p['name']===$bestSellerName): ?><span class="badge-bestseller">&#x2605; Best Seller</span><?php endif; ?>
-                  <?php if (!empty($p['badge_text'])): ?><span class="product-badge"><?= e($p['badge_text']) ?></span><?php endif; ?>
+                  <?php $__badge = product_badge_label($p); if ($__badge !== ''): ?><span class="product-badge"><?= e($__badge) ?></span><?php endif; ?>
                   <img src="<?= e($p['image']) ?>" loading="lazy" alt="<?= e($p['name']) ?>">
                   <div class="img-overlay"></div>
                   <?php if ((int)($p['has_sizes'] ?? 0) === 1): ?>
@@ -801,7 +803,8 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
                    data-product-image="<?= e($p['image']) ?>"
                    data-product-category="<?= e($p['category']) ?>"
                    data-product-desc="<?= e($p['description']) ?>"
-                   data-product-badge="<?= e($p['badge_text'] ?? '') ?>"
+                   data-product-badge="<?= e(product_badge_label($p)) ?>"
+                   data-product-promo="<?= (int)($p['promo_percent'] ?? 0) ?>"
                    data-product-has-sizes="<?= (int)($p['has_sizes'] ?? 0) ?>"
                    data-product-sizes='<?= htmlspecialchars(json_encode($sizesByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
                    data-product-addons='<?= htmlspecialchars(json_encode($addonsByProduct[(int)$p['product_id']] ?? []), ENT_QUOTES) ?>'
@@ -809,7 +812,7 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
                    role="button" tabindex="0">
                 <div class="card-img">
                   <?php if ($p['name']===$bestSellerName): ?><span class="badge-bestseller">&#x2605; Best Seller</span><?php endif; ?>
-                  <?php if (!empty($p['badge_text'])): ?><span class="product-badge"><?= e($p['badge_text']) ?></span><?php endif; ?>
+                  <?php $__badge = product_badge_label($p); if ($__badge !== ''): ?><span class="product-badge"><?= e($__badge) ?></span><?php endif; ?>
                   <img src="<?= e($p['image']) ?>" loading="lazy" alt="<?= e($p['name']) ?>">
                   <div class="img-overlay"></div>
                   <?php if ((int)($p['has_sizes'] ?? 0) === 1): ?>
@@ -1276,16 +1279,23 @@ function escH(str) {
 // ── PRODUCT MODAL ──
 var product = {}, modalQty = 1, modalUnitPrice = 0, modalAddonTotal = 0;
 
-function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addons) {
+// Net drink price after a per-product promo (rounded per unit, mirrors the server).
+function promoNet(gross, promoPct) {
+  if (!promoPct) return gross;
+  return Math.round(gross * (1 - promoPct / 100) * 100) / 100;
+}
+
+function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addons, promo) {
   var p = Number(price) || 0;
-  product = { id: id, name: name, price: p, cat: cat };
+  var promoPct = Math.max(0, Math.min(100, parseInt(promo || 0, 10)));
+  product = { id: id, name: name, price: p, cat: cat, promo: promoPct };
   modalQty = 1; modalUnitPrice = p;
   document.getElementById('modalImg').src = img;
   var mb = document.getElementById('modalBadge');
   if (mb) { mb.textContent = badge || ''; mb.style.display = badge ? 'flex' : 'none'; }
   document.getElementById('modalName').textContent = name;
   document.getElementById('modalDesc').textContent = desc || '';
-  document.getElementById('modalPrice').textContent = '$' + p.toFixed(2);
+  document.getElementById('modalPrice').textContent = '$' + promoNet(p, promoPct).toFixed(2);
   document.getElementById('modalQtyDisplay').textContent = '1';
   // Per-category option visibility (configured in Manage Categories); default = show all.
   var co = CATEGORY_OPTS[cat] || { sweet: 1, ice: 1, milk: 1, addons: 1 };
@@ -1315,7 +1325,7 @@ function openModal(id, name, price, img, cat, desc, badge, hasSizes, sizes, addo
     // default Medium if present else first
     var def = pills.querySelector('[data-value="M"]') || pills.firstChild;
     if (def) { def.classList.add('active'); modalUnitPrice = Number(def.dataset.price) || p; }
-    document.getElementById('modalPrice').textContent = '$' + modalUnitPrice.toFixed(2);
+    document.getElementById('modalPrice').textContent = '$' + promoNet(modalUnitPrice, promoPct).toFixed(2);
     sizeWrap.style.display = 'block';
   } else {
     sizeWrap.style.display = 'none';
@@ -1353,12 +1363,15 @@ function openModalFromCard(card) {
   var sizes = [], addons = [];
   try { sizes = JSON.parse(card.dataset.productSizes || '[]'); } catch (e) { sizes = []; }
   try { addons = JSON.parse(card.dataset.productAddons || '[]'); } catch (e) { addons = []; }
-  openModal(card.dataset.productId, card.dataset.productName||'', Number(card.dataset.productPrice||0), card.dataset.productImage||'', card.dataset.productCategory||'', card.dataset.productDesc||'', card.dataset.productBadge||'', card.dataset.productHasSizes==='1', sizes, addons);
+  openModal(card.dataset.productId, card.dataset.productName||'', Number(card.dataset.productPrice||0), card.dataset.productImage||'', card.dataset.productCategory||'', card.dataset.productDesc||'', card.dataset.productBadge||'', card.dataset.productHasSizes==='1', sizes, addons, Number(card.dataset.productPromo||0));
 }
 
 function closeModal() { document.getElementById('modal').style.display = 'none'; document.body.style.overflow = ''; }
 function changeQty(delta) { modalQty = Math.max(1, Math.min(10, modalQty + delta)); document.getElementById('modalQtyDisplay').textContent = modalQty; updateModalTotal(); }
-function updateModalTotal() { document.getElementById('modalTotalDisplay').textContent = '$' + ((modalUnitPrice + modalAddonTotal) * modalQty).toFixed(2); }
+function updateModalTotal() {
+  var net = promoNet(modalUnitPrice, (product.promo || 0));
+  document.getElementById('modalTotalDisplay').textContent = '$' + ((net + modalAddonTotal) * modalQty).toFixed(2);
+}
 function selectPill(pill) { pill.closest('.pill-group').querySelectorAll('.option-pill').forEach(function(p) { p.classList.remove('active'); }); pill.classList.add('active'); }
 function toggleAddon(pill) {
   pill.classList.toggle('active');
@@ -1373,7 +1386,7 @@ function selectSize(pill) {
   pill.closest('.pill-group').querySelectorAll('.option-pill').forEach(function(p){ p.classList.remove('active'); });
   pill.classList.add('active');
   modalUnitPrice = Number(pill.dataset.price) || modalUnitPrice;
-  document.getElementById('modalPrice').textContent = '$' + modalUnitPrice.toFixed(2);
+  document.getElementById('modalPrice').textContent = '$' + promoNet(modalUnitPrice, (product.promo || 0)).toFixed(2);
   updateModalTotal();
 }
 
