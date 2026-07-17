@@ -187,8 +187,8 @@ if ($existing_order_id > 0) {
         }
 
         $stmt_item = $conn->prepare("
-            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
         $stock_warnings = [];
@@ -203,9 +203,11 @@ if ($existing_order_id > 0) {
             $scode      = $item['size_code'] ?? '';
             $slabel     = $item['size_label'] ?? '';
             $sfactor    = (float)($item['size_factor'] ?? 1.0);
+            $promo_pct  = (int)($item['promo_percent'] ?? 0);
+            $orig_price = (float)($item['orig_price'] ?? $price);
             $addons_json = json_encode($item['addons'] ?? []);
 
-            $stmt_item->bind_param("iisdissssss", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json);
+            $stmt_item->bind_param("iisdissssssid", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price);
             $stmt_item->execute();
 
             // ── STOCK: deduct at order creation time ──
@@ -413,8 +415,8 @@ try {
 
     // ── ORDER ITEMS + STOCK DEDUCTION ──
     $stmt_item = $conn->prepare("
-        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stock_warnings = [];
     foreach ($_SESSION['cart'] as $item) {
@@ -428,9 +430,12 @@ try {
         $scode      = $item['size_code'] ?? '';
         $slabel     = $item['size_label'] ?? '';
         $sfactor    = (float)($item['size_factor'] ?? 1.0);
+        $promo_pct  = (int)($item['promo_percent'] ?? 0);
+        $orig_price = (float)($item['orig_price'] ?? $price);
         $addons_json = json_encode($item['addons'] ?? []);
 
-        $stmt_item->bind_param("iisdissssss", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json);
+        // price is the NET (post-promo) unit price; promo is already baked in. Do not re-discount.
+        $stmt_item->bind_param("iisdissssssid", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price);
         $stmt_item->execute();
 
         if ($product_id > 0) {
@@ -441,8 +446,8 @@ try {
     // ── ADD REDEEMED REWARDS TO ORDER + deduct points now that order is confirmed ──
     if (!empty($_SESSION['redeemed_rewards'])) {
         $stmt_reward = $conn->prepare("
-            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt_deduct   = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points - ?), last_used = NOW() WHERE card_id = ?");
         $stmt_hist     = $conn->prepare("
@@ -458,7 +463,8 @@ try {
             $rqty       = 1;
             $rempty     = '';
             $addons_json = json_encode($reward['addons'] ?? []);
-            $stmt_reward->bind_param("iisdissssss", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty, $rempty, $rempty, $addons_json);
+            $rpromo = 0; $rorig = 0.0;
+            $stmt_reward->bind_param("iisdissssssid", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty, $rempty, $rempty, $addons_json, $rpromo, $rorig);
             $stmt_reward->execute();
 
             // Deduct points from card (the deduction that loyalty_redeem.php now defers)
