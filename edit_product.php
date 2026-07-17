@@ -29,6 +29,7 @@ if (isset($_POST['update_product'])) {
     $category    = $_POST['category']    ?? '';
     $is_avail    = isset($_POST['is_available']) ? 1 : 0;
     $badge_text  = substr(trim($_POST['badge_text'] ?? ''), 0, 40) ?: null;
+    $promo_percent = max(0, min(100, (int)($_POST['promo_percent'] ?? 0)));
 
     $cat_r = $conn->prepare("SELECT category_id FROM categories WHERE slug = ? LIMIT 1");
     $cat_r->bind_param("s", $category); $cat_r->execute();
@@ -47,8 +48,8 @@ if (isset($_POST['update_product'])) {
             $image_path = $upload_dir . $image_name;
             if (move_uploaded_file($_FILES['image']['tmp_name'], $image_path)) {
                 if (!empty($product['image']) && file_exists($product['image'])) unlink($product['image']);
-                $stmt = $conn->prepare("UPDATE products SET name=?,description=?,price=?,category=?,category_id=?,image=?,is_available=?,badge_text=? WHERE product_id=?");
-                $stmt->bind_param("ssdsisisi", $name, $description, $price, $category, $category_id, $image_path, $is_avail, $badge_text, $id);
+                $stmt = $conn->prepare("UPDATE products SET name=?,description=?,price=?,category=?,category_id=?,image=?,is_available=?,badge_text=?,promo_percent=? WHERE product_id=?");
+                $stmt->bind_param("ssdsisisii", $name, $description, $price, $category, $category_id, $image_path, $is_avail, $badge_text, $promo_percent, $id);
                 if ($stmt->execute()) { $success = true; $product['image'] = $image_path; }
                 else $error = "Database error while updating product.";
             } else {
@@ -56,8 +57,8 @@ if (isset($_POST['update_product'])) {
             }
         }
     } else {
-        $stmt = $conn->prepare("UPDATE products SET name=?,description=?,price=?,category=?,category_id=?,is_available=?,badge_text=? WHERE product_id=?");
-        $stmt->bind_param("ssdsiisi", $name, $description, $price, $category, $category_id, $is_avail, $badge_text, $id);
+        $stmt = $conn->prepare("UPDATE products SET name=?,description=?,price=?,category=?,category_id=?,is_available=?,badge_text=?,promo_percent=? WHERE product_id=?");
+        $stmt->bind_param("ssdsiisii", $name, $description, $price, $category, $category_id, $is_avail, $badge_text, $promo_percent, $id);
         if ($stmt->execute()) $success = true;
         else $error = "Database error while updating product.";
     }
@@ -69,6 +70,7 @@ if (isset($_POST['update_product'])) {
         $product['category']     = $category;
         $product['is_available'] = $is_avail;
         $product['badge_text']   = $badge_text ?: null;
+        $product['promo_percent'] = $promo_percent;
 
         // ── Sizes: toggle + upsert S/M/L rows, sync products.price to Medium ──
         $has_sizes = isset($_POST['has_sizes']) ? 1 : 0;
@@ -778,6 +780,11 @@ input[name=category] { display: none; }
                 </div>
                 <div class="section-body">
                     <div class="field">
+                        <label class="flabel" for="f_promo">Promo % Off <span style="font-weight:400;color:var(--muted)">(0 = none; a non-zero promo replaces the badge with "N% OFF")</span></label>
+                        <input type="number" id="f_promo" name="promo_percent" min="0" max="100" step="1"
+                            value="<?= (int)($product['promo_percent'] ?? 0) ?>">
+                    </div>
+                    <div class="field">
                         <label class="flabel" for="f_badge">Badge Label <span style="font-weight:400;color:var(--muted)">(leave blank to remove)</span></label>
                         <input type="text" id="f_badge" name="badge_text" maxlength="40"
                             value="<?= htmlspecialchars($product['badge_text'] ?? '') ?>"
@@ -925,6 +932,23 @@ function updateBadge() {
     }
 }
 function clearBadge() { fBadge.value = ''; updateBadge(); }
+
+const fPromo = document.getElementById('f_promo');
+fPromo.addEventListener('input', applyPromoBadge);
+function applyPromoBadge() {
+    const promo = Math.max(0, Math.min(100, parseInt(fPromo.value || '0', 10)));
+    if (promo > 0) {
+        fBadge.disabled = true; fBadge.style.opacity = '0.5';
+        const txt = promo + '% OFF';
+        badgeLive.textContent = txt; badgeLiveRow.style.display = 'flex';
+        ppBadge.textContent   = txt; ppBadgeRow.style.display   = 'flex';
+        if (imgBadge) { imgBadge.textContent = txt; imgBadge.style.display = 'flex'; }
+    } else {
+        fBadge.disabled = false; fBadge.style.opacity = '';
+        updateBadge();
+    }
+}
+applyPromoBadge();
 
 // ── Ctrl+Enter ──
 document.addEventListener('keydown', e => {

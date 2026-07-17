@@ -8,6 +8,7 @@ if (isset($_POST['add_product'])) {
     $price       = (float)($_POST['price'] ?? 0);
     $category    = $_POST['category']    ?? '';
     $badge_text  = substr(trim($_POST['badge_text'] ?? ''), 0, 40) ?: null;
+    $promo_percent = max(0, min(100, (int)($_POST['promo_percent'] ?? 0)));
 
     $cat_r = $conn->prepare("SELECT category_id FROM categories WHERE slug = ? LIMIT 1");
     $cat_r->bind_param("s", $category); $cat_r->execute();
@@ -27,8 +28,8 @@ if (isset($_POST['add_product'])) {
         move_uploaded_file($_FILES['image']['tmp_name'], $image_path);
     }
 
-    $stmt = $conn->prepare("INSERT INTO products (name, description, price, category, category_id, image, badge_text) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ssdsiss", $name, $description, $price, $category, $category_id, $image_path, $badge_text);
+    $stmt = $conn->prepare("INSERT INTO products (name, description, price, category, category_id, image, badge_text, promo_percent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("ssdsissi", $name, $description, $price, $category, $category_id, $image_path, $badge_text, $promo_percent);
     if ($stmt->execute()) {
         $product_id = $conn->insert_id;
 
@@ -465,6 +466,11 @@ body {
             </div>
 
             <div class="input-group">
+                <i class="fa-solid fa-percent"></i>
+                <input type="number" name="promo_percent" id="promoPercent" min="0" max="100" step="1" value="0"
+                       placeholder="Promo % off this product (0 = none)">
+            </div>
+            <div class="input-group">
                 <i class="fa-solid fa-certificate"></i>
                 <input type="text" name="badge_text" id="badgeText" maxlength="40" placeholder='Badge label (e.g. "50% OFF", "New!", "Limited") — leave blank for none'>
             </div>
@@ -491,6 +497,25 @@ document.getElementById('badgeText').addEventListener('input', function() {
     const badge = document.getElementById('badgePreview');
     if (val) { badge.textContent = val; wrap.style.display = 'block'; }
     else { wrap.style.display = 'none'; }
+});
+
+document.getElementById('promoPercent').addEventListener('input', function() {
+    var promo = Math.max(0, Math.min(100, parseInt(this.value || '0', 10)));
+    var badgeInput = document.getElementById('badgeText');
+    var wrap = document.getElementById('badgePreviewWrap');
+    var badge = document.getElementById('badgePreview');
+    if (promo > 0) {
+        badgeInput.disabled = true;
+        badgeInput.style.opacity = '0.5';
+        badge.textContent = promo + '% OFF';
+        wrap.style.display = 'block';
+    } else {
+        badgeInput.disabled = false;
+        badgeInput.style.opacity = '';
+        var val = badgeInput.value.trim();
+        badge.textContent = val;
+        wrap.style.display = val ? 'block' : 'none';
+    }
 });
 
 // When a category that offers add-ons is chosen, default the product to that
