@@ -32,39 +32,52 @@ be added later; this design does not preclude them.
   `0`–`100`. `0` = no promo. Added via a `_migrate()` block in `config.php` (mirror
   `products_badge_text`).
 - **New column:** `order_items.promo_percent` TINYINT UNSIGNED NOT NULL DEFAULT `0` — a
-  **snapshot** of the line's promo at order time. `order_items.price` stays the **full** unit
-  price; the net paid for the line is derived, never stored. This keeps historical receipts
-  truthful (list price + savings both recoverable) and keeps a promo change from mutating
-  past orders.
+  **snapshot** of the line's promo at order time, kept **for display only** (the "15% OFF"
+  tag on receipts/edit screens). It does not drive any money math.
 - The two migrations are independent (no FK between them); order doesn't matter.
 
-### Single source of truth: store full price, derive net
+### Store the NET price; promo is baked in at creation
 
-Neither the cart line nor `order_items` ever stores a *net* (post-promo) price. Both store the
-**full** unit price plus `promo_percent`; every consumer derives the net. This avoids drift
-between a stored net and a stored percent.
+**`order_items.price` stores the NET, actually-charged unit price** (drink after promo, plus
+full-price add-ons). This is deliberate and is the key correctness decision.
 
-**Cart line fields** (session `cart`): existing fields unchanged, plus one new field:
+Rationale: `order_items.price` is read for money by ~15+ downstream consumers —
+`report.php`, `report_pdf.php`, `report_live.php`, `send_report.php`, `shift_report.php`, all
+three receipts, `payment_cash.php`, `refund_order.php`, `update_status.php`, and the
+add-to-order / edit-order recompute paths. If `price` were the gross list price, every one of
+those would have to subtract the promo, and missing any single one silently mis-charges or
+mis-reports. Storing the net makes all of them correct with **zero** changes, because the net
+*is* the real line revenue. It also freezes the promo snapshot at creation for free — an
+edited order never re-prices against today's promo.
+
+`promo_percent` is stored alongside purely so a receipt/edit screen can show a "15% OFF" tag;
+reports ignore it.
+
+**Cart line fields** (session `cart`): existing fields unchanged in meaning, plus two new
+fields. `price` continues to be the value every existing total sums — now it is the **net**
+unit price, so all current cart totals stay correct automatically.
 
 | field | meaning |
 |---|---|
-| `price` | full pre-promo unit price = `drink_price + addon_sum` (unchanged from today) |
-| `addons` | existing array of `{id,name,price}`; `addon_sum` = Σ their prices |
+| `price` | **net** unit price actually charged = `net_drink + addon_sum` (was gross; now net) |
+| `orig_price` | **new** — gross unit price before promo (`gross_drink + addon_sum`), for the struck-through display and the Item-Promos summing |
 | `promo_percent` | **new** — snapshot of the product's promo at add time |
+| `addons` | existing array of `{id,name,price}`; `addon_sum` = Σ their prices |
 
-Derived per line:
+Derived at add time (`add_to_cart.php`), rounded **per unit** (standard for a stored unit
+price; sub-cent vs. line-total rounding, and keeps every `Σ price×qty` site exact):
 ```
-drink_price   = price − addon_sum                 (the promo-eligible portion)
-promo_saving  = round(drink_price × qty × promo_percent / 100, 2)   (half-up, on line total)
-line_net_tot  = price × qty − promo_saving
+gross_drink = size/base price (before add-ons)
+net_drink   = round(gross_drink × (1 − promo_percent/100), 2)
+price       = net_drink   + addon_sum        ← stored, charged, summed everywhere
+orig_price  = gross_drink + addon_sum        ← stored, for display + promo total
 ```
-Add-ons are never discounted, so subtracting them out gives the eligible base cleanly without
-adding a redundant `drink_price` column.
+Item-promo saving for the summary row = `Σ (orig_price − price) × qty` (a plain subtraction of
+two stored values — no re-derivation, no drift).
 
-**Invariant (code-review checkpoint):** `drink_price = price − addon_sum` is only correct while
-`price` and the `addons` array stay in sync. Every code path that sets or mutates a cart line's
-`price` must set `addons` to match (and vice versa). Flag any place that touches one without the
-other during review.
+**Invariant (code-review checkpoint):** a cart line's `price`, `orig_price`, and
+`promo_percent` are set together once at add time and never independently mutated afterward
+(qty changes don't touch unit price). Flag any code path that writes one without the others.
 
 ### Badge derivation (one badge slot, promo wins)
 
@@ -87,31 +100,30 @@ Rationale: "Iced Lemon Tea is 15% off" means the drink is on promo. Add-ons are 
 priced items the customer chose to add; discounting a $1 extra shot under a drink promo is
 surprising and awkward to explain on a receipt. Add-ons remain full price.
 
-The drink-eligible portion is recovered as `drink_price = price − addon_sum` (see "Single
-source of truth" above) — no separate drink-price column needed. `add_to_cart.php` keeps
-storing `price` as the full merged unit price and adds the `promo_percent` snapshot.
+`add_to_cart.php` computes `net_drink` from the size/base price (before add-ons are added),
+then stores `price = net_drink + addon_sum` and `orig_price = gross_drink + addon_sum`.
 
-**Rounding:** the promo saving is rounded to the cent on the **line total**, half-up:
-`round(drink_price × qty × promo_percent / 100, 2)`. Rounding on the line total (not per unit)
-avoids per-unit rounding drift on multi-qty lines.
+**Rounding:** `net_drink = round(gross_drink × (1 − promo_percent/100), 2)` — rounded per unit,
+which is standard when a unit price is stored and keeps every `Σ price×qty` total exact.
 
 ### Cart line display
 
-Each promo line shows the original unit price struck through with the discounted unit price
-beneath it (consistent with how sizes/add-ons already annotate the line). When the line has
-add-ons, the struck/blended prices won't differ by exactly the promo % (add-ons aren't
-discounted), so annotate with a small `(15% off drink)` note to pre-empt the "why isn't the
-gap exactly 15%?" reaction.
+Each promo line shows the original unit price (`orig_price`) struck through next to the
+discounted unit price (`price`). When the line has add-ons, the struck/blended prices won't
+differ by exactly the promo % (add-ons aren't discounted), so annotate with a small
+`(15% off drink)` note to pre-empt the "why isn't the gap exactly 15%?" reaction.
 
 ### Stacking / order of operations
 
 Item promo is intrinsic to the line, so it applies **first**, reducing the line and therefore
 the subtotal. Store-wide promos then apply on top of the reduced subtotal:
 
+Because the cart line `price` is already net, the existing subtotal loops need **no** promo
+arithmetic — they keep summing `price × qty` and are automatically net of item promos:
 ```
-promo_saving = round(drink_price × qty × promo% / 100, 2)   per line
-subtotal     = Σ (price × qty − promo_saving)               net of item promos
-Happy Hour   = subtotal × HAPPY_HOUR_DISCOUNT%              on the reduced subtotal
+subtotal     = Σ price × qty                                already net of item promos
+item_promos  = Σ (orig_price − price) × qty                 shown as its own summary row
+Happy Hour   = subtotal × HAPPY_HOUR_DISCOUNT%              on the (already-reduced) subtotal
 after        = subtotal − Happy Hour
 manual       = manual discount applied to `after`           (unchanged)
 after       −= manual
@@ -119,6 +131,8 @@ tax          = after × TAX_RATE%
 total        = after + tax
 Buy-X-Get-1  = display only, never reduces                  (unchanged)
 ```
+The only new computation any total site needs is `item_promos` for the display row; the
+charged math is untouched.
 
 A promo item **does** also get Happy Hour (stacks). Both are the shop's own settings.
 
@@ -135,35 +149,41 @@ builder in `menu.php`).
 
 ### Persistence & reporting
 
-- `confirm_order.php` writes `order_items.promo_percent` per line and includes item-promo
-  savings in the order's discount accounting so `total` is correct and reports are truthful.
-- Where the order-level `promotion_discount` is written (currently `happy_hour + buy3`),
-  add the aggregate item-promo saving so the order's recorded promotion total reflects reality.
-- Receipts (`receipt_print.php`, `receipt_pdf.php`, `receipt_paylater.php`) show the item
-  promo consistently across all three — an aggregate `Item Promos −$X.XX` discount line
-  (same presentation the receipts already use for Happy Hour / manual). If the three receipts
-  currently format discounts differently, align them to one presentation here.
+- `confirm_order.php` writes each line's net `price` (as it already does — the value is now net)
+  plus the new `order_items.promo_percent` snapshot. The order `total` is already correct
+  because the summed line prices are net.
+- Order-level `promotion_discount` (currently `happy_hour + buy3`) gains the aggregate
+  item-promo saving `Σ (orig_price − price) × qty`, so the recorded promotion total reflects
+  reality in reports. Computed once, from the cart, in `confirm_order.php`.
+- Receipts (`receipt_print.php`, `receipt_pdf.php`, `receipt_paylater.php`): line prices are
+  already net (correct totals with no change). Enhancement: where a line's `promo_percent > 0`,
+  show a small "15% OFF" tag on that line so the customer sees the promo was applied. Kept
+  consistent across all three.
 
 ### Editing an existing order
 
-`edit_order_items.php` recomputes an edited order using the **snapshot**
-`order_items.promo_percent`, not the product's current `promo_percent`. The admin is editing
-a placed order, not repricing it against today's promos — the price the customer agreed to
-stands even if the product's promo has since changed or ended.
+`edit_order_items.php` needs **no** money-logic change: `order_items.price` is the frozen net
+price, so its subtotal/total recompute is already correct and already "respects" the original
+promo (the snapshot is baked into the stored price). Enhancement only: surface a "15% OFF" tag
+on promo lines using the stored `promo_percent`.
 
 ## Affected files
 
 - `config.php` — two `_migrate()` blocks (`products.promo_percent`, `order_items.promo_percent`).
-- `add_product.php` — `promo_percent` input on add + edit; validate `0`–`100`; persist.
-- `menu.php` — badge derivation (cards, top-sellers, modal); cart-line struck-price display;
-  `Item Promos` summary row (server render + JS summary builder + openModal promo data attr).
-- `add_to_cart.php` — snapshot `promo_percent` onto the cart line; compute net line price
-  (drink only), keep add-on sum full.
-- `cart_refresh.php` — include item-promo in live totals + summary row.
-- `confirm_order.php` — persist `order_items.promo_percent`; fold item-promo into order
-  discount total; correct `total`.
-- `edit_order_items.php` — respect promo when recomputing an edited order.
-- `receipt_print.php`, `receipt_pdf.php`, `receipt_paylater.php` — surface item promo.
+- `add_product.php` — `promo_percent` input on the add form; validate `0`–`100`; persist on insert.
+- `edit_product.php` — `promo_percent` input on the edit form; validate + persist on update;
+  badge-override UX (grey out `badge_text`, live-preview derived badge).
+- `menu.php` — badge derivation (cards, top-sellers, modal `data-product-promo` attr);
+  cart-line struck-price display; `Item Promos` summary row (server render + JS renderer).
+- `add_to_cart.php` — compute `net_drink`; store `price` (net), `orig_price` (gross),
+  `promo_percent` on the cart line.
+- `cart_refresh.php` — emit `orig_price` + `promo_percent` per item and an `item_promos` total.
+- `confirm_order.php` — write `order_items.promo_percent`; add item-promo saving into
+  `promotion_discount`. Line `price` is already net (no charged-math change).
+- `edit_order_items.php` — display-only: show a promo tag on lines with `promo_percent > 0`
+  (fetch the column). No money-logic change.
+- `receipt_print.php`, `receipt_pdf.php`, `receipt_paylater.php` — fetch `promo_percent`, show a
+  per-line "X% OFF" tag. No money-logic change (stored prices already net).
 
 ## Testing
 
