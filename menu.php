@@ -24,13 +24,14 @@ $_show_kitchen_btn = ($_SESSION['role'] ?? '') === 'barista';
 /* ── CART CALCULATIONS ── */
 $cart = $_SESSION['cart'] ?? [];
 $cart_count = 0;
-$cp_subtotal = 0.0; $cp_min_price = PHP_FLOAT_MAX; $cp_cheapest_idx = -1;
+$cp_subtotal = 0.0; $cp_min_price = PHP_FLOAT_MAX; $cp_cheapest_idx = -1; $cp_item_promos = 0.0;
 $_cp_fpid = defined('FREE_ITEM_PRODUCT_ID') ? (int)FREE_ITEM_PRODUCT_ID : 0;
 $_cp_fname = ''; $_cp_fprice = 0.0; $_cp_fidx = -1;
 
 foreach ($cart as $idx => $item) {
     $q = (int)($item['qty'] ?? 1); $p = (float)($item['price'] ?? 0);
     $cart_count += $q; $cp_subtotal += $p * $q;
+    $cp_item_promos += (max(0, (float)($item['orig_price'] ?? $p) - $p)) * $q;
     if ($p < $cp_min_price) { $cp_min_price = $p; $cp_cheapest_idx = $idx; }
     if ($_cp_fpid > 0 && (int)($item['product_id'] ?? 0) === $_cp_fpid && $_cp_fidx < 0) {
         $_cp_fidx = $idx; $_cp_fname = $item['product_name'] ?? ''; $_cp_fprice = $p;
@@ -894,7 +895,14 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
             <div class="cp-item-name"><?= e($item['product_name'] ?? '') ?></div>
             <?php if ($meta): ?><div class="cp-item-meta"><?= e(implode(' • ', $meta)) ?></div><?php endif; ?>
             <?php if (!empty($item['addons'])): ?><div class="cp-item-meta"><?= e(implode(', ', array_map(fn($a) => $a['name'], $item['addons']))) ?></div><?php endif; ?>
-            <div class="cp-item-price">$<span id="cp-line-<?= $i ?>"><?= number_format((float)($item['price'] ?? 0), 2) ?></span></div>
+            <?php $__op = (float)($item['orig_price'] ?? $item['price']); $__pp = (int)($item['promo_percent'] ?? 0); ?>
+            <div class="cp-item-price">
+              <?php if ($__pp > 0 && $__op > (float)$item['price']): ?>
+              <s style="color:#aaa;font-size:11px;margin-right:5px;">$<?= number_format($__op, 2) ?></s>
+              <?php endif; ?>
+              $<span id="cp-line-<?= $i ?>"><?= number_format((float)($item['price'] ?? 0), 2) ?></span>
+              <?php if ($__pp > 0): ?><span style="color:#e74c3c;font-size:9px;font-weight:700;margin-left:4px;"><?= $__pp ?>% OFF</span><?php endif; ?>
+            </div>
           </div>
           <div class="cp-item-actions">
             <div class="cp-qty">
@@ -923,6 +931,10 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
         <div class="cp-sum-row">
           <span>Subtotal</span>
           <span id="cpSubtotal">$<?= number_format($cp_subtotal, 2) ?></span>
+        </div>
+        <div class="cp-sum-row discount" id="cpItemPromoRow" style="<?= $cp_item_promos > 0 ? '' : 'display:none' ?>">
+          <span>&#x1F3F7;&#xFE0F; Item Promos</span>
+          <span id="cpItemPromoAmt">-$<?= number_format($cp_item_promos, 2) ?></span>
         </div>
         <div class="cp-sum-row discount" id="cpBuy3Row" style="<?= $cp_buy3 > 0 ? '' : 'display:none' ?>">
           <span>&#x1F389; Buy <?= BUY_X_COUNT ?> Get 1 Free</span>
@@ -1471,7 +1483,12 @@ function renderCartPanel(data) {
         (item.addons && item.addons.length
           ? '<div class="cp-item-meta">' + item.addons.map(function(a){ return escH(a.name); }).join(', ') + '</div>'
           : '') +
-        '<div class="cp-item-price">$<span id="cp-line-' + item.index + '">' + item.price.toFixed(2) + '</span></div>' +
+        '<div class="cp-item-price">' +
+          ((item.promo_percent > 0 && item.orig_price > item.price)
+            ? '<s style="color:#aaa;font-size:11px;margin-right:5px;">$' + Number(item.orig_price).toFixed(2) + '</s>' : '') +
+          '$<span id="cp-line-' + item.index + '">' + item.price.toFixed(2) + '</span>' +
+          (item.promo_percent > 0 ? '<span style="color:#e74c3c;font-size:9px;font-weight:700;margin-left:4px;">' + item.promo_percent + '% OFF</span>' : '') +
+        '</div>' +
       '</div>' +
       '<div class="cp-item-actions">' +
         '<div class="cp-qty">' +
@@ -1506,6 +1523,9 @@ function renderCartPanel(data) {
   // It is NOT subtracted from the total. Customer pays full price; free drink is an extra gift.
   itemsHtml += '<div class="cp-summary" id="cpSummary">' +
     '<div class="cp-sum-row"><span>Subtotal</span><span id="cpSubtotal">$' + data.subtotal + '</span></div>' +
+    '<div class="cp-sum-row discount" id="cpItemPromoRow" style="' + (parseFloat(data.item_promos) > 0 ? '' : 'display:none') + '">' +
+      '<span>&#x1F3F7;&#xFE0F; Item Promos</span><span id="cpItemPromoAmt">-$' + data.item_promos + '</span>' +
+    '</div>' +
     '<div class="cp-sum-row discount" id="cpBuy3Row" style="' + (b3V > 0 ? '' : 'display:none') + '">' +
       '<span>&#x1F389; Buy ' + data.buy3_count + ' Get 1 Free</span><span id="cpBuy3Amt">-$' + data.buy3 + '</span>' +
     '</div>' +

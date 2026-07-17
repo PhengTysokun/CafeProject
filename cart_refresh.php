@@ -3,7 +3,7 @@ session_start();
 require 'config.php';
 
 $cart = $_SESSION['cart'] ?? [];
-$subtotal = 0.0; $total_qty = 0;
+$subtotal = 0.0; $total_qty = 0; $item_promos = 0.0;
 $min_price = PHP_FLOAT_MAX; $cheapest_idx = -1;
 $_fpid = defined('FREE_ITEM_PRODUCT_ID') ? (int)FREE_ITEM_PRODUCT_ID : 0;
 $_fname = ''; $_fprice = 0.0; $_fidx = -1;
@@ -11,6 +11,7 @@ $_fname = ''; $_fprice = 0.0; $_fidx = -1;
 foreach ($cart as $idx => $item) {
     $q = (int)($item['qty'] ?? 1); $p = (float)($item['price'] ?? 0);
     $subtotal += $p * $q; $total_qty += $q;
+    $item_promos += (max(0, (float)($item['orig_price'] ?? $p) - $p)) * $q;
     if ($p < $min_price) { $min_price = $p; $cheapest_idx = $idx; }
     if ($_fpid > 0 && (int)($item['product_id'] ?? 0) === $_fpid && $_fidx < 0) {
         $_fidx = $idx; $_fname = $item['product_name'] ?? ''; $_fprice = $p;
@@ -62,6 +63,8 @@ foreach ($cart as $i => $item) {
         'index'        => $i,
         'product_name' => $item['product_name'] ?? '',
         'price'        => $p,
+        'orig_price'   => (float)($item['orig_price'] ?? $p),
+        'promo_percent'=> (int)($item['promo_percent'] ?? 0),
         'qty'          => $q,
         'image'        => $item['image'] ?? '',
         'size_code'    => $item['size_code']  ?? '',
@@ -79,6 +82,7 @@ echo json_encode([
     'items'        => $items_out,
     'count'        => $total_qty,
     'subtotal'     => number_format($subtotal, 2, '.', ''),
+    'item_promos'  => number_format($item_promos, 2, '.', ''),
     'buy3'         => number_format($buy3, 2, '.', ''),
     'buy3_name'    => $free_name,
     'buy3_price'   => number_format($free_price, 2, '.', ''),
