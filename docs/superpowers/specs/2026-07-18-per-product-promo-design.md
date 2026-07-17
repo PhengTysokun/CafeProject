@@ -61,6 +61,11 @@ line_net_tot  = price × qty − promo_saving
 Add-ons are never discounted, so subtracting them out gives the eligible base cleanly without
 adding a redundant `drink_price` column.
 
+**Invariant (code-review checkpoint):** `drink_price = price − addon_sum` is only correct while
+`price` and the `addons` array stay in sync. Every code path that sets or mutates a cart line's
+`price` must set `addons` to match (and vice versa). Flag any place that touches one without the
+other during review.
+
 ### Badge derivation (one badge slot, promo wins)
 
 Wherever a product badge renders today (menu cards, top-sellers, product modal):
