@@ -34,7 +34,13 @@ be added later; this design does not preclude them.
 - **New column:** `order_items.promo_percent` TINYINT UNSIGNED NOT NULL DEFAULT `0` — a
   **snapshot** of the line's promo at order time, kept **for display only** (the "15% OFF"
   tag on receipts/edit screens). It does not drive any money math.
-- The two migrations are independent (no FK between them); order doesn't matter.
+- **New column:** `order_items.orig_price` DECIMAL(10,2) NOT NULL DEFAULT `0` — the gross
+  (pre-promo) unit price. Lets any report recover list-vs-charged precisely
+  (`Σ (orig_price − price) × qty` = item-promo given) and lets receipts show a struck original,
+  **without** perturbing the fragile `promotion_discount` receipt arithmetic (see below). On a
+  no-promo line `orig_price == price`. Backfill for pre-feature rows is unnecessary — they have
+  no promo and reports coalesce `orig_price` to `price` when `0`.
+- The three migrations are independent (no FK between them); order doesn't matter.
 
 ### Store the NET price; promo is baked in at creation
 
@@ -150,11 +156,18 @@ builder in `menu.php`).
 ### Persistence & reporting
 
 - `confirm_order.php` writes each line's net `price` (as it already does — the value is now net)
-  plus the new `order_items.promo_percent` snapshot. The order `total` is already correct
-  because the summed line prices are net.
-- Order-level `promotion_discount` (currently `happy_hour + buy3`) gains the aggregate
-  item-promo saving `Σ (orig_price − price) × qty`, so the recorded promotion total reflects
-  reality in reports. Computed once, from the cart, in `confirm_order.php`.
+  plus the new `order_items.promo_percent` and `order_items.orig_price` snapshots. The order
+  `total` is already correct because the summed line prices are net.
+- **`orders.promotion_discount` is left UNCHANGED** (still `happy_hour + buy3`). It must NOT
+  gain the item-promo saving. Reason: `receipt_pdf.php` and `payment_cash.php` render the
+  breakdown as `subtotal − promotion_discount`, and `subtotal` there is the sum of the
+  now-**net** line prices. Adding item-promo to `promotion_discount` would subtract it a
+  second time and the receipt breakdown would no longer add up (the stored-total fallback
+  hides the grand total but leaves an inconsistent subtotal/discount line). The item promo is
+  already reflected in `total` via the net line prices — counting it again is wrong.
+- Item-promo "given" is still fully **reportable**, derived on demand as
+  `Σ (orig_price − price) × qty` from `order_items`. No standalone report line is built now
+  (YAGNI); the data is available when a report wants it.
 - Receipts (`receipt_print.php`, `receipt_pdf.php`, `receipt_paylater.php`): line prices are
   already net (correct totals with no change). Enhancement: where a line's `promo_percent > 0`,
   show a small "15% OFF" tag on that line so the customer sees the promo was applied. Kept
@@ -176,10 +189,11 @@ on promo lines using the stored `promo_percent`.
 - `menu.php` — badge derivation (cards, top-sellers, modal `data-product-promo` attr);
   cart-line struck-price display; `Item Promos` summary row (server render + JS renderer).
 - `add_to_cart.php` — compute `net_drink`; store `price` (net), `orig_price` (gross),
-  `promo_percent` on the cart line.
+  `promo_percent` on the cart line; add `promo_percent` to the identical-line merge key so a
+  mid-session promo change never merges a net line with a full-price one.
 - `cart_refresh.php` — emit `orig_price` + `promo_percent` per item and an `item_promos` total.
-- `confirm_order.php` — write `order_items.promo_percent`; add item-promo saving into
-  `promotion_discount`. Line `price` is already net (no charged-math change).
+- `confirm_order.php` — write `order_items.promo_percent` and `order_items.orig_price`. Line
+  `price` is already net (no charged-math change). **`promotion_discount` is NOT modified.**
 - `edit_order_items.php` — display-only: show a promo tag on lines with `promo_percent > 0`
   (fetch the column). No money-logic change.
 - `receipt_print.php`, `receipt_pdf.php`, `receipt_paylater.php` — fetch `promo_percent`, show a

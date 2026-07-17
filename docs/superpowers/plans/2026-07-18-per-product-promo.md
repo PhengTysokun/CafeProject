@@ -27,7 +27,7 @@
 - Modify: `config.php` (after the existing `products_badge_text` migration, ~line 100-102; and in the helper area near the top after settings load)
 
 **Interfaces:**
-- Produces: `products.promo_percent` and `order_items.promo_percent` columns (TINYINT UNSIGNED NOT NULL DEFAULT 0). A global function `product_badge_label(array $row): string` returning the badge text to render for a product row (promo wins over free text).
+- Produces: `products.promo_percent`, `order_items.promo_percent` (TINYINT UNSIGNED NOT NULL DEFAULT 0), and `order_items.orig_price` (DECIMAL(10,2) NOT NULL DEFAULT 0) columns. A global function `product_badge_label(array $row): string` returning the badge text to render for a product row (promo wins over free text).
 
 - [ ] **Step 1: Add the two migrations**
 
@@ -40,6 +40,9 @@ _migrate($conn, 'products_promo_percent', function($db) {
 _migrate($conn, 'order_items_promo_percent', function($db) {
     $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS promo_percent TINYINT UNSIGNED NOT NULL DEFAULT 0");
 });
+_migrate($conn, 'order_items_orig_price', function($db) {
+    $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS orig_price DECIMAL(10,2) NOT NULL DEFAULT 0");
+});
 ```
 
 - [ ] **Step 2: Add the shared badge helper**
@@ -50,6 +53,8 @@ In `config.php`, after the migrations section (anywhere at top level after `_mig
 /**
  * The badge label to show for a product: a non-zero promo auto-generates "N% OFF"
  * and wins over the free-text badge; otherwise fall back to the manual badge_text.
+ * (function_exists guard mirrors config.php's existing _migrate guard — config can be
+ * required more than once in some flows; do not "simplify" it away.)
  */
 if (!function_exists('product_badge_label')) {
     function product_badge_label(array $row): string {
@@ -72,8 +77,8 @@ Expected: `200`
 
 - [ ] **Step 5: Verify columns exist**
 
-Run: `php -r "require 'config.php'; foreach(['products'=>'promo_percent','order_items'=>'promo_percent'] as $t=>$c){ $r=$conn->query(\"SHOW COLUMNS FROM $t LIKE '$c'\"); echo $t.'.'.$c.': '.($r->num_rows?'OK':'MISSING').PHP_EOL; }"`
-Expected: both print `OK`
+Run: `php -r "require 'config.php'; foreach([['products','promo_percent'],['order_items','promo_percent'],['order_items','orig_price']] as $c){ $r=$conn->query(\"SHOW COLUMNS FROM {$c[0]} LIKE '{$c[1]}'\"); echo $c[0].'.'.$c[1].': '.($r->num_rows?'OK':'MISSING').PHP_EOL; }"`
+Expected: all three print `OK`
 
 - [ ] **Step 6: Commit**
 
@@ -431,7 +436,15 @@ In `add_to_cart.php`, in the `if (!$found)` push (line 153-166), add `orig_price
     ];
 ```
 
-(The merge branch at line 136-149 needs no change: an identical re-add has the same promo, so the same `price`; it just bumps `qty`.)
+- [ ] **Step 3b: Harden the merge key with promo_percent**
+
+The identical-line merge (line 136-149) matches on product/size/options/addons but not price. Normally an identical re-add has the same promo → same `price`, so it merges fine. To defend against a promo being changed mid-session (line already in cart at 15%, admin sets it to 0, cashier re-adds → the full-price unit must not merge into the discounted line), add `promo_percent` to the comparison. In the `foreach ($_SESSION['cart'] as &$item)` conditions (line 137-143), add one more clause:
+
+```php
+        (int)($item['promo_percent'] ?? 0) == $promo_percent &&
+```
+
+(Place it alongside the existing `$item['size_code'] == $resolved_code` style checks.)
 
 - [ ] **Step 4: Lint**
 
@@ -577,89 +590,66 @@ git commit -m "feat(promo): struck price + Item Promos row in cart panel (server
 
 ---
 
-### Task 6: confirm_order.php — persist promo snapshot + report it
+### Task 6: confirm_order.php — persist promo snapshot on order items
 
 **Files:**
-- Modify: `confirm_order.php` (NEW-order item INSERT ~line 415-434 and its subtotal/discount ~line 234-271; add-to-order item INSERT ~line 189-215 and discount ~line 137-164; reward-gift INSERT ~line 443-462)
+- Modify: `confirm_order.php` (NEW-order item INSERT ~line 415-434; add-to-order item INSERT ~line 189-215; reward-gift INSERT ~line 443-462)
 
 **Interfaces:**
 - Consumes: cart line `price` (net), `orig_price`, `promo_percent`.
-- Produces: `order_items.promo_percent` persisted; `orders.promotion_discount` includes item-promo savings. Charged `total` unchanged (already net).
+- Produces: `order_items.promo_percent` + `order_items.orig_price` persisted per line. Charged `total` unchanged (already net). **`orders.promotion_discount` is deliberately NOT modified.**
 
-- [ ] **Step 1: NEW order — compute item-promo total for reporting**
+> **Do NOT add item-promo into `promotion_discount`.** `receipt_pdf.php:101` and `payment_cash.php:43` render the breakdown as `subtotal − promotion_discount`, and `subtotal` there is the sum of the now-net line prices. Adding item-promo to `promotion_discount` double-subtracts it and the receipt breakdown stops adding up. The item promo is already in `total` via the net line prices. Item-promo "given" stays reportable on demand as `Σ (orig_price − price) × qty` from `order_items` — no column change to `orders`, no report line built now (YAGNI).
 
-In `confirm_order.php`, in the NEW-order subtotal loop (line 238-244), add an accumulator. Before the loop add `$item_promo_total = 0.0;`, and inside the loop add:
+- [ ] **Step 1: NEW order — persist promo_percent + orig_price on each item**
 
-```php
-    $item_promo_total += (max(0, (float)($item['orig_price'] ?? $price) - $price)) * $qty;
-```
-
-Then fold it into the reported discount (line 268):
-
-```php
-$total_discount      = $happy_hour_discount + $manual_discount_co + $item_promo_total;
-```
-
-(Do NOT change `$subtotal_after`/`$total` — they already reflect the net line prices, so the promo is in the charged total exactly once.)
-
-- [ ] **Step 2: NEW order — persist promo_percent on each item**
-
-In `confirm_order.php`, change the NEW-order item INSERT (line 415-418) to include the column:
+In `confirm_order.php`, change the NEW-order item INSERT (line 415-418) to include both columns:
 
 ```php
     $stmt_item = $conn->prepare("
-        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 ```
 
-Inside the loop (line 420-434), add a promo var and extend the bind:
+Inside the loop (line 420-434), add the two vars and extend the bind (note: `price` here is already the net cart value — no change; `orig_price` falls back to net on a no-promo line):
 
 ```php
         $promo_pct   = (int)($item['promo_percent'] ?? 0);
+        $orig_price  = (float)($item['orig_price'] ?? $price);
         $addons_json = json_encode($item['addons'] ?? []);
 
-        $stmt_item->bind_param("iisdissssssi", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct);
+        // price is the NET (post-promo) unit price; promo is already baked in. Do not re-discount.
+        $stmt_item->bind_param("iisdissssssid", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price);
 ```
 
-- [ ] **Step 3: Reward-gift INSERT — bind promo_percent = 0**
+(The bind types gain `i` (promo_pct) + `d` (orig_price) → `...ssssss` + `id` = `iisdissssssid`.)
 
-In `confirm_order.php`, the reward-gift INSERT (line 443-446) also targets `order_items`. Add the column + a literal 0. Change the INSERT column list to end with `, promo_percent` and `VALUES (..., ?)`, then in the bind (line 461) append a `$rpromo = 0;` and extend types+args:
+- [ ] **Step 2: Reward-gift INSERT — bind promo_percent 0, orig_price 0**
+
+In `confirm_order.php`, the reward-gift INSERT (line 443-446) also targets `order_items`. Add both columns to its SQL (`, promo_percent, orig_price` + two more `?`), then before the bind (line 461) add `$rpromo = 0; $rorig = 0.0;` and extend the bind:
 
 ```php
-        $rpromo = 0;
-        $stmt_reward->bind_param("iisdissssssi", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty, $rempty, $rempty, $addons_json, $rpromo);
+        $rpromo = 0; $rorig = 0.0;
+        $stmt_reward->bind_param("iisdissssssid", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty, $rempty, $rempty, $addons_json, $rpromo, $rorig);
 ```
 
-(Update that INSERT's SQL string the same way as Step 2 — add `promo_percent` to the column list and one more `?`.)
+- [ ] **Step 3: Add-to-order — persist promo_percent + orig_price**
 
-- [ ] **Step 4: Add-to-order — persist promo + report new-item promos**
-
-In `confirm_order.php`, the add-to-order item INSERT (line 189-192): add `promo_percent` to columns + one `?`. In its loop (line 195-214) add:
+In `confirm_order.php`, the add-to-order item INSERT (line 189-192): add `promo_percent, orig_price` to the columns + two `?`. In its loop (line 195-214) add:
 
 ```php
         $promo_pct   = (int)($item['promo_percent'] ?? 0);
+        $orig_price  = (float)($item['orig_price'] ?? $price);
 ```
 
 and extend the bind (line 208):
 
 ```php
-            $stmt_item->bind_param("iisdissssssi", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct);
+            $stmt_item->bind_param("iisdissssssid", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price);
 ```
 
-For reporting, accumulate the new items' promo saving and add it to `$final_discount`. In the combine-new-items loop (line 130-135) add before it `$item_promo_total = 0.0;` and inside add:
-
-```php
-        $item_promo_total += (max(0, (float)($item['orig_price'] ?? $p) - $p)) * $q;
-```
-
-Then change line 148:
-
-```php
-    $final_discount = $buy3 + $happy_hour + $item_promo_total;   // promotions (stored in promotion_discount)
-```
-
-(`$after`/`$final_total` already use net item prices — leave them.)
+Leave the `$final_discount = $buy3 + $happy_hour;` line (148) and `$after`/`$final_total` untouched — line prices are already net, so the charged total is correct and `promotion_discount` must stay `buy3 + happy_hour` per the box above.
 
 - [ ] **Step 5: Lint**
 
@@ -670,17 +660,20 @@ Expected: `No syntax errors detected in confirm_order.php`
 
 Place an order containing the promo product + a normal product, pay by Cash. Then verify persistence:
 
-`php -r "require 'config.php'; \$r=\$conn->query('SELECT oi.order_id, oi.product_name, oi.price, oi.promo_percent FROM order_items oi ORDER BY oi.item_id DESC LIMIT 5'); while(\$x=\$r->fetch_assoc()) echo \$x['order_id'].' '.\$x['product_name'].' $'.\$x['price'].' promo='.\$x['promo_percent'].PHP_EOL;"`
-Expected: the promo line shows the NET price and `promo=15`; the normal line shows `promo=0`.
+`php -r "require 'config.php'; \$r=\$conn->query('SELECT oi.order_id, oi.product_name, oi.price, oi.orig_price, oi.promo_percent FROM order_items oi ORDER BY oi.item_id DESC LIMIT 5'); while(\$x=\$r->fetch_assoc()) echo \$x['order_id'].' '.\$x['product_name'].' net=\$'.\$x['price'].' orig=\$'.\$x['orig_price'].' promo='.\$x['promo_percent'].PHP_EOL;"`
+Expected: promo line → `net=1.28 orig=1.50 promo=15`; normal line → `net==orig promo=0`.
 
-`php -r "require 'config.php'; \$r=\$conn->query('SELECT order_id,total,promotion_discount FROM orders ORDER BY order_id DESC LIMIT 1'); \$x=\$r->fetch_assoc(); echo 'total=$'.\$x['total'].' promo_disc=$'.\$x['promotion_discount'].PHP_EOL;"`
-Expected: `promotion_discount` ≥ the item-promo saving; `total` matches the net cart total shown at checkout.
+`php -r "require 'config.php'; \$r=\$conn->query('SELECT order_id,total,promotion_discount FROM orders ORDER BY order_id DESC LIMIT 1'); \$x=\$r->fetch_assoc(); echo 'total=\$'.\$x['total'].' promo_disc=\$'.\$x['promotion_discount'].PHP_EOL;"`
+Expected: `total` matches the net cart total shown at checkout; `promotion_discount` = `buy3 + happy_hour` only (0 if neither active) — the item promo is in `total`, NOT in `promotion_discount`. This is the double-count guard: if `promotion_discount` includes the item promo, Step 1–3 wrongly modified it.
+
+Also verify the receipt breakdown reconciles (no double subtraction):
+Open `receipt_pdf.php?order_id=<id>` — the printed subtotal − discount + tax must equal the grand total shown.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add confirm_order.php
-git commit -m "feat(promo): persist promo_percent on order items + report item-promo savings"
+git commit -m "feat(promo): persist promo_percent + orig_price on order items"
 ```
 
 ---
@@ -705,27 +698,25 @@ In `receipt_print.php`, add `promo_percent` to the item SELECT (line 41):
     SELECT product_name, price, quantity, sweetness, ice, milk, size_label, addons_snapshot, promo_percent
 ```
 
-In the loop that renders each item name/line, where the product name is printed, append (use the file's existing escaping/markup style):
+Find the exact insertion point — run `grep -n "product_name" receipt_print.php`. Two hits: the SELECT (already edited) and the render-loop echo (an HTML `<?= htmlspecialchars($item['product_name']) ?>` inside the items `while`/`foreach`). Immediately after that echo, insert:
 
 ```php
 <?php if ((int)($item['promo_percent'] ?? 0) > 0): ?> <span style="color:#c0392b;font-weight:700;font-size:11px;">(<?= (int)$item['promo_percent'] ?>% OFF)</span><?php endif; ?>
 ```
 
-(Locate the item name output inside the receipt items loop and place the tag immediately after it.)
-
 - [ ] **Step 2: receipt_pdf.php — fetch + show the tag**
 
-Add `promo_percent` to the item SELECT (line 49). In the PDF item row, append the promo to the product name string (this file builds strings for a PDF lib — match its API):
+Add `promo_percent` to the item SELECT (line 49). This file builds an HTML string in `$html .= '...'`. Run `grep -n "product_name" receipt_pdf.php` to find where the name is concatenated into `$html` inside the items loop. Just before that concatenation, compute a name-with-tag and use it in place of `$item['product_name']`:
 
 ```php
-$nameCell = $item['product_name'] . ((int)($item['promo_percent'] ?? 0) > 0 ? ' (' . (int)$item['promo_percent'] . '% OFF)' : '');
+$nameCell = htmlspecialchars($item['product_name']) . ((int)($item['promo_percent'] ?? 0) > 0 ? ' <span style="color:#c0392b;font-weight:bold;">(' . (int)$item['promo_percent'] . '% OFF)</span>' : '');
 ```
 
-Use `$nameCell` where the product name is written into the PDF.
+(If the surrounding code already wraps the name in `htmlspecialchars(...)`, drop the duplicate wrap here and only append the tag.)
 
 - [ ] **Step 3: receipt_paylater.php — fetch + show the tag**
 
-Add `promo_percent` to the item SELECT (line 41). Append the same inline tag after the product name in its item loop, mirroring Step 1's markup and the file's escaping style.
+Add `promo_percent` to the item SELECT (line 41). Run `grep -n "product_name" receipt_paylater.php` to find the render-loop echo; insert the same snippet as Step 1 immediately after it, matching this file's escaping (it uses `htmlspecialchars` in `<?= ?>` like receipt_print).
 
 - [ ] **Step 4: edit_order_items.php — fetch + show the tag**
 
@@ -766,20 +757,22 @@ git commit -m "feat(promo): show per-line promo tag on receipts + edit-order scr
 ## Self-Review
 
 **Spec coverage:**
-- Data model (2 columns) → Task 1. ✓
+- Data model (3 columns: `products.promo_percent`, `order_items.promo_percent`, `order_items.orig_price`) → Task 1. ✓
 - Net-price storage / promo baked in → Tasks 4 (cart), 6 (order_items). ✓
 - Badge auto-derivation (cards, modal) → Tasks 1 (helper), 3. ✓
 - Admin promo input + badge-override UX → Task 2. ✓
 - Drink-only discount, per-unit rounding → Task 4. ✓
+- Merge-key hardened with `promo_percent` (mid-session promo-change edge) → Task 4 Step 3b. ✓
 - Cart struck price + Item Promos row (server + live) → Task 5. ✓
 - Stacking (Happy Hour on net subtotal, manual unchanged) → automatic (net subtotal); no code needed, verified in Task 5/6 E2E. ✓
-- promotion_discount includes item promos → Task 6. ✓
+- `promotion_discount` deliberately NOT modified (double-count guard) → Task 6 box + Step 6 assertion. ✓
+- Item-promo reportable via `Σ (orig_price − price) × qty` → data persisted in Task 6 (no report line built, YAGNI). ✓
 - edit_order_items no money change, tag only → Task 7. ✓
-- Receipts show promo, totals already net → Task 7. ✓
+- Receipts show promo tag, totals already net → Task 7. ✓
 
-**Placeholder scan:** No TBD/TODO; every code step shows the code. Receipt render placement (Tasks 7.1–7.3) references "the file's item loop" because the three receipts differ in markup — the SELECT change and the tag snippet are exact; the insertion point is the product-name output in each loop.
+**Placeholder scan:** No TBD/TODO; every code step shows the code. Receipt render placement (Task 7.1–7.3) gives an exact `grep -n "product_name" <file>` anchor + the file's escaping convention, since the three receipts differ in markup.
 
-**Type consistency:** `promo_percent` is an int everywhere (clamped 0–100); `orig_price`/`price` are floats. `product_badge_label()` used identically in Tasks 1/3. Cart fields `price`/`orig_price`/`promo_percent` set in Task 4, read in Tasks 5/6 with matching names. order_items INSERT bind strings extended consistently (`...i` appended, arg added) in all three Task 6 INSERTs.
+**Type consistency:** `promo_percent` is an int everywhere (clamped 0–100); `orig_price`/`price` are floats. `product_badge_label()` used identically in Tasks 1/3. Cart fields `price`/`orig_price`/`promo_percent` set in Task 4, read in Tasks 5/6 with matching names. All three Task 6 `order_items` INSERTs extend the bind string identically: `iisdissssss` → `iisdissssssid` (append `i` for promo_percent, `d` for orig_price) with `$promo_pct` + `$orig_price` args.
 
 ## Manual verification checklist (post-implementation)
 
