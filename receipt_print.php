@@ -38,7 +38,7 @@ if (empty($order['completed_at']) && in_array($order['status'], ['Paid', 'Comple
 
 // ITEMS
 $stmt = $conn->prepare("
-    SELECT product_name, price, quantity, sweetness, ice, milk, size_label, addons_snapshot
+    SELECT product_name, price, quantity, sweetness, ice, milk, size_label, addons_snapshot, promo_percent
     FROM order_items
     WHERE order_id = ?
 ");
@@ -221,7 +221,7 @@ body{
 
     <?php while($item = $items->fetch_assoc()): ?>
         <div class="item">
-            <div><strong><?= htmlspecialchars($item['product_name']) ?></strong></div>
+            <div><strong><?= htmlspecialchars($item['product_name']) ?></strong><?php if ((int)($item['promo_percent'] ?? 0) > 0): ?> <span style="color:#c0392b;font-weight:700;font-size:11px;">(<?= (int)$item['promo_percent'] ?>% OFF)</span><?php endif; ?></div>
 
             <?php if (!empty($item['size_label'])): ?>
             <div class="small">Size: <?= htmlspecialchars($item['size_label']) ?></div>

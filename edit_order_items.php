@@ -258,7 +258,7 @@ if (!$order) { header("Location: find_order.php"); exit; }
 
 // ── Fetch items ──
 $stmt = $conn->prepare("
-    SELECT item_id, product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot
+    SELECT item_id, product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot, promo_percent
     FROM order_items WHERE order_id = ? ORDER BY item_id ASC
 ");
 $stmt->bind_param("i", $order_id);
@@ -455,6 +455,9 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 
                 <div class="item-info">
                     <div class="item-name"><?= htmlspecialchars($item['product_name']) ?></div>
+                    <?php if ((int)($item['promo_percent'] ?? 0) > 0): ?>
+                    <div class="item-custom" style="color:#c0392b;font-weight:600;"><?= (int)$item['promo_percent'] ?>% OFF applied</div>
+                    <?php endif; ?>
                     <?php if ($customs): ?>
                     <div class="item-custom"><?= htmlspecialchars(implode(' · ', $customs)) ?></div>
                     <?php endif; ?>

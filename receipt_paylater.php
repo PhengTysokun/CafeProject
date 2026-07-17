@@ -38,7 +38,7 @@ if (!$order) {
 
 // ── FETCH ITEMS ──
 $stmt = $conn->prepare("
-    SELECT product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot
+    SELECT product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot, promo_percent
     FROM order_items
     WHERE order_id = ?
 ");
@@ -321,7 +321,7 @@ foreach ($drinks as $item) {
     $html .= '
         <tr>
             <td style="text-align: left;">' . $i++ . '</td>
-            <td style="text-align: left;"><span class="item-name">' . htmlspecialchars($item['product_name']) . '</span></td>
+            <td style="text-align: left;"><span class="item-name">' . htmlspecialchars($item['product_name']) . ((int)($item['promo_percent'] ?? 0) > 0 ? ' <span style="color:#c0392b;font-weight:bold;">(' . (int)$item['promo_percent'] . '% OFF)</span>' : '') . '</span></td>
             <td class="col-qty">' . $item['quantity'] . '</td>
             <td class="col-price">' . number_format($item['price'], 2) . '</td>
             <td class="col-amount">' . number_format($lineTotal, 2) . '</td>
