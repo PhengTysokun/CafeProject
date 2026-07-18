@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'get_sta
                 SUM(CASE WHEN DATE(`$dc`) = CURDATE() THEN 1 ELSE 0 END)                        AS orders_today,
                 AVG(total)                                                                       AS avg_order_value
             FROM orders
-            WHERE status NOT IN ('cancelled','refunded','void')
+            WHERE " . paid_orders_where() . "
             GROUP BY employee_id
         ) s ON s.employee_id = e.employee_id
     ");
@@ -210,7 +210,7 @@ if ($has_orders) {
                 AVG(total)                                                                 AS avg_order_value,
                 MAX(`$dc`)                                                                 AS last_order_date
             FROM orders
-            WHERE status NOT IN ('cancelled','refunded','void')
+            WHERE " . paid_orders_where() . "
             GROUP BY employee_id
         ) s ON s.employee_id = e.employee_id
         ORDER BY total_orders DESC, e.name ASC
