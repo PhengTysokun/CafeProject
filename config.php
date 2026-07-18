@@ -124,6 +124,19 @@ if (!function_exists('product_badge_label')) {
     }
 }
 
+/**
+ * WHERE fragment selecting orders whose money is actually collected — the single
+ * source of truth for "revenue = payment received" across dashboard/reports.
+ * Cash/riel are paid at checkout, Bakong after the QR scan, Pay Later after settle;
+ * pending/cancelled/refunded/void are excluded. $alias 'o' -> "o.".
+ */
+if (!function_exists('paid_orders_where')) {
+    function paid_orders_where(string $alias = ''): string {
+        $p = $alias !== '' ? $alias . '.' : '';
+        return "{$p}is_open = 0 AND {$p}status NOT IN ('PendingPayment','Cancelled','Refunded','Void')";
+    }
+}
+
 // ── Add-ons (toppings) library + per-product mapping ──
 $conn->query("CREATE TABLE IF NOT EXISTS addons (
     id INT AUTO_INCREMENT PRIMARY KEY,
