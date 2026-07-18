@@ -26,7 +26,7 @@ $timestamp = date('Y-m-d_H-i-s');
 // ── DAILY REPORT ──
 if ($type === 'daily') {
     // ── Get today's sales data ──
-    $sales_sql = "SELECT IFNULL(SUM(total),0) AS total_sales FROM orders WHERE DATE(order_date) = CURDATE() AND status = 'Completed'";
+    $sales_sql = "SELECT IFNULL(SUM(total),0) AS total_sales FROM orders WHERE DATE(order_date) = CURDATE() AND " . paid_orders_where();
     $sales_result = mysqli_query($conn, $sales_sql);
     $sales = mysqli_fetch_assoc($sales_result)['total_sales'];
     
@@ -34,11 +34,11 @@ if ($type === 'daily') {
     $order_result = mysqli_query($conn, $order_sql);
     $total_orders = mysqli_fetch_assoc($order_result)['total_orders'];
     
-    $avg_sql = "SELECT IFNULL(AVG(total), 0) AS avg_order FROM orders WHERE DATE(order_date) = CURDATE() AND status = 'Completed'";
+    $avg_sql = "SELECT IFNULL(AVG(total), 0) AS avg_order FROM orders WHERE DATE(order_date) = CURDATE() AND " . paid_orders_where();
     $avg_result = mysqli_query($conn, $avg_sql);
     $avg_order = mysqli_fetch_assoc($avg_result)['avg_order'];
     
-    $items_sold_sql = "SELECT IFNULL(SUM(oi.quantity), 0) AS items_sold FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE DATE(o.order_date) = CURDATE() AND o.status = 'Completed'";
+    $items_sold_sql = "SELECT IFNULL(SUM(oi.quantity), 0) AS items_sold FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE DATE(o.order_date) = CURDATE() AND " . paid_orders_where('o');
     $items_sold_result = mysqli_query($conn, $items_sold_sql);
     $items_sold = mysqli_fetch_assoc($items_sold_result)['items_sold'];
     
@@ -70,7 +70,7 @@ if ($type === 'daily') {
     }
     
     // ── Top selling products ──
-    $top_sql = "SELECT p.name, SUM(oi.quantity) AS qty FROM products p JOIN order_items oi ON p.product_id = oi.product_id JOIN orders o ON oi.order_id = o.order_id WHERE DATE(o.order_date) = CURDATE() AND o.status = 'Completed' GROUP BY p.product_id ORDER BY qty DESC LIMIT 5";
+    $top_sql = "SELECT p.name, SUM(oi.quantity) AS qty FROM products p JOIN order_items oi ON p.product_id = oi.product_id JOIN orders o ON oi.order_id = o.order_id WHERE DATE(o.order_date) = CURDATE() AND " . paid_orders_where('o') . " GROUP BY p.product_id ORDER BY qty DESC LIMIT 5";
     $top_result = mysqli_query($conn, $top_sql);
     $top_products = [];
     while ($row = mysqli_fetch_assoc($top_result)) {
@@ -78,7 +78,7 @@ if ($type === 'daily') {
     }
     
     // ── Category breakdown ──
-    $cat_sql = "SELECT COALESCE(p.category, 'Uncategorized') AS category, SUM(oi.quantity) AS qty FROM order_items oi LEFT JOIN products p ON oi.product_id = p.product_id JOIN orders o ON oi.order_id = o.order_id WHERE DATE(o.order_date) = CURDATE() AND o.status = 'Completed' GROUP BY category ORDER BY qty DESC";
+    $cat_sql = "SELECT COALESCE(p.category, 'Uncategorized') AS category, SUM(oi.quantity) AS qty FROM order_items oi LEFT JOIN products p ON oi.product_id = p.product_id JOIN orders o ON oi.order_id = o.order_id WHERE DATE(o.order_date) = CURDATE() AND " . paid_orders_where('o') . " GROUP BY category ORDER BY qty DESC";
     $cat_result = mysqli_query($conn, $cat_sql);
     $categories = [];
     while ($row = mysqli_fetch_assoc($cat_result)) {
