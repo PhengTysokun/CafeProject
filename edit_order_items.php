@@ -155,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         // Recalculate totals from remaining items
-        $stmt_r = $conn->prepare("SELECT price, quantity FROM order_items WHERE order_id = ?");
+        $stmt_r = $conn->prepare("SELECT price, quantity, earns_points FROM order_items WHERE order_id = ?");
         $stmt_r->bind_param("i", $order_id);
         $stmt_r->execute();
         $remaining = $stmt_r->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -171,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $p = (float)$row['price']; $q = (int)$row['quantity'];
             $subtotal  += $p * $q;
             $total_qty += $q;
-            if ($p > 0) $points_qty += $q;   // chargeable drinks earn points (gifts at $0 don't)
+            if ($p > 0 && (int)($row['earns_points'] ?? 1) === 1) $points_qty += $q;   // chargeable earning items only (gifts $0 + merch don't)
             if ($p < $min_price) $min_price = $p;
         }
 
