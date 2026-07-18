@@ -60,7 +60,7 @@ while ($r = mysqli_fetch_assoc($qIng)) {
 $orderIds   = [];
 $totalSales = 0;
 $orderCount = 0;
-$qOrders = mysqli_query($conn, "SELECT order_id, total FROM orders WHERE status='Completed' AND order_date BETWEEN '$startStr' AND '$endStr'");
+$qOrders = mysqli_query($conn, "SELECT order_id, total FROM orders WHERE " . paid_orders_where() . " AND order_date BETWEEN '$startStr' AND '$endStr'");
 while ($o = mysqli_fetch_assoc($qOrders)) {
     $orderIds[] = (int)$o['order_id'];
     $totalSales += (float)$o['total'];
@@ -194,7 +194,7 @@ if ($_tbl_chk && mysqli_num_rows($_tbl_chk) > 0) {
 // ── Peak hour (daily only) ──
 $peakHour = null;
 if ($mode === 'daily') {
-    $qPH = mysqli_query($conn, "SELECT HOUR(order_date) as h, SUM(total) as rev FROM orders WHERE status='Completed' AND order_date BETWEEN '$startStr' AND '$endStr' GROUP BY HOUR(order_date) ORDER BY rev DESC LIMIT 1");
+    $qPH = mysqli_query($conn, "SELECT HOUR(order_date) as h, SUM(total) as rev FROM orders WHERE " . paid_orders_where() . " AND order_date BETWEEN '$startStr' AND '$endStr' GROUP BY HOUR(order_date) ORDER BY rev DESC LIMIT 1");
     if ($ph = mysqli_fetch_assoc($qPH)) $peakHour = date('g:i A', mktime((int)$ph['h'], 0, 0));
 }
 

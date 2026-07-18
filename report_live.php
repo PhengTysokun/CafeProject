@@ -50,7 +50,7 @@ while ($r = mysqli_fetch_assoc($qIng)) {
 
 // ── Orders ──
 $orderIds = []; $totalSales = 0; $orderCount = 0;
-$qOrders = mysqli_query($conn, "SELECT order_id, total FROM orders WHERE status='Completed' AND order_date BETWEEN '$startStr' AND '$endStr'");
+$qOrders = mysqli_query($conn, "SELECT order_id, total FROM orders WHERE " . paid_orders_where() . " AND order_date BETWEEN '$startStr' AND '$endStr'");
 while ($o = mysqli_fetch_assoc($qOrders)) {
     $orderIds[] = (int)$o['order_id'];
     $totalSales += (float)$o['total'];
@@ -146,7 +146,7 @@ $netRevenue = $totalSales - $totalRefunded;
 $peakHour   = null;
 $hourlyData = [];
 if ($mode === 'daily') {
-    $qH = mysqli_query($conn, "SELECT HOUR(order_date) as h, COUNT(*) as cnt, SUM(total) as rev FROM orders WHERE status='Completed' AND order_date BETWEEN '$startStr' AND '$endStr' GROUP BY HOUR(order_date) ORDER BY h ASC");
+    $qH = mysqli_query($conn, "SELECT HOUR(order_date) as h, COUNT(*) as cnt, SUM(total) as rev FROM orders WHERE " . paid_orders_where() . " AND order_date BETWEEN '$startStr' AND '$endStr' GROUP BY HOUR(order_date) ORDER BY h ASC");
     $hourMap = [];
     while ($r = mysqli_fetch_assoc($qH)) $hourMap[(int)$r['h']] = ['count'=>(int)$r['cnt'],'revenue'=>(float)$r['rev']];
     $maxRev = 0;
