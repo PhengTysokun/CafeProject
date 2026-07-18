@@ -237,6 +237,12 @@ _migrate($conn, 'categories_offer_addons_v1', function($db) {
     $db->query("ALTER TABLE categories ADD COLUMN IF NOT EXISTS offer_addons TINYINT(1) NOT NULL DEFAULT 1");
     $db->query("UPDATE categories SET offer_addons=0 WHERE slug='Juice'");
 });
+_migrate($conn, 'categories_earns_points_v1', function($db) {
+    $db->query("ALTER TABLE categories ADD COLUMN IF NOT EXISTS earns_points TINYINT(1) NOT NULL DEFAULT 1");
+});
+_migrate($conn, 'order_items_earns_points_v1', function($db) {
+    $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS earns_points TINYINT(1) NOT NULL DEFAULT 1");
+});
 
 // ── Milk options library (admin-managed via manage_milk.php) ──
 $conn->query("CREATE TABLE IF NOT EXISTS milk_options (
