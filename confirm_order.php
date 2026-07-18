@@ -110,7 +110,7 @@ if ($existing_order_id > 0) {
     }
 
     // Fetch existing items so promotion can be recalculated over all items combined
-    $stmt_ei = $conn->prepare("SELECT price, quantity FROM order_items WHERE order_id = ?");
+    $stmt_ei = $conn->prepare("SELECT price, quantity, earns_points FROM order_items WHERE order_id = ?");
     $stmt_ei->bind_param("i", $existing_order_id);
     $stmt_ei->execute();
     $existing_items = $stmt_ei->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -124,13 +124,13 @@ if ($existing_order_id > 0) {
     foreach ($existing_items as $ei) {
         $p = (float)$ei['price']; $q = (int)$ei['quantity'];
         $subtotal += $p * $q; $total_qty += $q;
-        if ($p > 0) $points_qty += $q;
+        if ($p > 0 && (int)($ei['earns_points'] ?? 1) === 1) $points_qty += $q;
         if ($p < $min_price) $min_price = $p;
     }
     foreach ($_SESSION['cart'] as $item) {
         $p = (float)($item['price'] ?? 0.0); $q = max(1, (int)($item['qty'] ?? 1));
         $subtotal += $p * $q; $total_qty += $q;
-        if ($p > 0) $points_qty += $q;
+        if ($p > 0 && (int)($item['earns_points'] ?? 1) === 1) $points_qty += $q;
         if ($p < $min_price) $min_price = $p;
     }
 
@@ -187,8 +187,8 @@ if ($existing_order_id > 0) {
         }
 
         $stmt_item = $conn->prepare("
-            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price, earns_points)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
         $stock_warnings = [];
@@ -205,9 +205,10 @@ if ($existing_order_id > 0) {
             $sfactor    = (float)($item['size_factor'] ?? 1.0);
             $promo_pct  = (int)($item['promo_percent'] ?? 0);
             $orig_price = (float)($item['orig_price'] ?? $price);
+            $earns_pts  = (int)($item['earns_points'] ?? 1);
             $addons_json = json_encode($item['addons'] ?? []);
 
-            $stmt_item->bind_param("iisdissssssid", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price);
+            $stmt_item->bind_param("iisdissssssidi", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price, $earns_pts);
             $stmt_item->execute();
 
             // ── STOCK: deduct at order creation time ──
@@ -419,10 +420,11 @@ try {
 
     // ── ORDER ITEMS + STOCK DEDUCTION ──
     $stmt_item = $conn->prepare("
-        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price, earns_points)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stock_warnings = [];
+    $point_qty = 0;   // loyalty: earning (drink) + chargeable qty; computed here before the cart is cleared
     foreach ($_SESSION['cart'] as $item) {
         $qty        = max(1, (int)($item['qty'] ?? 1));
         $price      = (float)($item['price'] ?? 0.0);
@@ -436,10 +438,12 @@ try {
         $sfactor    = (float)($item['size_factor'] ?? 1.0);
         $promo_pct  = (int)($item['promo_percent'] ?? 0);
         $orig_price = (float)($item['orig_price'] ?? $price);
+        $earns_pts  = (int)($item['earns_points'] ?? 1);
+        if ($earns_pts === 1 && $price > 0) $point_qty += $qty;
         $addons_json = json_encode($item['addons'] ?? []);
 
         // price is the NET (post-promo) unit price; promo is already baked in. Do not re-discount.
-        $stmt_item->bind_param("iisdissssssid", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price);
+        $stmt_item->bind_param("iisdissssssidi", $order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price, $earns_pts);
         $stmt_item->execute();
 
         if ($product_id > 0) {
@@ -450,8 +454,8 @@ try {
     // ── ADD REDEEMED REWARDS TO ORDER + deduct points now that order is confirmed ──
     if (!empty($_SESSION['redeemed_rewards'])) {
         $stmt_reward = $conn->prepare("
-            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price, earns_points)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt_deduct   = $conn->prepare("UPDATE loyalty_cards SET points = GREATEST(0, points - ?), last_used = NOW() WHERE card_id = ?");
         $stmt_hist     = $conn->prepare("
@@ -467,8 +471,8 @@ try {
             $rqty       = 1;
             $rempty     = '';
             $addons_json = json_encode($reward['addons'] ?? []);
-            $rpromo = 0; $rorig = 0.0;
-            $stmt_reward->bind_param("iisdissssssid", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty, $rempty, $rempty, $addons_json, $rpromo, $rorig);
+            $rpromo = 0; $rorig = 0.0; $rearn = 0;
+            $stmt_reward->bind_param("iisdissssssidi", $order_id, $rid, $rname, $rprice, $rqty, $rempty, $rempty, $rempty, $rempty, $rempty, $addons_json, $rpromo, $rorig, $rearn);
             $stmt_reward->execute();
 
             // Deduct points from card (the deduction that loyalty_redeem.php now defers)
@@ -519,7 +523,7 @@ try {
     // ── LOYALTY POINTS (1 point per drink ordered) ──
     $loyalty_card_id = isset($_SESSION['loyalty_card_id']) ? (int)$_SESSION['loyalty_card_id'] : 0;
     if ($loyalty_card_id > 0) {
-        $points_earned = $total_qty;
+        $points_earned = $point_qty;   // earning (drink) items only — merch excluded
 
         if ($points_earned > 0) {
             // Step 1: Always update the points balance — only touches guaranteed columns.
@@ -529,7 +533,7 @@ try {
 
             // Step 2: Increment counter columns if they exist in this schema version.
             $sc = $conn->prepare("UPDATE loyalty_cards SET total_orders = total_orders + 1, total_drinks = total_drinks + ? WHERE card_id = ?");
-            if ($sc) { $sc->bind_param("ii", $total_qty, $loyalty_card_id); $sc->execute(); }
+            if ($sc) { $sc->bind_param("ii", $point_qty, $loyalty_card_id); $sc->execute(); }
 
             // Step 3: Write earn record to loyalty_history.
             // Hardcode 'earned' directly in SQL (not as a parameter) so ENUM validation
