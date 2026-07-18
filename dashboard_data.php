@@ -12,7 +12,7 @@ if (!isset($_SESSION['user_id'])) {
 $sales_sql = "
 SELECT IFNULL(SUM(total),0) AS total_sales
 FROM orders
-WHERE DATE(order_date) = CURDATE() AND status = 'Completed'
+WHERE DATE(order_date) = CURDATE() AND " . paid_orders_where() . "
 ";
 $sales_result = mysqli_query($conn, $sales_sql);
 $sales = mysqli_fetch_assoc($sales_result)['total_sales'];

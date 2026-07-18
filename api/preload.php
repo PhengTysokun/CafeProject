@@ -18,7 +18,7 @@ switch ($role) {
     case 'manager':
     case 'supervisor':
     case 'staff':
-        $r = $conn->query("SELECT IFNULL(SUM(total),0) AS sales, COUNT(*) AS orders FROM orders WHERE DATE(order_date)=CURDATE() AND status='Completed'");
+        $r = $conn->query("SELECT IFNULL(SUM(total),0) AS sales, COUNT(*) AS orders FROM orders WHERE DATE(order_date)=CURDATE() AND " . paid_orders_where());
         $row = $r->fetch_assoc();
         $data['sales_today']   = (float)$row['sales'];
         $data['orders_today']  = (int)$row['orders'];

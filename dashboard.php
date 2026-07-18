@@ -32,10 +32,10 @@ $business_date = (int)$_now->format("H") < 6
     ? (clone $_now)->modify("-1 day")->format("Y-m-d")
     : $_now->format("Y-m-d");
 
-$sales_result   = mysqli_query($conn, "SELECT IFNULL(SUM(total),0) AS total_sales FROM orders WHERE DATE(order_date)=CURDATE() AND status='Completed'");
+$sales_result   = mysqli_query($conn, "SELECT IFNULL(SUM(total),0) AS total_sales FROM orders WHERE DATE(order_date)=CURDATE() AND " . paid_orders_where());
 $sales          = mysqli_fetch_assoc($sales_result)['total_sales'];
 
-$yesterday_result  = mysqli_query($conn, "SELECT IFNULL(SUM(total),0) AS yesterday_sales FROM orders WHERE DATE(order_date)=CURDATE()-INTERVAL 1 DAY AND status='Completed'");
+$yesterday_result  = mysqli_query($conn, "SELECT IFNULL(SUM(total),0) AS yesterday_sales FROM orders WHERE DATE(order_date)=CURDATE()-INTERVAL 1 DAY AND " . paid_orders_where());
 $yesterday_sales   = mysqli_fetch_assoc($yesterday_result)['yesterday_sales'];
 $sales_trend       = $yesterday_sales > 0 ? round(($sales - $yesterday_sales) / $yesterday_sales * 100, 1) : 0;
 $trend_class       = $sales_trend >= 0 ? 'up' : 'down';
@@ -141,7 +141,7 @@ $preparing_count = $status_counts['Preparing']      ?? 0;
 $completed_count = $status_counts['Completed']      ?? 0;
 $cancelled_count = $status_counts['Cancelled']      ?? 0;
 
-$items_sold_result = mysqli_query($conn, "SELECT IFNULL(SUM(oi.quantity),0) AS total_items FROM order_items oi JOIN orders o ON oi.order_id=o.order_id WHERE DATE(o.order_date)=CURDATE() AND o.status='Completed'");
+$items_sold_result = mysqli_query($conn, "SELECT IFNULL(SUM(oi.quantity),0) AS total_items FROM order_items oi JOIN orders o ON oi.order_id=o.order_id WHERE DATE(o.order_date)=CURDATE() AND " . paid_orders_where('o'));
 $items_sold = mysqli_fetch_assoc($items_sold_result)['total_items'];
 
 $kitchen_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, order_date, token_number FROM orders WHERE DATE(order_date)=CURDATE() AND status='Preparing' ORDER BY order_date ASC LIMIT 8");
@@ -149,7 +149,7 @@ $kitchen_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer
 $recent_sql = "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() ORDER BY order_date DESC LIMIT 20";
 $recent_orders = mysqli_query($conn, $recent_sql);
 
-$top_selling_result = mysqli_query($conn, "SELECT p.name, p.image, SUM(oi.quantity) as total_sold, p.price FROM products p JOIN order_items oi ON p.product_id=oi.product_id JOIN orders o ON oi.order_id=o.order_id WHERE o.status='Completed' GROUP BY p.product_id ORDER BY total_sold DESC LIMIT 5");
+$top_selling_result = mysqli_query($conn, "SELECT p.name, p.image, SUM(oi.quantity) as total_sold, p.price FROM products p JOIN order_items oi ON p.product_id=oi.product_id JOIN orders o ON oi.order_id=o.order_id WHERE " . paid_orders_where('o') . " GROUP BY p.product_id ORDER BY total_sold DESC LIMIT 5");
 
 $activity_result = mysqli_query($conn, "SELECT * FROM (SELECT 'order' as type, order_id as ref_id, customer_name as name, total as amount, status, order_date as date FROM orders UNION ALL SELECT 'stock' as type, ingredient_id as ref_id, ingredient_name as name, purchase_qty as amount, 'restocked' as status, NULL as date FROM ingredients) as activity ORDER BY date DESC LIMIT 5");
 
