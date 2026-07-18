@@ -130,7 +130,7 @@ $orderIds = [];
 $totalSales = 0;
 $orderCount = 0;
 
-$stmt_orders = $conn->prepare("SELECT order_id, total FROM orders WHERE status = 'Completed' AND order_date BETWEEN ? AND ?");
+$stmt_orders = $conn->prepare("SELECT order_id, total FROM orders WHERE " . paid_orders_where() . " AND order_date BETWEEN ? AND ?");
 $stmt_orders->bind_param("ss", $startStr, $endStr);
 $stmt_orders->execute();
 $qOrders = $stmt_orders->get_result();
@@ -297,7 +297,7 @@ if ($mode === 'daily') {
     $qHourly = mysqli_query($conn, "
         SELECT HOUR(order_date) as h, COUNT(*) as cnt, SUM(total) as rev
         FROM orders
-        WHERE status = 'Completed'
+        WHERE " . paid_orders_where() . "
           AND order_date BETWEEN '$startStr' AND '$endStr'
         GROUP BY HOUR(order_date)
         ORDER BY h ASC
@@ -326,7 +326,7 @@ if ($mode !== 'daily') {
     $qTrend = mysqli_query($conn, "
         SELECT DATE(order_date) as d, COUNT(*) as cnt, SUM(total) as rev
         FROM orders
-        WHERE status = 'Completed'
+        WHERE " . paid_orders_where() . "
           AND order_date BETWEEN '$startStr' AND '$endStr'
         GROUP BY DATE(order_date)
         ORDER BY d ASC
@@ -348,7 +348,7 @@ if (count($orderIds) > 0) {
     $qPay = mysqli_query($conn, "
         SELECT payment_method, COUNT(*) as cnt, SUM(total) as rev
         FROM orders
-        WHERE status = 'Completed'
+        WHERE " . paid_orders_where() . "
           AND order_date BETWEEN '$startStr' AND '$endStr'
         GROUP BY payment_method
         ORDER BY rev DESC
@@ -454,7 +454,7 @@ if ($mode === 'daily') {
 }
 $prevStartStr2 = $prevStart2->format('Y-m-d H:i:s');
 $prevEndStr2   = $prevEnd2->format('Y-m-d H:i:s');
-$qPrev = mysqli_query($conn, "SELECT COUNT(*) as cnt, COALESCE(SUM(total),0) as rev FROM orders WHERE status='Completed' AND order_date BETWEEN '$prevStartStr2' AND '$prevEndStr2'");
+$qPrev = mysqli_query($conn, "SELECT COUNT(*) as cnt, COALESCE(SUM(total),0) as rev FROM orders WHERE " . paid_orders_where() . " AND order_date BETWEEN '$prevStartStr2' AND '$prevEndStr2'");
 if ($rp = mysqli_fetch_assoc($qPrev)) { $prevOrderCount = (int)$rp['cnt']; $prevSales = (float)$rp['rev']; }
 $deltaOrders = deltaStr((float)$orderCount, (float)$prevOrderCount);
 $deltaSales  = deltaStr($totalSales, $prevSales);
