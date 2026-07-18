@@ -267,7 +267,11 @@ if ($md_co && (float)($md_co['amount'] ?? 0) > 0) {
 // The free drink is an *extra* gift on top of what the customer ordered.
 // Customer pays full price for all ordered drinks; the free drink costs the cafe $0 to give.
 // Only happy_hour and manual discounts reduce the chargeable total.
-$total_discount      = $happy_hour_discount + $manual_discount_co;
+// promotion_discount stores PROMOTIONS ONLY (happy hour). The manual discount is stored
+// separately in the manual_discount column — do NOT bundle it in here, or receipts that
+// render both promotion_discount and manual_discount as separate lines double-show it.
+// (The charged total below is unaffected: $after_promos_co already subtracted the manual.)
+$total_discount      = $happy_hour_discount;
 $subtotal_after      = $after_promos_co;
 $tax                 = $subtotal_after * (TAX_RATE / 100);
 $total               = round($subtotal_after + $tax, 2);
