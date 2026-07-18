@@ -96,14 +96,14 @@ At ~line 123, add `c.earns_points` to the selected columns:
 
 After the `offer_addons` label in the add form (~line 256), add:
 ```php
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="earns_points" checked> Points</label>
+                <label title="Earns loyalty points" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="earns_points" checked> Points</label>
 ```
 
 - [ ] **Step 5: Checkbox on the edit form**
 
 After the `offer_addons` label in the edit form (~line 352), add:
 ```php
-                                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="earns_points" <?= $c['earns_points'] ? 'checked' : '' ?>> Points</label>
+                                <label title="Earns loyalty points" style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="earns_points" <?= $c['earns_points'] ? 'checked' : '' ?>> Points</label>
 ```
 
 - [ ] **Step 6: Lint + E2E**
@@ -148,6 +148,17 @@ In the `$_SESSION['cart'][] = [ ... ]` array (line 153-167), add after `'promo_p
         'earns_points' => $earns_points,
 ```
 
+- [ ] **Step 2b: Harden the merge key with earns_points**
+
+An identical re-add of the same product merges into the existing cart line by
+product/size/options/addons/promo. If a category's `earns_points` is flipped mid-session, a
+line already in the cart (earns=1) must not merge with a re-add that now resolves to earns=0.
+In the identical-line merge `foreach` conditions (~line 137-143), add after the existing
+`promo_percent` clause added by the promo feature:
+```php
+        (int)($item['earns_points'] ?? 1) == $earns_points &&
+```
+
 - [ ] **Step 3: Lint**
 
 Run: `php -l add_to_cart.php` → `No syntax errors detected in add_to_cart.php`.
@@ -167,6 +178,14 @@ git commit -m "feat(merch): stamp earns_points onto cart lines from category"
 **Interfaces:**
 - Consumes: cart line `earns_points`; `order_items.earns_points`.
 - Produces: `order_items.earns_points` persisted on every row; loyalty points count only earning + priced items.
+
+- [ ] **Step 0: Confirm control flow (scope guard)**
+
+Run: `grep -n "\$_SESSION\['cart'\] = \[\];\|foreach (\$_SESSION\['cart'\] as \$item)\|LOYALTY POINTS" confirm_order.php`
+Expected order in the NEW-order path: the item-insert `foreach` (~420) comes **before** the
+`$_SESSION['cart'] = [];` clear (~515) which comes **before** the `LOYALTY POINTS` block (~519).
+This is what lets `$point_qty` (computed in the loop) be in scope in the loyalty block. If the
+order differs, stop and re-plan.
 
 - [ ] **Step 1: NEW path — persist earns_points + accumulate point_qty**
 
@@ -223,7 +242,17 @@ and the cart loop's `if ($p > 0) $points_qty += $q;` to:
 ```php
         if ($p > 0 && (int)($item['earns_points'] ?? 1) === 1) $points_qty += $q;
 ```
-Add the column to the add-to-order INSERT (line 189-192) — it already has `promo_percent, orig_price`; add `, earns_points` + one `?`. In its loop (line 195-214) add `$earns_pts = (int)($item['earns_points'] ?? 1);` and extend the bind to `iisdissssssidi` with `$earns_pts` last (mirror Step 1).
+Add the column to the add-to-order INSERT (line 189-192) — it already has `promo_percent, orig_price`; add `, earns_points` + one `?`:
+```php
+        $stmt_item = $conn->prepare("
+            INSERT INTO order_items (order_id, product_id, product_name, price, quantity, sweetness, ice, milk, size_code, size_label, addons_snapshot, promo_percent, orig_price, earns_points)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+```
+In its loop (line 195-214) add `$earns_pts = (int)($item['earns_points'] ?? 1);` and extend the bind (note the add-to-order path binds `$existing_order_id` first):
+```php
+            $stmt_item->bind_param("iisdissssssidi", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price, $earns_pts);
+```
 
 - [ ] **Step 5: Lint + E2E**
 
@@ -310,7 +339,7 @@ Expected: `points_earned=1` (the drink); T-Shirt row `earns=0`, drink row `earns
 
 Confirm the merch sale counts as revenue (paid gate) and deducted no ingredients:
 `php -r "require 'config.php'; \$s=\$conn->query('SELECT IFNULL(SUM(total),0) s FROM orders WHERE DATE(order_date)=CURDATE() AND '.paid_orders_where())->fetch_assoc(); echo 'today paid revenue includes shirt sale: \$'.\$s['s'].PHP_EOL;"`
-Confirm no `ingredient_history` `order_deduct` rows reference the merch-only order (T-Shirt has no recipe). Soft-cancel the test order afterward.
+Confirm no `ingredient_history` `order_deduct` rows reference the merch-only order (T-Shirt has no recipe). Soft-cancel the test order afterward — `UPDATE orders SET status='Cancelled', is_open=0 WHERE order_id=<id>` — so it drops out of the paid-revenue gate.
 
 - [ ] **Step 5: E2E — drink category regression**
 
@@ -323,6 +352,7 @@ Place a drink-only order with a loyalty card → `points_earned` equals the drin
 - earns-points toggle in manage_categories (add/edit/list/forms) → Task 2. ✓
 - Merch category + products (config, no code) → Task 2 Step 6 + Task 6 Step 2. ✓
 - Snapshot onto cart line via LEFT JOIN → Task 3. ✓
+- Merge key hardened with `earns_points` (mid-session flip edge) → Task 3 Step 2b. ✓
 - Persist `order_items.earns_points` (3 INSERTs) → Task 4 Steps 1/3/4. ✓
 - Points rule `earns_points=1 AND price>0` in all 3 loyalty spots → Task 4 (new + add-to-order) + Task 5 (edit). ✓
 - paid_orders_where unchanged / merch-safe → verified in spec; exercised Task 6 Step 4. ✓
