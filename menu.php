@@ -97,6 +97,8 @@ $stmt_ao->execute();
 $active_orders = (int)$stmt_ao->get_result()->fetch_row()[0];
 
 /* ── BEST SELLER ── */
+// TODO(merch): once merch volume is significant, exclude non-drink categories
+// (categories.earns_points = 0) from best-seller / top-drinks stats.
 $bestSellerName = null;
 $bs = mysqli_query($conn, "SELECT product_name FROM order_items GROUP BY product_name ORDER BY SUM(quantity) DESC LIMIT 1");
 if ($bs && $r = mysqli_fetch_assoc($bs)) $bestSellerName = $r['product_name'];
