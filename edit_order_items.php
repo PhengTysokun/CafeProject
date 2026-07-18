@@ -352,6 +352,14 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 .empty-items { text-align: center; padding: 40px 20px; color: var(--text-muted); }
 .empty-items i { font-size: 36px; margin-bottom: 10px; display: block; }
 
+/* Item list pager */
+.item-pager { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+.item-pager button { min-width: 32px; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text-muted); font-family: 'Poppins', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: var(--transition); }
+.item-pager button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.item-pager button.active { background: var(--accent); border-color: var(--accent); color: #000; }
+.item-pager button:disabled { opacity: .4; cursor: default; }
+.item-pager .pager-ellipsis { color: var(--text-muted); padding: 0 2px; }
+
 /* Summary panel */
 .summary-panel { position: sticky; top: 20px; }
 .summary-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
@@ -489,6 +497,7 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
             </div>
             <?php endforeach; ?>
             </div>
+            <div id="itemPager" class="item-pager" style="display:none;"></div>
             <?php endif; ?>
         </div>
 
@@ -724,6 +733,7 @@ async function saveChanges() {
             }
 
             updateItemCount();
+            renderItemPage();
             if (data.warning) {
                 showToast('Order updated — new total $' + data.total, 'success');
                 setTimeout(() => showToast(data.warning, 'error'), 1400);
@@ -751,9 +761,52 @@ function showToast(msg, type = 'success') {
     t._timer = setTimeout(() => { t.className = ''; }, 3200);
 }
 
+// ── Item list pagination (client-side, 10/page) ──
+// Rows never leave the DOM — they're only hidden per page — so recalcSummary() and
+// saveChanges() keep seeing every #itemList .item-row and the whole order still saves at once.
+const ITEMS_PER_PAGE = 10;
+let itemPage = 1;
+function pagerRows() { return Array.from(document.querySelectorAll('#itemList .item-row')); }
+function pagerTotalPages() { return Math.max(1, Math.ceil(pagerRows().length / ITEMS_PER_PAGE)); }
+
+function renderItemPage() {
+    const rows = pagerRows();
+    const tp = pagerTotalPages();
+    if (itemPage > tp) itemPage = tp;
+    if (itemPage < 1) itemPage = 1;
+    rows.forEach((row, i) => {
+        const page = Math.floor(i / ITEMS_PER_PAGE) + 1;
+        row.style.display = (page === itemPage) ? '' : 'none';
+    });
+    renderPager(tp);
+}
+
+function renderPager(tp) {
+    const el = document.getElementById('itemPager');
+    if (!el) return;
+    if (tp <= 1) { el.innerHTML = ''; el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+    let h = '<button ' + (itemPage === 1 ? 'disabled' : '') + ' onclick="gotoItemPage(' + (itemPage - 1) + ')">‹ Prev</button>';
+    for (let p = 1; p <= tp; p++) {
+        if (p === 1 || p === tp || Math.abs(p - itemPage) <= 1) {
+            h += '<button class="' + (p === itemPage ? 'active' : '') + '" onclick="gotoItemPage(' + p + ')">' + p + '</button>';
+        } else if (p === itemPage - 2 || p === itemPage + 2) {
+            h += '<span class="pager-ellipsis">…</span>';
+        }
+    }
+    h += '<button ' + (itemPage === tp ? 'disabled' : '') + ' onclick="gotoItemPage(' + (itemPage + 1) + ')">Next ›</button>';
+    el.innerHTML = h;
+}
+
+function gotoItemPage(p) {
+    itemPage = p;
+    renderItemPage();
+}
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
     recalcSummary();
+    renderItemPage();
     const hint = document.getElementById('changeHint');
     hint.classList.add('visible');
     hint.textContent = 'No changes yet';
