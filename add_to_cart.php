@@ -52,7 +52,7 @@ if ($milk !== '' && !in_array($milk, $valid_milk)) {
 }
 
 // Fetch product
-$stmt = $conn->prepare("SELECT product_id, name, price, image, has_sizes, promo_percent FROM products WHERE product_id = ?");
+$stmt = $conn->prepare("SELECT p.product_id, p.name, p.price, p.image, p.has_sizes, p.promo_percent, COALESCE(c.earns_points,1) AS earns_points FROM products p LEFT JOIN categories c ON c.category_id = p.category_id WHERE p.product_id = ?");
 $stmt->bind_param("i", $product_id);
 $stmt->execute();
 $res = $stmt->get_result();
@@ -129,6 +129,9 @@ $net_drink     = $promo_percent > 0 ? round($gross_drink * (1 - $promo_percent /
 $orig_price    = $gross_drink + $addon_sum;                     // gross unit (for struck display)
 $line_price    = $net_drink   + $addon_sum;                     // net unit (charged + summed everywhere)
 
+// Category loyalty eligibility (merch = 0). Snapshotted so later category changes don't mutate the cart.
+$earns_points  = (int)($p['earns_points'] ?? 1);
+
 if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
@@ -142,6 +145,7 @@ foreach ($_SESSION['cart'] as &$item) {
     if (
         $item['product_id'] == $product_id &&
         (int)($item['promo_percent'] ?? 0) == $promo_percent &&
+        (int)($item['earns_points'] ?? 1) == $earns_points &&
         ($item['size_code'] ?? '') == $resolved_code &&
         $item['sweetness']  == $sweetness  &&
         $item['ice']        == $ice        &&
@@ -162,6 +166,7 @@ if (!$found) {
         'price'        => $line_price,
         'orig_price'   => $orig_price,
         'promo_percent'=> $promo_percent,
+        'earns_points' => $earns_points,
         'image'        => $p['image'],
         'size_code'    => $resolved_code,
         'size_label'   => $size_label,
