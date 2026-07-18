@@ -29,8 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $oi = isset($_POST['offer_ice'])       ? 1 : 0;
                 $om = isset($_POST['offer_milk'])      ? 1 : 0;
                 $oa = isset($_POST['offer_addons'])    ? 1 : 0;
-                $ins = $conn->prepare("INSERT INTO categories (slug, name, icon, display_order, is_active, offer_sweetness, offer_ice, offer_milk, offer_addons) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $ins->bind_param('sssiiiiii', $slug, $name, $icon, $ord, $active, $os, $oi, $om, $oa);
+                $ep = isset($_POST['earns_points'])    ? 1 : 0;
+                $ins = $conn->prepare("INSERT INTO categories (slug, name, icon, display_order, is_active, offer_sweetness, offer_ice, offer_milk, offer_addons, earns_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $ins->bind_param('sssiiiiiii', $slug, $name, $icon, $ord, $active, $os, $oi, $om, $oa, $ep);
                 $ins->execute();
                 $flash = ['type'=>'success','msg'=>"Category \"$slug\" added."];
                 break;
@@ -45,8 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $oi = isset($_POST['offer_ice'])       ? 1 : 0;
                 $om = isset($_POST['offer_milk'])      ? 1 : 0;
                 $oa = isset($_POST['offer_addons'])    ? 1 : 0;
-                $u = $conn->prepare("UPDATE categories SET name=?, icon=?, is_active=?, offer_sweetness=?, offer_ice=?, offer_milk=?, offer_addons=? WHERE category_id=?");
-                $u->bind_param('ssiiiiii', $name, $icon, $active, $os, $oi, $om, $oa, $id);
+                $ep = isset($_POST['earns_points'])    ? 1 : 0;
+                $u = $conn->prepare("UPDATE categories SET name=?, icon=?, is_active=?, offer_sweetness=?, offer_ice=?, offer_milk=?, offer_addons=?, earns_points=? WHERE category_id=?");
+                $u->bind_param('ssiiiiiii', $name, $icon, $active, $os, $oi, $om, $oa, $ep, $id);
                 $u->execute();
                 $seeded = 0;
                 if ($oa) {
@@ -120,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $categories = [];
 $res = $conn->query("
     SELECT c.category_id, c.slug, c.name, c.icon, c.display_order, c.is_active,
-           c.offer_sweetness, c.offer_ice, c.offer_milk, c.offer_addons,
+           c.offer_sweetness, c.offer_ice, c.offer_milk, c.offer_addons, c.earns_points,
            (SELECT COUNT(*) FROM products p WHERE p.category_id = c.category_id) AS product_count
     FROM categories c
     ORDER BY c.display_order ASC, c.category_id ASC
@@ -254,6 +256,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_ice" checked> Ice</label>
                 <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_milk" checked> Milk</label>
                 <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_addons" checked> Add-ons</label>
+                <label title="Earns loyalty points" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="earns_points" checked> Points</label>
             </div>
             <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);"><i class="fa-solid fa-plus"></i> Add Category</button>
         </div>
@@ -350,6 +353,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_ice" <?= $c['offer_ice'] ? 'checked' : '' ?>> Ice</label>
                                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_milk" <?= $c['offer_milk'] ? 'checked' : '' ?>> Milk</label>
                                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="offer_addons" <?= $c['offer_addons'] ? 'checked' : '' ?>> Add-ons</label>
+                                <label title="Earns loyalty points" style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);"><input type="checkbox" name="earns_points" <?= $c['earns_points'] ? 'checked' : '' ?>> Points</label>
                             </div>
                         </div>
                         <button type="submit" class="btn-nav" style="border-color:var(--accent);color:var(--accent);padding-bottom:6px;">Save</button>
