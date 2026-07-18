@@ -18,7 +18,8 @@ and **without earning loyalty points**. Reuse the existing catalog rather than b
 separate retail system.
 
 Out of scope (explicit YAGNI): merch inventory/stock tracking; excluding merch from
-"top drinks"/best-seller stats (cosmetic — merch may appear if sold heavily; revisit later);
+"top drinks"/best-seller stats (cosmetic — merch may appear if sold heavily; revisit later —
+leave a one-line TODO comment at the best-seller query so it's not a future mystery);
 "open item" / cashier-typed arbitrary price (add only if genuinely random one-offs appear).
 
 ## Design
@@ -45,8 +46,9 @@ following the existing `offer_addons` checkbox exactly:
 - POST read on add + edit (`$ep = isset($_POST['earns_points']) ? 1 : 0;`).
 - Include `earns_points` in the INSERT and UPDATE column lists + binds.
 - Include `c.earns_points` in the category-list SELECT.
-- Render the checkbox in both forms; optionally show a "No points" pill in the category card
-  when `earns_points = 0`.
+- Render the checkbox in both forms, placed alongside the existing offer toggles so the admin
+  sees the full config in one place. A "No points" pill on the category card is optional —
+  skip it if it complicates the diff.
 
 The shop then creates a **"Merch"** category: name "Merch", offers sweetness/ice/milk/add-ons
 all OFF, earns_points OFF. Products (T-Shirt, Mug…) are added under it with name + price +
@@ -54,9 +56,13 @@ image, `has_sizes` off, no recipe. Pure configuration — no code beyond the fla
 
 ### Snapshot at add-to-cart (`add_to_cart.php`)
 
-The product fetch already joins nothing for category flags; add the category's `earns_points`
-to the lookup (join `categories` on `category_id`, fall back to `1` if unresolved) and stamp
-`earns_points` onto the cart line alongside the existing fields.
+The product fetch currently selects from `products` alone. Change it to a single **LEFT JOIN**
+on `categories` so the boolean comes back in the same query (one round-trip, not two):
+`SELECT p.product_id, p.name, p.price, p.image, p.has_sizes, p.promo_percent,
+COALESCE(c.earns_points,1) AS earns_points FROM products p
+LEFT JOIN categories c ON c.category_id = p.category_id WHERE p.product_id = ?`.
+LEFT JOIN + COALESCE→1 means a product with no/again-unresolved category still earns points
+(safe default). Stamp `earns_points` (0/1) onto the cart line alongside the existing fields.
 
 ### Loyalty points math (the one real behavioural change)
 
@@ -81,6 +87,13 @@ Persist `order_items.earns_points` in all three `order_items` INSERTs in `confir
 Menu rendering (a merch product shows just qty + Add to Cart because its category offers are
 off), cart, all payment methods, receipts (print/pdf/paylater), refunds, and the paid-revenue
 gate (`paid_orders_where()`). A merch sale counts as revenue exactly like a drink.
+
+**Verified — `paid_orders_where()` is merch-safe:** it filters on `orders.is_open` and
+`orders.status` only, with no join to `products`/`categories` and no drink-specific column, so
+a merch order counts as revenue on the same terms as a drink. No change needed there.
+
+**Migrations run `categories.earns_points` before `order_items.earns_points`** (no hard FK
+dependency; ordered for clarity).
 
 ## Affected files
 
