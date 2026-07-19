@@ -1407,13 +1407,14 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
 
                         <td>
                             <div class="row-actions">
+                                <?php $__lid_js = htmlspecialchars(json_encode($c['loyalty_id'], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_TAG|JSON_HEX_AMP), ENT_QUOTES); ?>
                                 <button class="btn-icon btn-adjust"
-                                    onclick="openAdjust(<?= (int)$c['card_id'] ?>, '<?= htmlspecialchars($c['loyalty_id'], ENT_QUOTES) ?>', <?= (int)$c['points'] ?>)"
+                                    onclick="openAdjust(<?= (int)$c['card_id'] ?>, <?= $__lid_js ?>, <?= (int)$c['points'] ?>)"
                                     title="Adjust points">
                                     <i class="fa-solid fa-sliders"></i>
                                 </button>
                                 <button class="btn-icon btn-redeem"
-                                    onclick="openRedeem(<?= (int)$c['card_id'] ?>, '<?= htmlspecialchars($c['loyalty_id'], ENT_QUOTES) ?>', <?= (int)$c['points'] ?>)"
+                                    onclick="openRedeem(<?= (int)$c['card_id'] ?>, <?= $__lid_js ?>, <?= (int)$c['points'] ?>)"
                                     title="Redeem reward (spend points)">
                                     <i class="fa-solid fa-gift"></i>
                                 </button>
@@ -1577,6 +1578,21 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
 // Active rewards available to redeem (id, name, cost).
 var REWARDS = <?= json_encode(array_map(fn($r) => ['id'=>(int)$r['reward_id'],'name'=>$r['reward_name'],'cost'=>(int)$r['points_required']], $rewards ?? []), JSON_UNESCAPED_UNICODE) ?>;
 </script>
+
+<!-- STYLED CONFIRM MODAL (replaces native confirm()) -->
+<div id="confirmModal" class="modal-overlay" onclick="if(event.target===this)uiConfirmResolve(false)">
+    <div class="modal-card" style="max-width:420px;">
+        <div class="modal-header">
+            <i id="confirmIcon" class="fa-solid fa-circle-question"></i>
+            <h3 id="confirmTitle">Are you sure?</h3>
+        </div>
+        <div id="confirmMessage" style="padding:4px 24px 8px;font-size:13.5px;color:var(--text-muted);line-height:1.55;"></div>
+        <div style="display:flex;gap:8px;padding:16px 24px 24px;">
+            <button class="btn-secondary" style="flex:1;" onclick="uiConfirmResolve(false)">Cancel</button>
+            <button id="confirmOkBtn" class="btn-primary" style="flex:1;" onclick="uiConfirmResolve(true)">Confirm</button>
+        </div>
+    </div>
+</div>
 
 <!-- CREATE CARD MODAL -->
 <div id="createModal" class="modal-overlay" onclick="if(event.target===this)closeCreateModal()">
@@ -1907,7 +1923,7 @@ function renderRedeemList() {
 async function applyRedeem(rewardId) {
     const reward = REWARDS.find(function (r) { return r.id === rewardId; });
     if (!reward) return;
-    if (!confirm('Redeem "' + reward.name + '" for ' + reward.cost + ' points from ' + redeemState.loyaltyId + '?')) return;
+    if (!(await uiConfirm('Give the customer "' + reward.name + '" and deduct ' + reward.cost + ' points from ' + redeemState.loyaltyId + '?', { title: 'Redeem Reward', confirmText: '<i class="fa-solid fa-gift"></i> Redeem' }))) return;
     document.querySelectorAll('#redeemList button').forEach(function (b) { b.disabled = true; });
     try {
         const res = await fetch('loyalty_redeem_direct.php', {
@@ -2077,7 +2093,7 @@ document.getElementById('createForm').addEventListener('submit', async function 
 // DEACTIVATE CARD
 // ═══════════════════════════════════════════════════
 async function deactivateCard(cardId, loyaltyId) {
-    if (!confirm('Deactivate ' + loyaltyId + '?\n\nThis will remove the card from the active list.')) return;
+    if (!(await uiConfirm('This will remove ' + loyaltyId + ' from the active list.', { title: 'Deactivate Card', danger: true, confirmText: '<i class="fa-solid fa-ban"></i> Deactivate' }))) return;
 
     try {
         const body = new URLSearchParams({ action: 'deactivate', card_id: cardId });
@@ -2102,6 +2118,24 @@ async function deactivateCard(cardId, loyaltyId) {
     } catch (err) {
         showToast('Network error. Please try again.', 'error');
     }
+}
+
+// ═══════════════════════════════════════════════════
+// STYLED CONFIRM (replaces native confirm())
+// ═══════════════════════════════════════════════════
+let _uiConfirmResolver = null;
+function uiConfirm(message, opts) {
+    opts = opts || {};
+    document.getElementById('confirmTitle').textContent = opts.title || 'Are you sure?';
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmIcon').className = 'fa-solid ' + (opts.danger ? 'fa-triangle-exclamation' : 'fa-circle-question');
+    document.getElementById('confirmOkBtn').innerHTML = opts.confirmText || 'Confirm';
+    document.getElementById('confirmModal').classList.add('open');
+    return new Promise(function (resolve) { _uiConfirmResolver = resolve; });
+}
+function uiConfirmResolve(val) {
+    document.getElementById('confirmModal').classList.remove('open');
+    if (_uiConfirmResolver) { _uiConfirmResolver(val); _uiConfirmResolver = null; }
 }
 
 // ═══════════════════════════════════════════════════
