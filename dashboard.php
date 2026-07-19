@@ -1,6 +1,7 @@
 <?php
 require 'auth.php';
 require_once "config.php";
+require_once __DIR__ . '/nav_menu.php';   // canonical permission->nav registry
 
 $admin_name = $_SESSION['username'] ?? 'Admin';
 $_is_mgr = in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'supervisor']);
@@ -1665,31 +1666,10 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
         <nav class="inv-nav">
           <a class="inv-navitem active" href="dashboard.php"><i class="fa-solid fa-gauge-high"></i><span>Dashboard</span></a>
           <?php
-          // Permission-driven nav: any granted permission surfaces its link here.
-          // Inventory-relevant perms lead; cross-domain perms follow if explicitly granted.
-          $inv_nav = [
-              ['products',            'Products',        'products.php',              'fa-cube'],
-              ['ingredients',         'Ingredients',     'ingredients.php',           'fa-flask'],
-              ['stock_count',         'Stock Count',     'stock_count.php',           'fa-clipboard-list'],
-              ['recipes',             'Recipes',         'recipes_view.php',          'fa-utensils'],
-              ['suppliers',           'Suppliers',       'suppliers.php',             'fa-truck-ramp-box'],
-              ['purchase_orders',     'Purchase Orders', 'purchase_orders.php',       'fa-file-invoice'],
-              ['report',              'Reports',         'report.php',                'fa-chart-column'],
-              ['cash_reconciliation', 'Cash Count',      'reconciliation_report.php', 'fa-cash-register'],
-              ['loyalty',             'Loyalty',         'loyalty_dashboard.php',     'fa-star'],
-              ['find_orders',         'Find Orders',     'find_order.php',            'fa-magnifying-glass'],
-              ['view_orders',         'Orders',          'view_order.php',            'fa-receipt'],
-              ['barista_station',     'Barista Station', 'barista_display.php',       'fa-mug-hot'],
-              ['customer_display',    'Customer Display','customer_display.php',      'fa-display'],
-              ['employees',           'Employees',       'employees.php',             'fa-user-tie'],
-              ['attendance',          'Attendance',      'attendance.php',            'fa-fingerprint'],
-              ['announcements',       'Announcements',   'announcements.php',         'fa-bullhorn'],
-              ['reset_password',      'Reset Password',  'admin_reset_password.php',  'fa-key'],
-          ];
-          foreach ($inv_nav as [$slug, $label, $href, $icon]) {
-              if (can($slug)) {
-                  echo '<a class="inv-navitem" href="'.$href.'"><i class="fa-solid '.$icon.'"></i><span>'.htmlspecialchars($label).'</span></a>';
-              }
+          // Permission-driven nav from the canonical registry: any granted permission
+          // that has a registry entry surfaces its link here (see nav_menu.php).
+          foreach (nav_items($conn) as $it) {
+              echo '<a class="inv-navitem" href="'.htmlspecialchars($it['href']).'"><i class="fa-solid '.htmlspecialchars($it['icon']).'"></i><span>'.htmlspecialchars($it['label']).'</span></a>';
           }
           ?>
         </nav>
