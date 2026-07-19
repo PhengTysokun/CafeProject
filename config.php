@@ -97,6 +97,16 @@ _migrate($conn, 'employees_shift_v1', function($db) {
 _migrate($conn, 'employees_is_pos_v1', function($db) {
     $db->query("ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_pos TINYINT(1) NOT NULL DEFAULT 1");
 });
+// One employee per login: a user_id must map to at most one employee, else order
+// attribution (confirm_order: WHERE user_id=? LIMIT 1) picks arbitrarily. UNIQUE allows
+// multiple NULLs, so non-POS/unlinked staff are unaffected. If a DB still has a duplicate
+// link the ALTER fails and this stays unapplied (loud) until the data is de-duplicated.
+_migrate($conn, 'employees_user_id_unique_v1', function($db) {
+    $has = $db->query("SELECT COUNT(*) c FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='employees' AND INDEX_NAME='uq_employees_user_id'")->fetch_assoc()['c'];
+    if ((int)$has === 0) {
+        $db->query("ALTER TABLE employees ADD UNIQUE INDEX uq_employees_user_id (user_id)");
+    }
+});
 _migrate($conn, 'products_badge_text', function($db) {
     $db->query("ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_text VARCHAR(40) NULL DEFAULT NULL");
 });
