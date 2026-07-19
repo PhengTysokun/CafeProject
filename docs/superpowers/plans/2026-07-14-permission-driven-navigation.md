@@ -264,7 +264,15 @@ git commit -m "refactor(nav): generic/custom dashboard tiles + focus + empty sta
 
 ## Phase 2 — Manager sidebar (do only after Phase 1 is verified)
 
-### Task 4: Manager grouped sidebar consumes `nav_items_grouped()`
+> **STATUS 2026-07-19: SKIPPED by decision.** Phase 1 (T1–T3) shipped + verified.
+> The manager/admin sidebar already hardcodes + `can()`-gates the ENTIRE registry and only
+> serves system roles (admin/manager/supervisor; custom roles use the generic branch fixed in
+> T3), so it already surfaces every granted permission. Migrating it buys only DRY-ness while
+> reordering the admin's primary nav, splitting `manage_roles` into an Admin group, dropping
+> `my_profile` from the sidebar, and needing Stands + 5 badges special-cased. Cost >> benefit —
+> left as-is. Revisit only if the manager sidebar itself needs changes.
+
+### Task 4: Manager grouped sidebar consumes `nav_items_grouped()` — SKIPPED (see status above)
 
 **Files:**
 - Modify: `dashboard.php` (the `$_is_mgr` sidebar nav groups, ~lines 1155-1360)
