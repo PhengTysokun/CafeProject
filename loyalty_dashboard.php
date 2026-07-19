@@ -1412,6 +1412,11 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
                                     title="Adjust points">
                                     <i class="fa-solid fa-sliders"></i>
                                 </button>
+                                <button class="btn-icon btn-redeem"
+                                    onclick="openRedeem(<?= (int)$c['card_id'] ?>, '<?= htmlspecialchars($c['loyalty_id'], ENT_QUOTES) ?>', <?= (int)$c['points'] ?>)"
+                                    title="Redeem reward (spend points)">
+                                    <i class="fa-solid fa-gift"></i>
+                                </button>
                                 <a href="loyalty_history.php?id=<?= urlencode($c['loyalty_id']) ?>"
                                    class="btn-icon" title="View history">
                                     <i class="fa-solid fa-clock-rotate-left"></i>
@@ -1549,6 +1554,29 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
         </div>
     </div>
 </div>
+
+<!-- REDEEM REWARD MODAL (standalone — spend points, no order) -->
+<div id="redeemModal" class="modal-overlay" onclick="if(event.target===this)closeRedeemModal()">
+    <div class="modal-card adjust-modal">
+        <button class="modal-close" onclick="closeRedeemModal()"><i class="fa-solid fa-xmark"></i></button>
+        <div class="modal-header">
+            <i class="fa-solid fa-gift"></i>
+            <h3>Redeem Reward</h3>
+        </div>
+        <div id="redeemCardLabel" class="adjust-card-label"></div>
+        <div class="adjust-current">
+            <span>Available Points:</span>
+            <strong id="redeemCurrentPts"></strong>
+        </div>
+        <div style="padding:4px 24px 8px;font-size:12px;font-weight:600;color:var(--text-muted);">Choose a reward to give the customer (points deduct now — no order needed)</div>
+        <div id="redeemList" style="padding:0 24px 20px;display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto;"></div>
+    </div>
+</div>
+
+<script>
+// Active rewards available to redeem (id, name, cost).
+var REWARDS = <?= json_encode(array_map(fn($r) => ['id'=>(int)$r['reward_id'],'name'=>$r['reward_name'],'cost'=>(int)$r['points_required']], $rewards ?? []), JSON_UNESCAPED_UNICODE) ?>;
+</script>
 
 <!-- CREATE CARD MODAL -->
 <div id="createModal" class="modal-overlay" onclick="if(event.target===this)closeCreateModal()">
@@ -1839,6 +1867,69 @@ function openAdjust(cardId, loyaltyId, currentPts) {
 
 function closeAdjustModal() {
     document.getElementById('adjustModal').classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════════
+// REDEEM REWARD MODAL (standalone — spend points, no order)
+// ═══════════════════════════════════════════════════
+let redeemState = { cardId: 0, loyaltyId: '', currentPts: 0 };
+
+function openRedeem(cardId, loyaltyId, currentPts) {
+    redeemState = { cardId: cardId, loyaltyId: loyaltyId, currentPts: currentPts };
+    document.getElementById('redeemCardLabel').textContent = loyaltyId;
+    document.getElementById('redeemCurrentPts').textContent = currentPts.toLocaleString();
+    renderRedeemList();
+    document.getElementById('redeemModal').classList.add('open');
+}
+
+function closeRedeemModal() {
+    document.getElementById('redeemModal').classList.remove('open');
+}
+
+function renderRedeemList() {
+    const wrap = document.getElementById('redeemList');
+    if (!REWARDS.length) {
+        wrap.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:16px;">No active rewards — add some on the Rewards page.</div>';
+        return;
+    }
+    wrap.innerHTML = REWARDS.map(function (r) {
+        var afford = redeemState.currentPts >= r.cost;
+        return '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;">'
+            + '<div style="flex:1;min-width:0;"><div style="font-weight:600;color:var(--text);">' + escapeHtml(r.name) + '</div>'
+            + '<div style="font-size:12px;color:var(--text-muted);">' + r.cost + ' pts</div></div>'
+            + '<button class="btn-primary" style="min-width:104px;' + (afford ? '' : 'opacity:.45;cursor:not-allowed;') + '" '
+            + (afford ? ('onclick="applyRedeem(' + r.id + ')"') : 'disabled') + '>'
+            + (afford ? '<i class="fa-solid fa-gift"></i> Redeem' : 'Need ' + (r.cost - redeemState.currentPts) + ' more')
+            + '</button></div>';
+    }).join('');
+}
+
+async function applyRedeem(rewardId) {
+    const reward = REWARDS.find(function (r) { return r.id === rewardId; });
+    if (!reward) return;
+    if (!confirm('Redeem "' + reward.name + '" for ' + reward.cost + ' points from ' + redeemState.loyaltyId + '?')) return;
+    document.querySelectorAll('#redeemList button').forEach(function (b) { b.disabled = true; });
+    try {
+        const res = await fetch('loyalty_redeem_direct.php', {
+            method: 'POST',
+            body: new URLSearchParams({ card_id: redeemState.cardId, reward_id: rewardId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            const newPts = parseInt(data.new_points);
+            updateCardRowPoints(redeemState.cardId, newPts);
+            redeemState.currentPts = newPts;
+            document.getElementById('redeemCurrentPts').textContent = newPts.toLocaleString();
+            renderRedeemList();
+            showToast('Redeemed ' + data.reward + ' (−' + data.cost + ' pts). New balance: ' + newPts.toLocaleString(), 'success');
+        } else {
+            showToast(data.message || 'Redemption failed.', 'error');
+            renderRedeemList();
+        }
+    } catch (e) {
+        showToast('Network error. Please try again.', 'error');
+        renderRedeemList();
+    }
 }
 
 function setAdj(n) {
