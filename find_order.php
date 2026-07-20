@@ -810,6 +810,9 @@ function bindCardHandlers() {
         const saveBtn    = wrap.querySelector('.table-save-btn');
         const cancelBtn  = wrap.querySelector('.table-cancel-btn');
 
+        // Inline stand editing was removed from the card; skip if controls absent.
+        if (!editBtn || !inputWrap || !input || !saveBtn || !cancelBtn) return;
+
         editBtn.addEventListener('click', function(e) {
             e.stopPropagation();
             tableEditOpen = true;

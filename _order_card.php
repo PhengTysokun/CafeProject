@@ -108,9 +108,6 @@ if ($overdueMins < 60) {
                 <i class="fa-solid fa-file-pdf"></i>
             </a>
             <?php if (!$is_cashier): ?>
-            <a href="view_order.php?order_id=<?= $order['order_id'] ?>" class="btn btn-view">
-                <i class="fa-solid fa-eye"></i>
-            </a>
             <?php if ($canAdd): ?>
             <button class="btn btn-close" onclick="closeOrder(<?= $order['order_id'] ?>, this)" title="Mark as closed (no more additions)">
                 <i class="fa-solid fa-lock"></i>
@@ -130,12 +127,6 @@ if ($overdueMins < 60) {
             <span class="table-edit-wrap" data-order="<?= $order['order_id'] ?>">
                 <i class="fa-solid fa-ticket" style="color:var(--accent);"></i>
                 <span class="table-label" style="color:var(--accent);"><?= !empty($order['table_number']) ? 'Stand ' . htmlspecialchars($order['table_number']) : 'No stand' ?></span>
-                <button class="table-edit-btn" title="Change stand"><i class="fa-solid fa-pen-to-square"></i></button>
-                <span class="table-input-wrap" style="display:none;">
-                    <input class="table-input" type="text" value="<?= htmlspecialchars($order['table_number'] ?? '') ?>" placeholder="e.g. 7" maxlength="10">
-                    <button class="table-save-btn">Save</button>
-                    <button class="table-cancel-btn">✕</button>
-                </span>
             </span>
             <?php if ($order['is_open'] == 1): ?>
             <span style="color:var(--accent);"><i class="fa-solid fa-door-open"></i> Order is open</span>

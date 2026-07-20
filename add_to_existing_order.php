@@ -88,7 +88,7 @@ if (!$order) {
             <i class='fa-solid fa-circle-exclamation'></i>
             <h1>Order Cannot Be Modified</h1>
             <p>This order is closed or no longer available for additions.</p>
-            <a href='dashboard.php' style="display:inline-flex;align-items:center;gap:7px;color:#d1904b;text-decoration:none;font-size:13px;font-weight:600;padding:7px 14px;border-radius:10px;border:1px solid rgba(209,144,75,.35);background:rgba(209,144,75,.08);transition:all .2s;"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
+            <a href='dashboard.php' style='display:inline-flex;align-items:center;gap:7px;color:#d1904b;text-decoration:none;font-size:13px;font-weight:600;padding:7px 14px;border-radius:10px;border:1px solid rgba(209,144,75,.35);background:rgba(209,144,75,.08);transition:all .2s;'><i class='fa-solid fa-arrow-left'></i> Back to Dashboard</a>
         </div>
     </body>
     </html>";
