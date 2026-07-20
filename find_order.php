@@ -599,7 +599,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
             ?>
         </h2>
         <div class="meta">
-            <span class="count-badge" id="visibleCount"><?= count($orders) ?> orders</span>
+            <span class="count-badge" id="visibleCount"><?= count($orders) ?> order<?= count($orders) != 1 ? 's' : '' ?></span>
             <span class="total-amount" title="Total outstanding balance across these unpaid orders">Outstanding $<?= number_format($total_unpaid, 2) ?></span>
         </div>
     </div>
@@ -889,7 +889,7 @@ async function loadPage(n, opts = {}) {
 // Keep the results header and tab pills in sync after an AJAX swap.
 function updateMeta(data) {
     const vc = document.getElementById('visibleCount');
-    if (vc && typeof data.pageCount !== 'undefined') vc.textContent = data.pageCount + ' orders';
+    if (vc && typeof data.pageCount !== 'undefined') vc.textContent = data.pageCount + ' order' + (data.pageCount != 1 ? 's' : '');
     const ta = document.querySelector('.total-amount');
     if (ta && typeof data.totalUnpaid !== 'undefined') ta.textContent = 'Outstanding $' + data.totalUnpaid;
     if (data.tabCounts) {
