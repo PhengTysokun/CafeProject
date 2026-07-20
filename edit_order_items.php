@@ -458,7 +458,7 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                 $__ad = json_decode($item['addons_snapshot'] ?? '[]', true) ?: [];
                 if ($__ad) $customs[] = 'Add-ons: ' . implode(', ', array_map(fn($a) => $a['name'], $__ad));
             ?>
-            <div class="item-row" id="row-<?= $item['item_id'] ?>" data-id="<?= $item['item_id'] ?>" data-price="<?= (float)$item['price'] ?>">
+            <div class="item-row" id="row-<?= $item['item_id'] ?>" data-id="<?= $item['item_id'] ?>" data-price="<?= (float)$item['price'] ?>" data-name="<?= htmlspecialchars($item['product_name'], ENT_QUOTES) ?>">
 
                 <span class="item-num"><?= $n + 1 ?></span>
 
@@ -511,8 +511,22 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                     <span>Subtotal</span>
                     <span id="sumSubtotal">$<?= number_format(array_sum(array_map(fn($i) => $i['price'] * $i['quantity'], $items)), 2) ?></span>
                 </div>
+                <?php
+                // Buy-X-Get-1-Free GIFT (display only — free drink is an extra bonus, not subtracted).
+                $__gift_qty = array_sum(array_map(fn($i) => (int)$i['quantity'], $items));
+                $__gift_min = PHP_FLOAT_MAX; $__gift_name = '';
+                foreach ($items as $__gi) {
+                    if ((float)$__gi['price'] < $__gift_min) { $__gift_min = (float)$__gi['price']; $__gift_name = $__gi['product_name']; }
+                }
+                $__gift_count = (BUY_X_GET_1_ENABLED && $__gift_qty >= BUY_X_COUNT && $__gift_min < PHP_FLOAT_MAX)
+                    ? (int)floor($__gift_qty / BUY_X_COUNT) : 0;
+                ?>
+                <div class="summary-row" id="giftRow" style="<?= $__gift_count > 0 ? '' : 'display:none' ?>">
+                    <span>&#x1F381; Buy <?= BUY_X_COUNT ?> Get 1 Free</span>
+                    <span id="giftLabel" style="color:#27ae60;font-weight:700;"><?= $__gift_count > 0 ? htmlspecialchars($__gift_name) . ($__gift_count > 1 ? ' &times;'.$__gift_count : '') . ' FREE' : '' ?></span>
+                </div>
                 <div class="summary-row discount discount-row" id="discountRow">
-                    <span><i class="fa-solid fa-tag" style="font-size:10px;"></i> Buy <?= BUY_X_COUNT ?> Get 1 Free</span>
+                    <span><i class="fa-solid fa-tag" style="font-size:10px;"></i> Discount</span>
                     <span id="sumDiscount">-$<?= number_format($order['promotion_discount'], 2) ?></span>
                 </div>
                 <div class="summary-row">
@@ -627,7 +641,7 @@ function undoRemove(id) {
 
 // ── Live recalculation ──
 function recalcSummary() {
-    let subtotal = 0, totalQty = 0, minPrice = Infinity;
+    let subtotal = 0, totalQty = 0, minPrice = Infinity, minName = '';
 
     document.querySelectorAll('#itemList .item-row').forEach(row => {
         const id = parseInt(row.dataset.id);
@@ -637,13 +651,22 @@ function recalcSummary() {
         const qty   = parseInt(document.getElementById('qty-' + id)?.value || '1', 10);
         subtotal  += price * qty;
         totalQty  += qty;
-        if (price < minPrice) minPrice = price;
+        if (price < minPrice) { minPrice = price; minName = row.dataset.name || ''; }
     });
 
-    let buy3 = 0;
-    if (BUY_X_ON && totalQty >= BUY_X_CNT && isFinite(minPrice)) {
-        buy3 = Math.floor(totalQty / BUY_X_CNT) * minPrice;
+    // Buy-X-Get-1-Free GIFT: number of free bonus drinks (display only, not subtracted).
+    const freeCount = (BUY_X_ON && totalQty >= BUY_X_CNT && isFinite(minPrice)) ? Math.floor(totalQty / BUY_X_CNT) : 0;
+    const giftRow = document.getElementById('giftRow');
+    const giftLabel = document.getElementById('giftLabel');
+    if (giftRow && giftLabel) {
+        if (freeCount > 0) {
+            giftLabel.textContent = minName + (freeCount > 1 ? ' ×' + freeCount : '') + ' FREE';
+            giftRow.style.display = '';
+        } else {
+            giftRow.style.display = 'none';
+        }
     }
+    let buy3 = 0;
     // Preserve happy hour if order was originally placed during happy hour
     const happyHour = (WAS_HAPPY_HOUR && HAPPY_HOUR_ON) ? subtotal * HAPPY_HOUR_PCT : 0;
     // Buy-X-Get-1-Free is a gift, not a discount — do not subtract buy3 from the total.
