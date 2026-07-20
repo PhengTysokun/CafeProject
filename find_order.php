@@ -23,9 +23,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'poll') {
     header('Content-Type: application/json');
     $poll_tab = $_GET['tab'] ?? 'all';
     $poll_sql = "SELECT order_id FROM orders WHERE (
-        (status NOT IN ('Completed','Cancelled','Refunded') AND status != 'Paid')
+        status = 'PendingPayment'
         OR (status = 'Paid' AND is_open = 1)
-        OR (payment_method = 'paylater' AND status = 'Completed')
+        OR (payment_method = 'paylater' AND status IN ('Preparing','PendingPayment','Completed'))
     )
     AND ( business_date = CURDATE() OR payment_method = 'paylater' )";
     if ($poll_tab === 'paylater') {
@@ -63,9 +63,9 @@ $sql = "
 SELECT order_id, daily_order_no, customer_name, total, status, payment_method, order_date, is_open, token_number, table_number
 FROM orders
 WHERE (
-    (status NOT IN ('Completed','Cancelled','Refunded') AND status != 'Paid')
+    status = 'PendingPayment'
     OR (status = 'Paid' AND is_open = 1)
-    OR (payment_method = 'paylater' AND status = 'Completed')
+    OR (payment_method = 'paylater' AND status IN ('Preparing','PendingPayment','Completed'))
 )
 AND ( business_date = CURDATE() OR payment_method = 'paylater' )
 ";
@@ -123,9 +123,9 @@ $count_sql = "
 SELECT status, is_open, payment_method, COUNT(*) as cnt
 FROM orders
 WHERE (
-    (status NOT IN ('Completed','Cancelled','Refunded') AND status != 'Paid')
+    status = 'PendingPayment'
     OR (status = 'Paid' AND is_open = 1)
-    OR (payment_method = 'paylater' AND status = 'Completed')
+    OR (payment_method = 'paylater' AND status IN ('Preparing','PendingPayment','Completed'))
 )
 AND ( business_date = CURDATE() OR payment_method = 'paylater' )
 GROUP BY status, is_open, payment_method

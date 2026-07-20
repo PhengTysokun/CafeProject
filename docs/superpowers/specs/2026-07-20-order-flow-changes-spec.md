@@ -47,6 +47,7 @@ Settlement (Cash/Bakong/Pay-Later) drives `status → Paid`/closed and awards lo
 ## 4. Find Orders (`find_order.php`, `_order_card.php`) — declutter & clarify
 
 - **Tabs reduced 5 → 4:** `All Active · Pending Payment · Open Tabs · Pay Later`. The **Preparing** tab was removed — it duplicated the Barista Station and was the source of overlapping counts (a preparing paylater order was counted under both Preparing and Pay Later).
+- **Scope tightened to actionable orders only.** The base query now returns only orders a cashier acts on: `PendingPayment` OR (`Paid` AND `is_open=1`, i.e. open tabs) OR an unsettled `paylater` tab. Already-paid **Cash** orders sitting in `Preparing` (paid at the counter, just waiting on the barista) are **excluded** — they belong to the Barista Station. This fixes two things: (a) the All Active count now equals the sum of the sub-tabs (previously it silently included paid-Preparing orders with no tab), and (b) it removes a **double-charge hazard** — a paid order no longer shows Cash/Bakong buttons, where clicking Bakong would have generated a fresh QR to collect payment a second time. Applied to all three copies of the base `WHERE` (poll, main query, counts).
 - **"Paid + Open" → "Open Tabs"**, recolored from green to amber (green implied "done", contradicting an open tab).
 - **Total relabeled** "Outstanding $X" with a tooltip (it is uncollected balance, not revenue). Kept in sync through the AJAX refresh.
 - **Overdue paylater timestamp** rendered bold-red.
