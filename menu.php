@@ -53,7 +53,7 @@ $cp_free_price = ($_cp_fpid > 0 && $_cp_fprice > 0) ? $_cp_fprice : $cp_cheapest
 // DO NOT subtract $cp_buy3 from $cp_after or the total — that would incorrectly undercharge.
 $_cp_free_idx = ($_cp_fpid > 0 && $_cp_fidx >= 0) ? $_cp_fidx : $cp_cheapest_idx;
 $cp_buy3 = (BUY_X_GET_1_ENABLED && $cart_count >= BUY_X_COUNT && $cp_min_price < PHP_FLOAT_MAX && $_cp_free_idx >= 0)
-    ? floor($cart_count / BUY_X_COUNT) * $cp_free_price : 0.0;
+    ? floor($cart_count / (BUY_X_COUNT + 1)) * $cp_free_price : 0.0;
 
 $cp_hh = 0.0;
 if (HAPPY_HOUR_ENABLED && (int)date('H') >= HAPPY_HOUR_START && (int)date('H') < HAPPY_HOUR_END)

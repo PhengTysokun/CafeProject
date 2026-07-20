@@ -177,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         $buy3 = 0;
         if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT && $min_price < PHP_FLOAT_MAX) {
-            $buy3 = floor($total_qty / BUY_X_COUNT) * $min_price;
+            $buy3 = floor($total_qty / (BUY_X_COUNT + 1)) * $min_price;
         }
         // Preserve happy hour if the order was originally placed during happy hour
         $happy_hour = 0;
@@ -641,7 +641,7 @@ function recalcSummary() {
 
     let buy3 = 0;
     if (BUY_X_ON && totalQty >= BUY_X_CNT && isFinite(minPrice)) {
-        buy3 = Math.floor(totalQty / BUY_X_CNT) * minPrice;
+        buy3 = Math.floor(totalQty / (BUY_X_CNT + 1)) * minPrice;
     }
     // Preserve happy hour if order was originally placed during happy hour
     const happyHour = (WAS_HAPPY_HOUR && HAPPY_HOUR_ON) ? (subtotal - buy3) * HAPPY_HOUR_PCT : 0;
