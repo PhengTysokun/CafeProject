@@ -3,21 +3,6 @@ require 'auth.php';
 require_once 'config.php';
 if (!can('find_orders')) { header("Location: dashboard.php?denied=1"); exit; }
 
-// ── Handle AJAX close-order request ──
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'close_order') {
-    header('Content-Type: application/json');
-    $oid = (int)($_POST['order_id'] ?? 0);
-    if ($oid > 0) {
-        $stmt = $conn->prepare("UPDATE orders SET is_open = 0 WHERE order_id = ?");
-        $stmt->bind_param("i", $oid);
-        $stmt->execute();
-        echo json_encode(['success' => true]);
-    } else {
-        echo json_encode(['success' => false]);
-    }
-    exit;
-}
-
 // ── Poll endpoint: returns current order IDs for change-detection ──
 if (isset($_GET['action']) && $_GET['action'] === 'poll') {
     header('Content-Type: application/json');
@@ -759,32 +744,6 @@ function cancelOrderFromFind(orderId, btn) {
     });
 }
 
-function closeOrder(orderId, btn) {
-    if (!confirm('Mark this order as closed? Staff will no longer be able to add items to it.')) return;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-    fetch('find_order.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'action=close_order&order_id=' + orderId
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            const card = btn.closest('.order-card');
-            // Remove "Can Add Items" badge, Add Items btn, and lock btn
-            card.querySelectorAll('.btn-add, .open-badge, .btn-close').forEach(el => el.remove());
-            card.classList.remove('can-add','is-paid-open');
-            // Update open/closed meta
-            const metaOpen = card.querySelector('.card-bottom .card-meta span:last-child');
-            if (metaOpen) metaOpen.innerHTML = '<i class="fa-solid fa-door-closed"></i> Order closed';
-        } else {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-lock"></i>';
-            alert('Failed to close order. Please try again.');
-        }
-    });
-}
 </script>
 <script src="animations.js?v=<?= @filemtime('animations.js') ?>"></script>
 <script>

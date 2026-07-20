@@ -108,11 +108,6 @@ if ($overdueMins < 60) {
                 <i class="fa-solid fa-file-pdf"></i>
             </a>
             <?php if (!$is_cashier): ?>
-            <?php if ($canAdd): ?>
-            <button class="btn btn-close" onclick="closeOrder(<?= $order['order_id'] ?>, this)" title="Mark as closed (no more additions)">
-                <i class="fa-solid fa-lock"></i>
-            </button>
-            <?php endif; ?>
             <button class="btn btn-cancel-order" onclick="cancelOrderFromFind(<?= $order['order_id'] ?>, this)" title="Cancel this order">
                 <i class="fa-solid fa-ban"></i>
             </button>
