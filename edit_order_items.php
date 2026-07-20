@@ -177,14 +177,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         $buy3 = 0;
         if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT && $min_price < PHP_FLOAT_MAX) {
-            $buy3 = floor($total_qty / (BUY_X_COUNT + 1)) * $min_price;
+            $buy3 = floor($total_qty / BUY_X_COUNT) * $min_price;
         }
         // Preserve happy hour if the order was originally placed during happy hour
         $happy_hour = 0;
         if ($was_happy_hour && HAPPY_HOUR_ENABLED) {
-            $happy_hour = ($subtotal - $buy3) * (HAPPY_HOUR_DISCOUNT / 100);
+            $happy_hour = $subtotal * (HAPPY_HOUR_DISCOUNT / 100);
         }
-        $total_discount = $buy3 + $happy_hour;
+        // Buy-X-Get-1-Free is a GIFT (extra free drink), not a discount — do NOT subtract $buy3.
+        $total_discount = $happy_hour;
         $after  = $subtotal - $total_discount;
         $tax    = $after * (TAX_RATE / 100);
         $total  = round($after + $tax, 2);
@@ -641,11 +642,12 @@ function recalcSummary() {
 
     let buy3 = 0;
     if (BUY_X_ON && totalQty >= BUY_X_CNT && isFinite(minPrice)) {
-        buy3 = Math.floor(totalQty / (BUY_X_CNT + 1)) * minPrice;
+        buy3 = Math.floor(totalQty / BUY_X_CNT) * minPrice;
     }
     // Preserve happy hour if order was originally placed during happy hour
-    const happyHour = (WAS_HAPPY_HOUR && HAPPY_HOUR_ON) ? (subtotal - buy3) * HAPPY_HOUR_PCT : 0;
-    const totalDiscount = buy3 + happyHour;
+    const happyHour = (WAS_HAPPY_HOUR && HAPPY_HOUR_ON) ? subtotal * HAPPY_HOUR_PCT : 0;
+    // Buy-X-Get-1-Free is a gift, not a discount — do not subtract buy3 from the total.
+    const totalDiscount = happyHour;
 
     const after = subtotal - totalDiscount;
     const tax   = after * TAX_RATE_MULT;

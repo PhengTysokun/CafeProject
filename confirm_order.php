@@ -136,7 +136,7 @@ if ($existing_order_id > 0) {
 
     $buy3 = 0;
     if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT && $min_price < PHP_FLOAT_MAX) {
-        $buy3 = floor($total_qty / (BUY_X_COUNT + 1)) * $min_price;
+        $buy3 = floor($total_qty / BUY_X_COUNT) * $min_price;
     }
     $happy_hour = 0;
     if ($was_happy_hour && HAPPY_HOUR_ENABLED) {

@@ -56,7 +56,7 @@ if (isset($_POST['ajax_remove'])) {
     }
     $_free_name_aj  = ($_fpid_aj > 0 && $_fname_aj !== '') ? $_fname_aj : $min_item_name_aj;
     $_free_price_aj = ($_fpid_aj > 0 && $_fprice_aj > 0) ? $_fprice_aj : $min_price;
-    $buy3 = (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT && $min_price < PHP_FLOAT_MAX) ? floor($total_qty / (BUY_X_COUNT + 1)) * $_free_price_aj : 0;
+    $buy3 = (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT && $min_price < PHP_FLOAT_MAX) ? floor($total_qty / BUY_X_COUNT) * $_free_price_aj : 0;
     $hh   = 0;
     if (HAPPY_HOUR_ENABLED && (int)date('H') >= HAPPY_HOUR_START && (int)date('H') < HAPPY_HOUR_END)
         $hh = $subtotal * (HAPPY_HOUR_DISCOUNT / 100);
@@ -171,7 +171,7 @@ if (isset($_POST['ajax_update'])) {
 
     $buy3_discount = 0;
     if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT) {
-        $free_items = floor($total_qty / (BUY_X_COUNT + 1));
+        $free_items = floor($total_qty / BUY_X_COUNT);
         $_use_index = ($_fpid_upd > 0 && $_findex_upd >= 0) ? $_findex_upd : $cheapest_item_index;
         if ($free_items > 0 && $_use_index >= 0) {
             $buy3_discount = $free_items * $_free_price_upd;
@@ -280,7 +280,7 @@ $_free_item_price_pg = ($_fpid_pg > 0 && $_fprice_pg > 0) ? $_fprice_pg : $min_p
 // ── Buy X Get 1 Free ──
 $buy3_discount_amount = 0;
 if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT) {
-    $free_items = floor($total_qty / (BUY_X_COUNT + 1));
+    $free_items = floor($total_qty / BUY_X_COUNT);
     $_use_index_pg = ($_fpid_pg > 0 && $_findex_pg >= 0) ? $_findex_pg : $cheapest_item_index;
     if ($free_items > 0 && $_use_index_pg >= 0) {
         $buy3_discount_amount = $free_items * $_free_item_price_pg;

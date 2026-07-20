@@ -35,7 +35,7 @@ $free_price = ($_fpid > 0 && $_fprice > 0) ? $_fprice : $cheapest_price;
 // DO NOT subtract $buy3 from $after or $total — that would incorrectly undercharge.
 $_free_idx = ($_fpid > 0 && $_fidx >= 0) ? $_fidx : $cheapest_idx;
 $buy3 = (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT && $min_price < PHP_FLOAT_MAX && $_free_idx >= 0)
-    ? floor($total_qty / (BUY_X_COUNT + 1)) * $free_price : 0.0;
+    ? floor($total_qty / BUY_X_COUNT) * $free_price : 0.0;
 
 $hh = 0.0;
 if (HAPPY_HOUR_ENABLED && (int)date('H') >= HAPPY_HOUR_START && (int)date('H') < HAPPY_HOUR_END)

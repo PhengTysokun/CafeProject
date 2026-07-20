@@ -77,7 +77,7 @@ foreach ($drinks as $item) {
         $min_item_name = $item['product_name'];
     }
 }
-$free_items    = BUY_X_GET_1_ENABLED ? floor($total_qty / (BUY_X_COUNT + 1)) : 0;
+$free_items    = BUY_X_GET_1_ENABLED ? floor($total_qty / BUY_X_COUNT) : 0;
 $buy3_discount = ($free_items > 0 && $min_price < PHP_FLOAT_MAX) ? $free_items * $min_price : 0;
 
 // ── RECALCULATE HAPPY HOUR FOR DISPLAY (using order creation time) ──

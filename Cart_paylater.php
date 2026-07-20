@@ -34,7 +34,7 @@ if (isset($_POST['ajax_update'])) {
     }
     $buy3_discount = 0;
     if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT) {
-        $free_items = floor($total_qty / (BUY_X_COUNT + 1));
+        $free_items = floor($total_qty / BUY_X_COUNT);
         if ($free_items > 0 && $min_price < PHP_FLOAT_MAX)
             $buy3_discount = $free_items * $min_price;
     }
@@ -125,7 +125,7 @@ foreach ($cart as $_pl_i => $item) {
 }
 $buy3_discount = 0;
 if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT) {
-    $free_items = floor($total_qty / (BUY_X_COUNT + 1));
+    $free_items = floor($total_qty / BUY_X_COUNT);
     if ($free_items > 0 && $min_price < PHP_FLOAT_MAX)
         $buy3_discount = $free_items * $min_price;
 }

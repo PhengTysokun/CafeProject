@@ -53,7 +53,7 @@ $cp_free_price = ($_cp_fpid > 0 && $_cp_fprice > 0) ? $_cp_fprice : $cp_cheapest
 // DO NOT subtract $cp_buy3 from $cp_after or the total — that would incorrectly undercharge.
 $_cp_free_idx = ($_cp_fpid > 0 && $_cp_fidx >= 0) ? $_cp_fidx : $cp_cheapest_idx;
 $cp_buy3 = (BUY_X_GET_1_ENABLED && $cart_count >= BUY_X_COUNT && $cp_min_price < PHP_FLOAT_MAX && $_cp_free_idx >= 0)
-    ? floor($cart_count / (BUY_X_COUNT + 1)) * $cp_free_price : 0.0;
+    ? floor($cart_count / BUY_X_COUNT) * $cp_free_price : 0.0;
 
 $cp_hh = 0.0;
 if (HAPPY_HOUR_ENABLED && (int)date('H') >= HAPPY_HOUR_START && (int)date('H') < HAPPY_HOUR_END)
@@ -938,10 +938,7 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
           <span>&#x1F3F7;&#xFE0F; Item Promos</span>
           <span id="cpItemPromoAmt">-$<?= number_format($cp_item_promos, 2) ?></span>
         </div>
-        <div class="cp-sum-row discount" id="cpBuy3Row" style="<?= $cp_buy3 > 0 ? '' : 'display:none' ?>">
-          <span>&#x1F389; Buy <?= BUY_X_COUNT ?> Get 1 Free</span>
-          <span id="cpBuy3Amt">-$<?= number_format($cp_buy3, 2) ?></span>
-        </div>
+        <?php /* Buy-X-Get-1-Free is a GIFT (free item shown above), not a discount — no "-$" summary row. */ ?>
         <div class="cp-sum-row discount" id="cpHHRow" style="<?= $cp_hh > 0 ? '' : 'display:none' ?>">
           <span>&#x1F305; Happy Hour (<?= HAPPY_HOUR_DISCOUNT ?>% off)</span>
           <span id="cpHHAmt">-$<?= number_format($cp_hh, 2) ?></span>
@@ -1528,9 +1525,7 @@ function renderCartPanel(data) {
     '<div class="cp-sum-row discount" id="cpItemPromoRow" style="' + (parseFloat(data.item_promos) > 0 ? '' : 'display:none') + '">' +
       '<span>&#x1F3F7;&#xFE0F; Item Promos</span><span id="cpItemPromoAmt">-$' + data.item_promos + '</span>' +
     '</div>' +
-    '<div class="cp-sum-row discount" id="cpBuy3Row" style="' + (b3V > 0 ? '' : 'display:none') + '">' +
-      '<span>&#x1F389; Buy ' + data.buy3_count + ' Get 1 Free</span><span id="cpBuy3Amt">-$' + data.buy3 + '</span>' +
-    '</div>' +
+    /* Buy-X-Get-1-Free is a gift (free item row above), not a discount — no summary "-$" row. */
     '<div class="cp-sum-row discount" id="cpHHRow" style="' + (hhV > 0 ? '' : 'display:none') + '">' +
       '<span>&#x1F305; Happy Hour (' + data.happy_hour_pct + '% off)</span><span id="cpHHAmt">-$' + data.happy_hour + '</span>' +
     '</div>' +
@@ -1658,10 +1653,6 @@ function cpRefreshSummaryFromData(data) {
   var newTotal = '$' + data.cartTotal;
   set('cpTotal', newTotal); // footer total
   var st = document.getElementById('cpSubtotal'); // also inline
-
-  var b3r = document.getElementById('cpBuy3Row');
-  if (b3r) b3r.style.display = parseFloat(data.buy3_discount) > 0 ? '' : 'none';
-  set('cpBuy3Amt', '-$' + (data.buy3_discount || '0.00'));
 
   var hhr = document.getElementById('cpHHRow');
   if (hhr) hhr.style.display = parseFloat(data.happy_hour_discount) > 0 ? '' : 'none';
