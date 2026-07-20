@@ -520,6 +520,12 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                 }
                 $__gift_count = (BUY_X_GET_1_ENABLED && $__gift_qty >= BUY_X_COUNT && $__gift_min < PHP_FLOAT_MAX)
                     ? (int)floor($__gift_qty / BUY_X_COUNT) : 0;
+                // Free-item override (Settings > Free Drink) wins over the cheapest fallback.
+                if (defined('FREE_ITEM_PRODUCT_ID') && FREE_ITEM_PRODUCT_ID > 0) {
+                    if ($__ovr = $conn->query("SELECT name FROM products WHERE product_id = " . (int)FREE_ITEM_PRODUCT_ID)) {
+                        if ($__ov = $__ovr->fetch_assoc()) $__gift_name = $__ov['name'];
+                    }
+                }
                 ?>
                 <div class="summary-row" id="giftRow" style="<?= $__gift_count > 0 ? '' : 'display:none' ?>">
                     <span>&#x1F381; Buy <?= BUY_X_COUNT ?> Get 1 Free</span>
@@ -560,6 +566,7 @@ const HAPPY_HOUR_ON     = <?= HAPPY_HOUR_ENABLED ? 'true' : 'false' ?>;
 const TAX_RATE_MULT     = <?= TAX_RATE ?> / 100;
 const BUY_X_ON          = <?= BUY_X_GET_1_ENABLED ? 'true' : 'false' ?>;
 const BUY_X_CNT         = <?= BUY_X_COUNT ?>;
+const FREE_OVERRIDE_NAME = <?= json_encode((defined('FREE_ITEM_PRODUCT_ID') && FREE_ITEM_PRODUCT_ID > 0) ? $__gift_name : '') ?>;
 
 // ── State ──
 const removedIds = new Set();
@@ -660,7 +667,7 @@ function recalcSummary() {
     const giftLabel = document.getElementById('giftLabel');
     if (giftRow && giftLabel) {
         if (freeCount > 0) {
-            giftLabel.textContent = minName + (freeCount > 1 ? ' ×' + freeCount : '') + ' FREE';
+            giftLabel.textContent = (FREE_OVERRIDE_NAME || minName) + (freeCount > 1 ? ' ×' + freeCount : '') + ' FREE';
             giftRow.style.display = '';
         } else {
             giftRow.style.display = 'none';

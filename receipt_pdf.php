@@ -90,6 +90,15 @@ foreach ($drinks as $item) {
 $free_items    = BUY_X_GET_1_ENABLED ? floor($total_qty / BUY_X_COUNT) : 0;
 $buy3_discount = ($free_items > 0 && $min_price < PHP_FLOAT_MAX) ? $free_items * $min_price : 0;
 
+// Free-item override (Settings > Free Drink) — use the configured product, matching menu.php.
+$free_item_name  = $min_item_name;
+$free_item_price = ($min_price < PHP_FLOAT_MAX) ? $min_price : 0;
+if (defined('FREE_ITEM_PRODUCT_ID') && FREE_ITEM_PRODUCT_ID > 0) {
+    if ($__ovr = $conn->query("SELECT name, price FROM products WHERE product_id = " . (int)FREE_ITEM_PRODUCT_ID)) {
+        if ($__ov = $__ovr->fetch_assoc()) { $free_item_name = $__ov['name']; $free_item_price = (float)$__ov['price']; }
+    }
+}
+
 // ── RECALCULATE HAPPY HOUR FOR DISPLAY (using order creation time) ──
 $happy_hour_discount = 0;
 $order_hour = (int)date('H', strtotime($order['order_date']));
@@ -344,13 +353,13 @@ foreach ($drinks as $item) {
     }
 }
 
-if ($buy3_discount > 0 && $min_item_name !== '') {
+if ($free_items > 0 && $free_item_name !== '') {
     $html .= '
         <tr style="background:#f0fff4;">
             <td style="text-align: left;">' . $i++ . '</td>
-            <td style="text-align: left;"><span class="item-name">' . htmlspecialchars($min_item_name) . '</span> <span class="promo-badge" style="background:#27ae60;">FREE</span></td>
-            <td class="col-qty">1</td>
-            <td class="col-price" style="text-decoration:line-through;color:#999;">' . number_format($min_price, 2) . '</td>
+            <td style="text-align: left;"><span class="item-name">' . htmlspecialchars($free_item_name) . '</span> <span class="promo-badge" style="background:#27ae60;">FREE</span></td>
+            <td class="col-qty">' . (int)$free_items . '</td>
+            <td class="col-price" style="text-decoration:line-through;color:#999;">' . number_format($free_item_price, 2) . '</td>
             <td class="col-amount" style="color:#27ae60;font-weight:700;">FREE</td>
         </tr>';
 }
