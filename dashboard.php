@@ -1162,8 +1162,8 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             <a class="nav-item active" href="dashboard.php">
                 <i class="fa-solid fa-chart-pie"></i>
                 <span class="nav-label">Dashboard</span>
-                <?php if ($pending_count + $preparing_count > 0): ?>
-                <span class="order-badge"><?= $pending_count + $preparing_count ?></span>
+                <?php if ($pending_count + $preparing_count > 0): $_active_n = $pending_count + $preparing_count; ?>
+                <span class="order-badge" title="<?= $_active_n ?> active order<?= $_active_n != 1 ? 's' : '' ?> (unpaid or preparing)"><?= $_active_n ?></span>
                 <?php endif; ?>
             </a>
         </div>
@@ -1487,7 +1487,9 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             <i class="kpi-watermark fa-solid fa-dollar-sign"></i>
             <div class="kpi-label">Today's Revenue</div>
             <div class="kpi-value">$<span id="kpiRevenue"><?= number_format($sales, 2) ?></span></div>
-            <?php if ($sales_trend != 0): ?>
+            <?php if ($sales <= 0): ?>
+            <span class="kpi-pill flat"><i class="fa-solid fa-hourglass-start"></i> No sales yet today</span>
+            <?php elseif ($sales_trend != 0): ?>
             <span class="kpi-pill <?= $trend_class ?>">
                 <i class="fa-solid <?= $trend_icon ?>"></i>
                 <?= abs($sales_trend) ?>% vs yesterday
@@ -1550,7 +1552,8 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             if (count($krows) > 0):
                 foreach ($krows as $kr):
                     $mins = floor((time() - strtotime($kr['order_date'])) / 60);
-                    $tc   = $mins >= 20 ? 'urgent' : ($mins >= 10 ? 'warn' : 'ok');
+                    $_warn_at = max(1, (int)floor(OVERDUE_MINUTES * 0.7));
+                    $tc   = $mins >= OVERDUE_MINUTES ? 'urgent' : ($mins >= $_warn_at ? 'warn' : 'ok');
             ?>
             <div class="k-item">
                 <div class="k-no">#<?= (int)$kr['daily_order_no'] ?></div>
@@ -2152,11 +2155,11 @@ async function toggleClock(){
     btn.disabled = false;
     btn.style.opacity = '1';
 }
-<?php if ($_flash_stock_alert && $low_stock > 0 && can('ingredients')): ?>
-document.addEventListener('DOMContentLoaded',()=>showToast('<?= $low_stock ?> ingredient<?= $low_stock!=1?"s are":" is"?> low on stock','error'));
-<?php endif; ?>
+<?php /* Low-stock toast removed — already surfaced by the red alert banner up top (no duplicate). */ ?>
 
 /* ── AJAX polling (kitchen + KPIs) ── */
+const OVERDUE_MINUTES = <?= (int)OVERDUE_MINUTES ?>;
+const WARN_MINUTES    = Math.max(1, Math.floor(OVERDUE_MINUTES * 0.7));
 function fetchDashboardData(){
     fetch('dashboard_data.php')
         .then(r=>r.json())
@@ -2181,7 +2184,7 @@ function fetchDashboardData(){
                 if(d.kitchen_orders.length>0){
                     kl.innerHTML=d.kitchen_orders.map(o=>{
                         const mins=Math.floor((Date.now()-new Date(o.order_date.replace(' ','T')))/60000);
-                        const tc=mins>=20?'urgent':mins>=10?'warn':'ok';
+                        const tc=mins>=OVERDUE_MINUTES?'urgent':mins>=WARN_MINUTES?'warn':'ok';
                         return `<div class="k-item">
                             <div class="k-no">#${o.daily_order_no}</div>
                             <div class="k-name">${o.customer_name}</div>

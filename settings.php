@@ -41,6 +41,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'barista' => [
             'overdue_minutes' => (string)max(1, min(120, (int)($_POST['overdue_minutes'] ?? 10))),
         ],
+        'paylater' => [
+            'paylater_followup_minutes' => (string)max(5, min(240, (int)($_POST['paylater_followup_minutes'] ?? 45))),
+        ],
         default => [],
     };
 
@@ -89,6 +92,7 @@ $tax_rate        = (float)($s['tax_rate']          ?? 10);
 $daily_target    = (float)($s['daily_sales_target'] ?? 500);
 $stand_count     = (int)($s['stand_count'] ?? 20);
 $overdue_minutes = (int)($s['overdue_minutes']     ?? 10);
+$paylater_followup = (int)($s['paylater_followup_minutes'] ?? 45);
 
 $_today      = date('Y-m-d');
 $hh_expired  = $hh_end_date !== '' && $_today > $hh_end_date;
@@ -599,6 +603,7 @@ body::after {
             'target'     => 'Sales Target',
             'stands'     => 'Stand Numbers',
             'barista'    => 'Barista Station',
+            'paylater'   => 'Pay Later',
             default      => 'Settings',
         };
     ?>
@@ -978,6 +983,46 @@ body::after {
                 <div class="form-actions-info">
                     <i class="fa-solid fa-circle-info"></i>
                     Saves Barista Station settings only
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <a href="dashboard.php" class="btn btn-cancel">
+                        <i class="fa-solid fa-xmark"></i> Dashboard
+                    </a>
+                    <button type="submit" class="btn btn-save" style="padding:10px 22px;font-size:13px;">
+                        <i class="fa-solid fa-floppy-disk"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <!-- ── PAY LATER SETTINGS ── -->
+    <form method="POST">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon"><i class="fa-solid fa-wallet"></i></div>
+                <div>
+                    <div class="card-title">Pay Later</div>
+                    <div class="card-sub">Control how quickly staff are prompted to follow up on unpaid tabs</div>
+                </div>
+            </div>
+
+            <div class="card-inner">
+                <div class="fields-grid single">
+                    <div class="field">
+                        <label><i class="fa-solid fa-clock"></i> Follow-up threshold (minutes)</label>
+                        <input type="number" name="paylater_followup_minutes" id="paylaterFollowup"
+                               value="<?= $paylater_followup ?>" min="5" max="240" step="1">
+                        <span class="field-hint">Set 5&ndash;240 minutes. Pay Later tabs unpaid longer than this flash red on Find Orders with a "follow up" prompt.</span>
+                    </div>
+                </div>
+            </div>
+
+            <input type="hidden" name="_section" value="paylater">
+            <div class="form-actions">
+                <div class="form-actions-info">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Saves Pay Later settings only
                 </div>
                 <div style="display:flex;gap:10px;">
                     <a href="dashboard.php" class="btn btn-cancel">

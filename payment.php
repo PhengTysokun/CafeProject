@@ -705,7 +705,14 @@ $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urle
 </head>
 <body>
 
-<div class="payment-card">
+<div class="payment-card" style="position:relative;">
+    <!-- Always-available close (never trap the cashier) -->
+    <button type="button" id="btnClose" title="Close — order waits in Pending Payment"
+            style="position:absolute;top:14px;right:14px;width:34px;height:34px;border-radius:50%;
+                   border:1px solid var(--border,#333);background:transparent;color:var(--text-secondary,#999);
+                   font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;">
+        <i class="fa-solid fa-xmark"></i>
+    </button>
     <!-- Header -->
     <div class="header">
         <div class="icon-wrapper">
@@ -760,7 +767,6 @@ $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urle
     <div class="qr-section" id="qrSection">
         <div class="qr-box">
             <img src="<?php echo htmlspecialchars($qrUrl); ?>" alt="Bakong KHQR">
-            <span class="expiry-badge" id="expiryBadge">15:00</span>
         </div>
     </div>
 
@@ -773,23 +779,8 @@ $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urle
     </div>
 
 
-    <!-- Fallback Actions -->
-    <p id="fallbackHint"></p>
-    <div class="actions" id="actionsDiv">
-        <a href="payment.php?order_id=<?php echo $order_id; ?>&action=refresh" class="btn btn-retry">
-            <i class="fa-solid fa-rotate-right"></i> Try QR Again
-        </a>
-        <a href="payment.php?order_id=<?php echo $order_id; ?>&action=switch_cash" class="btn btn-switch-cash"
-           id="btnSwitchCash" data-href="payment.php?order_id=<?php echo $order_id; ?>&action=switch_cash">
-            <i class="fa-solid fa-money-bill-wave"></i> Pay with Cash Instead
-        </a>
-        <a href="receipt_pdf.php?order_id=<?php echo $order_id; ?>" target="_blank" class="btn btn-print">
-            <i class="fa-solid fa-file-pdf"></i> Print Receipt
-        </a>
-        <a href="menu.php" class="btn btn-secondary" id="btnBackMenu">
-            <i class="fa-solid fa-arrow-left"></i> Back to Menu
-        </a>
-    </div>
+    <!-- Escape is the ✕ in the card corner. Cash / regenerate / print all live on
+         Find Orders → Pending Payment, so they're intentionally not duplicated here. -->
 </div>
 
 <!-- Custom Confirm Modal -->
@@ -824,72 +815,27 @@ function showConfirm({ icon, iconType, title, msg, okText, onOk }) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('btnBackMenu').addEventListener('click', function(e) {
+    // The single ✕ is the only way off this page. The order parks in Pending
+    // Payment; cash / regenerate / print are all handled from Find Orders.
+    document.getElementById('btnClose').addEventListener('click', function(e) {
         e.preventDefault();
         showConfirm({
-            icon: 'fa-solid fa-triangle-exclamation',
-            iconType: 'warn',
-            title: 'Leave without paying?',
-            msg: 'Going back will leave this order unpaid and stuck. Use "Try QR Again" or "Pay with Cash Instead" to properly handle this order.',
-            okText: 'Yes, go back',
+            icon: 'fa-solid fa-clock',
+            iconType: 'info',
+            title: 'Leave this QR?',
+            msg: 'The order will wait in Find Orders → Pending Payment. You can collect it there later by Cash or Bakong — nothing is lost.',
+            okText: 'OK, leave',
             onOk: () => window.location.href = 'menu.php'
         });
     });
-
-    document.getElementById('btnSwitchCash').addEventListener('click', function(e) {
-        e.preventDefault();
-        const href = this.dataset.href;
-        showConfirm({
-            icon: 'fa-solid fa-money-bill-wave',
-            iconType: 'info',
-            title: 'Switch to Cash Payment?',
-            msg: 'This will change the payment method to cash. The order will be marked as paid by cash.',
-            okText: 'Switch to Cash',
-            onOk: () => window.location.href = href
-        });
-    });
-
-    // Show fallback buttons after 20 seconds, hide manual confirm
-    const hint = document.getElementById('fallbackHint');
-    const actionsDiv = document.getElementById('actionsDiv');
-
-    let wait = 20;
-    hint.textContent = 'Waiting for scan… options available in ' + wait + 's';
-    const hintTimer = setInterval(function() {
-        wait--;
-        if (wait > 0) {
-            hint.textContent = 'Waiting for scan… options available in ' + wait + 's';
-        } else {
-            clearInterval(hintTimer);
-            hint.textContent = 'Having trouble? Use the options below.';
-            actionsDiv.style.display = 'flex';
-            actionsDiv.style.animation = 'fadeInUp 0.5s ease both';
-        }
-    }, 1000);
 });
 
 const orderId = <?php echo (int)$order_id; ?>;
 let checkInterval = null;
 
-// ── Countdown timer ──
-let secondsLeft = 15 * 60;
-const expiryBadge = document.getElementById('expiryBadge');
-const countdownTimer = setInterval(() => {
-    secondsLeft--;
-    const m = Math.floor(secondsLeft / 60);
-    const s = secondsLeft % 60;
-    expiryBadge.textContent = m + ':' + String(s).padStart(2, '0');
-    if (secondsLeft <= 60) expiryBadge.style.background = '#e74c3c';
-    if (secondsLeft <= 0) {
-        clearInterval(countdownTimer);
-        expiryBadge.textContent = 'Expired';
-    }
-}, 1000);
-
 // ── Go to premium success page ──
 function showPaymentSuccess() {
     clearInterval(checkInterval);
-    clearInterval(countdownTimer);
 
     const indicator = document.getElementById('statusIndicator');
     indicator.className = 'status-indicator success';
@@ -917,10 +863,12 @@ function showVerifyError(msg) {
     indicator.append(icon, span);
     if (!errorShown) {
         errorShown = true;
-        // Auto-check can't confirm this payment — reveal fallback actions immediately.
-        const hint = document.getElementById('fallbackHint');
-        if (hint) hint.textContent = 'Automatic check unavailable — use an option below.';
-        document.getElementById('actionsDiv').style.display = 'flex';
+        // Auto-check can't confirm this payment — close (✕) and settle it from
+        // Find Orders → Pending Payment (Cash or Bakong) instead.
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:10px;text-align:center;';
+        hint.textContent = 'Close this (✕) and collect from Find Orders → Pending Payment.';
+        indicator.after(hint);
     }
 }
 

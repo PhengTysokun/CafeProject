@@ -16,7 +16,7 @@ if ($order_id <= 0) {
 
 // Fetch order details
 $stmt = $conn->prepare("
-    SELECT order_id, daily_order_no, customer_name, total, status, payment_method, loyalty_card_id
+    SELECT order_id, daily_order_no, customer_name, total, status, payment_method, loyalty_card_id, points_earned
     FROM orders
     WHERE order_id = ?
 ");
@@ -50,8 +50,10 @@ try {
 
     // Award loyalty points only for Pay Later orders settled at the counter.
     // Regular orders already receive points at confirm_order.php (creation time).
+    // Guard: skip if points were already credited (e.g. items added earlier
+    // already awarded them via confirm_order.php), mirroring check_payment.php.
     $lc_id = (int)($order['loyalty_card_id'] ?? 0);
-    if ($lc_id > 0 && ($order['payment_method'] ?? '') === 'paylater') {
+    if ($lc_id > 0 && ($order['payment_method'] ?? '') === 'paylater' && (int)($order['points_earned'] ?? 0) === 0) {
         $pts_stmt = $conn->prepare("SELECT SUM(quantity) AS total_qty FROM order_items WHERE order_id = ?");
         $pts_stmt->bind_param("i", $order_id);
         $pts_stmt->execute();

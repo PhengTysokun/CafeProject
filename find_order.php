@@ -274,8 +274,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
         .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #000; }
         .tab-btn.active .tab-count { background: rgba(0,0,0,0.2); color: #000; }
         .tab-count { background: rgba(255,255,255,0.1); padding: 1px 8px; border-radius: 20px; font-size: 11px; }
-        .tab-btn.tab-addable { border-color: var(--success); color: var(--success); }
-        .tab-btn.tab-addable:hover, .tab-btn.tab-addable.active { background: var(--success); color: #000; border-color: var(--success); }
+        .tab-btn.tab-addable { border-color: var(--accent); color: var(--accent); }
+        .tab-btn.tab-addable:hover, .tab-btn.tab-addable.active { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
         .tab-btn.tab-paylater { border-color: var(--purple); color: var(--purple); }
         .tab-btn.tab-paylater:hover, .tab-btn.tab-paylater.active { background: var(--purple); color: #fff; border-color: var(--purple); }
 
@@ -471,6 +471,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
             font-size: 12px; font-weight: 600; color: var(--danger);
             display: flex; align-items: center; gap: 6px; margin-top: 6px;
         }
+        .card-meta .age-overdue { color: var(--danger); font-weight: 700; }
 
         .table-edit-wrap { display: inline-flex; align-items: center; gap: 4px; }
         .table-edit-btn {
@@ -549,19 +550,15 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
             <i class="fa-solid fa-layer-group"></i> All Active
             <span class="tab-count" data-tab="all"><?= $tab_counts['all'] ?></span>
         </a>
-        <a href="?tab=preparing<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
-           class="tab-btn <?= $filter_tab === 'preparing' ? 'active' : '' ?>">
-            <i class="fa-solid fa-fire"></i> Preparing
-            <span class="tab-count" data-tab="preparing"><?= $tab_counts['preparing'] ?></span>
-        </a>
         <a href="?tab=pending<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn <?= $filter_tab === 'pending' ? 'active' : '' ?>">
             <i class="fa-solid fa-clock"></i> Pending Payment
             <span class="tab-count" data-tab="pending"><?= $tab_counts['pending'] ?></span>
         </a>
         <a href="?tab=paid_open<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
-           class="tab-btn tab-addable <?= $filter_tab === 'paid_open' ? 'active' : '' ?>">
-            <i class="fa-solid fa-circle-plus"></i> Paid + Open
+           class="tab-btn tab-addable <?= $filter_tab === 'paid_open' ? 'active' : '' ?>"
+           title="Paid orders still open — you can add more items">
+            <i class="fa-solid fa-circle-plus"></i> Open Tabs
             <span class="tab-count" data-tab="paid_open"><?= $tab_counts['paid_open'] ?></span>
         </a>
         <?php endif; ?>
@@ -573,30 +570,37 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
     </div>
 
     <?php if ($filter_tab === 'pending'): ?>
-    <div class="guidance-callout">
+    <div class="guidance-callout" id="payGuidance">
         <div class="guidance-icon"><i class="fa-solid fa-hand-point-right"></i></div>
         <div class="guidance-text">
             <strong>How to collect payment:</strong>
             Find the customer's order below, then click <span class="guide-pill cash"><i class="fa-solid fa-money-bill-wave"></i> Cash</span>
             for cash payment or <span class="guide-pill bakong"><i class="fa-solid fa-qrcode"></i> Bakong</span> to show the QR code.
         </div>
-        <button class="guidance-dismiss" onclick="this.closest('.guidance-callout').style.display='none'" title="Dismiss">
+        <button class="guidance-dismiss" onclick="dismissGuidance()" title="Dismiss (won't show again)">
             <i class="fa-solid fa-xmark"></i>
         </button>
     </div>
+    <script>
+        function dismissGuidance(){
+            var g=document.getElementById('payGuidance'); if(g) g.style.display='none';
+            try{ localStorage.setItem('fo_guidance_dismissed','1'); }catch(e){}
+        }
+        try{ if(localStorage.getItem('fo_guidance_dismissed')==='1'){ var _g=document.getElementById('payGuidance'); if(_g) _g.style.display='none'; } }catch(e){}
+    </script>
     <?php endif; ?>
 
     <!-- Results Header -->
     <div class="results-header">
         <h2 id="resultsTitle">
             <?php
-            $tabLabels = ['all'=>'All Active Orders','preparing'=>'Preparing','pending'=>'Pending Payment','paid_open'=>'Paid + Open Orders','paylater'=>'Pay Later Orders'];
+            $tabLabels = ['all'=>'All Active Orders','preparing'=>'Preparing','pending'=>'Pending Payment','paid_open'=>'Open Tabs','paylater'=>'Pay Later Orders'];
             echo $tabLabels[$filter_tab] ?? 'Orders';
             ?>
         </h2>
         <div class="meta">
             <span class="count-badge" id="visibleCount"><?= count($orders) ?> orders</span>
-            <span class="total-amount">$<?= number_format($total_unpaid, 2) ?></span>
+            <span class="total-amount" title="Total outstanding balance across these unpaid orders">Outstanding $<?= number_format($total_unpaid, 2) ?></span>
         </div>
     </div>
 
@@ -887,7 +891,7 @@ function updateMeta(data) {
     const vc = document.getElementById('visibleCount');
     if (vc && typeof data.pageCount !== 'undefined') vc.textContent = data.pageCount + ' orders';
     const ta = document.querySelector('.total-amount');
-    if (ta && typeof data.totalUnpaid !== 'undefined') ta.textContent = '$' + data.totalUnpaid;
+    if (ta && typeof data.totalUnpaid !== 'undefined') ta.textContent = 'Outstanding $' + data.totalUnpaid;
     if (data.tabCounts) {
         document.querySelectorAll('.tab-count[data-tab]').forEach(function(span) {
             const k = span.dataset.tab;

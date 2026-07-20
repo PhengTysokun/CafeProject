@@ -22,7 +22,7 @@ elseif ($diff < 3600)          $timeAgo = floor($diff/60) . 'm ago';
 elseif ($diff < 86400)         $timeAgo = floor($diff/3600) . 'h ' . floor(($diff%3600)/60) . 'm ago';
 else                           $timeAgo = floor($diff/86400) . 'd ago';
 
-$isOverdue = ($order['payment_method'] === 'paylater' && $diff > 1800); // 30 min unpaid
+$isOverdue = ($order['payment_method'] === 'paylater' && $diff > PAYLATER_FOLLOWUP_MINUTES * 60); // unpaid past follow-up window (Settings)
 
 // Human-readable overdue span: minutes under an hour, then hours, then days.
 $overdueMins = floor($diff / 60);
@@ -125,7 +125,7 @@ if ($overdueMins < 60) {
 
     <div class="card-bottom">
         <div class="card-meta">
-            <span><i class="fa-solid fa-clock"></i> <?= $timeAgo ?> &nbsp;·&nbsp; <?= date("d M, g:i A", strtotime($order['order_date'])) ?></span>
+            <span class="<?= $isOverdue ? 'age-overdue' : '' ?>"><i class="fa-solid fa-clock"></i> <?= $timeAgo ?> &nbsp;·&nbsp; <?= date("d M, g:i A", strtotime($order['order_date'])) ?></span>
             <span><i class="fa-solid fa-credit-card"></i> <?= htmlspecialchars(ucfirst($order['payment_method'])) ?></span>
             <span class="table-edit-wrap" data-order="<?= $order['order_id'] ?>">
                 <i class="fa-solid fa-ticket" style="color:var(--accent);"></i>
