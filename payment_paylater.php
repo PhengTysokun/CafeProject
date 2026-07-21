@@ -9,6 +9,13 @@ if (!in_array($_SESSION['role'] ?? '', ['admin', 'manager', 'staff'])) {
 $order_id = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
 if ($order_id <= 0) { header("Location: menu.php"); exit; }
 
+// How this tab was opened decides the secondary back link:
+//   from=paylater  → reached by adding items from the Pay Later queue → Back to Pay Later
+//   (otherwise)    → a fresh pay-later order taken at the menu        → Back to Menu
+$from_paylater = ($_GET['from'] ?? '') === 'paylater';
+$back_href     = $from_paylater ? 'find_order.php?tab=paylater' : 'menu.php';
+$back_label    = $from_paylater ? 'Back to Pay Later' : 'Back to Menu';
+
 $stmt = $conn->prepare("
     SELECT order_id, daily_order_no, customer_name, total, is_open, token_number, promotion_discount,
            order_type, table_number
@@ -455,8 +462,8 @@ $_SESSION['cart'] = [];
         <a href="receipt_paylater.php?order_id=<?php echo $order_id; ?>" target="_blank" class="btn btn-print">
             <i class="fa-solid fa-file-pdf"></i> Print Receipt
         </a>
-        <a href="find_order.php?tab=paylater" class="btn btn-secondary">
-            <i class="fa-solid fa-arrow-left"></i> Back to Pay Later
+        <a href="<?= $back_href ?>" class="btn btn-secondary">
+            <i class="fa-solid fa-arrow-left"></i> <?= $back_label ?>
         </a>
     </div>
 </div>

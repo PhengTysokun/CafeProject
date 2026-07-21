@@ -221,7 +221,9 @@ if ($existing_order_id > 0) {
         $_SESSION['cart'] = [];
         unset($_SESSION['add_to_order_id'], $_SESSION['add_to_daily_no'], $_SESSION['paylater_reopen']);
 
-        header("Location: payment_paylater.php?order_id=" . $existing_order_id);
+        // from=paylater → this tab was reached by adding items from the Pay Later queue,
+        // so the confirmation's back button returns there (a fresh menu order omits it → Back to Menu).
+        header("Location: payment_paylater.php?order_id=" . $existing_order_id . "&from=paylater");
         exit;
 
     } catch (Exception $e) {
