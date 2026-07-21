@@ -53,8 +53,12 @@ UPDATE order_items SET made_qty = quantity WHERE made_at IS NOT NULL AND made_qt
 
 ### 2. Feed exposes made_qty — `view_order.php` (`$map` builder, ~line 2980)
 Add `oi.made_qty` to the item SELECT (and GROUP BY), and to each item object:
-`"made_qty" => (int)$r["made_qty"]` alongside the existing `quantity` and `is_made`.
-`is_returning` stays as-is (Preparing order with ≥1 fully-made row).
+`"made_qty" => (int)$r["made_qty"]` alongside `quantity`. Redefine the per-item made flag off
+the count, **not** the timestamp: `$is_made = ((int)$r["made_qty"] >= (int)$r["quantity"] &&
+(int)$r["quantity"] > 0) ? 1 : 0`. `is_returning` is then computed exactly as today (Preparing
+order with ≥1 fully-made row) but reads this count-derived `is_made`. Because the badge keys on
+`made_qty >= quantity` per row — never on `made_at` — undoing one drink (which NULLs that row's
+`made_at`) does **not** drop the badge while any other row is still fully made.
 
 ### 3. Barista card renders per-unit, dims made — `buildBaristaCardInner` (~line 1956)
 Replace the current "filter to unmade, one line per row" block. For each item, emit
@@ -69,15 +73,23 @@ the only "made" affordance — no separate badge.
 
 ### 4. Mark-made endpoint — `view_order.php?action=mark_made`
 New action, JSON, barista_station-gated (same as `action=complete`). Params: `item_id`,
-`delta` (+1 or −1). Row-locked (`SELECT … FOR UPDATE`):
+`delta` (+1 or −1). Resolve the item's `order_id`, then inside a transaction **lock all of
+that order's rows** — `SELECT item_id, quantity, made_qty FROM order_items WHERE order_id = ?
+FOR UPDATE` — not just the tapped row. Locking the whole order serialises concurrent taps on
+*different* items of the same order, so two taps can't both read "not yet all made" and both
+try to auto-complete.
 
-- Clamp `made_qty` to `[0, quantity]` after applying delta.
-- Recompute `made_at`: set `NOW()` when `made_qty` reaches `quantity` and it was NULL;
-  set NULL when `made_qty` drops below `quantity`.
-- After the update, check the **whole order**: if every row has `made_qty >= quantity`,
-  auto-complete it (status `Completed`, `is_open=0`, `completed_at=NOW()`, `prepared_by`)
-  — the same effect as `action=complete`. Return `{ ok:1, completed:0|1 }` so the client
-  knows whether the card left the queue.
+- Clamp `made_qty` to `[0, quantity]` after applying delta; persist the tapped row.
+- Recompute that row's `made_at`: set `NOW()` when `made_qty` reaches `quantity` and it was
+  NULL; set NULL when `made_qty` drops below `quantity`. `made_at` is **audit/ordering only**
+  — no downstream logic branches on it (see the returning-tab note below).
+- After the update, evaluate the **whole order** under the same lock: the order is fully made
+  when **no row has `made_qty < quantity`** (`SELECT COUNT(*) … WHERE order_id = ? AND
+  made_qty < quantity` returns 0). This predicate is naturally correct for a degenerate
+  zero-quantity row (`0 < 0` is false, so it neither blocks nor forces completion). If fully
+  made, auto-complete (status `Completed`, `is_open=0`, `completed_at=NOW()`, `prepared_by`)
+  — same effect as `action=complete`. Return `{ ok:1, completed:0|1 }` so the client knows
+  whether the card left the queue.
 
 ### 5. Complete-all button — `action=complete` (~line 3085)
 Keep the whole-order Complete button and its `completeOrder(id)` flow. Extend the
@@ -87,9 +99,11 @@ consistent with the per-drink model). The existing `made_at` stamp stays.
 
 ### 6. Client tap handler — `view_order.php` JS
 `async function markDrink(itemId, delta)`: optimistic — dim/un-dim the tapped line
-immediately, POST `action=mark_made`, then `loadOrders()` to reconcile. On `completed:1`,
-show the existing "order completed" toast + `callOrder`. Debounce/disable the line while
-in flight to avoid double-taps.
+immediately, POST `action=mark_made`. On success, `loadOrders()` to reconcile; on
+`completed:1` show the existing "order completed" toast + `callOrder`. **On failure (network
+error or `ok:0`), immediately revert the optimistic dim on that line in the `catch`** — do not
+wait for a poll, so the barista never sees a drink that looks made but isn't. Disable the line
+while in flight to avoid double-taps.
 
 ## Point-2 fix (falls out)
 
@@ -104,6 +118,9 @@ Editing quantity `+` raises `quantity`, never `made_qty`, so the added units ren
 - **`edit_order_items.php`** — no change; its `+` already raises `quantity`, which now
   surfaces correctly on the station.
 - The **"Returning tab"** badge stays.
+- **Partial serve** (hand out the finished drinks while the rest are still being made) is a
+  separate feature — the order stays in Preparing until every drink is made. Dimming just
+  shows progress; it does not split or partially close the order.
 
 ## Edge cases
 
@@ -111,10 +128,12 @@ Editing quantity `+` raises `quantity`, never `made_qty`, so the added units ren
   queue, so its card is gone — undo is only possible while the order is still in queue
   (before the final drink). Acceptable; a mis-complete is recovered via the existing
   Preparing/remake paths.
-- **Concurrent taps** (two baristas, same order): row-locked `FOR UPDATE` + clamp keeps
-  `made_qty` within `[0, quantity]`; `loadOrders()` reconciles the displayed state.
-- **Row with quantity 0** (shouldn't occur): renders no lines; ignored by the all-made check
-  (`made_qty >= quantity` is trivially true).
+- **Concurrent taps** (two baristas, same order): the endpoint locks **all** the order's rows
+  `FOR UPDATE`, so taps serialise — only one can pass the all-made check and complete; clamp
+  keeps `made_qty` within `[0, quantity]`; `loadOrders()` reconciles the displayed state.
+- **Row with quantity 0** (shouldn't occur): renders no lines; the all-made check
+  (`no row with made_qty < quantity`) treats it as neither blocking nor forcing completion
+  (`0 < 0` is false). No special guard needed.
 
 ## Testing (manual E2E, as barista)
 
