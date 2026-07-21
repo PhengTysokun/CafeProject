@@ -1294,7 +1294,10 @@ body.barista-mode { padding: 0; }
 .bcard-badge.returning { background:rgba(155,89,182,.16); color:#b07cc6; border:1px solid rgba(155,89,182,.4); }
 .bcard-sub { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:12px; padding:0 8px; }
 .bcard-sub i { font-size:11px; margin-right:4px; opacity:.8; }
-.bitem { padding:0 8px; margin-bottom:12px; }
+.bitem { padding:0 8px; margin-bottom:12px; cursor:pointer; border-radius:8px; transition:opacity .15s, background .15s; }
+.bitem:hover { background:rgba(255,255,255,.03); }
+.bitem-made { opacity:.4; }
+.bitem-made:hover { background:transparent; }
 .bitem:last-of-type { margin-bottom:0; }
 .bitem-name { font-size:17px; font-weight:700; color:var(--text-light); letter-spacing:-.01em; line-height:1.25; }
 .bcat { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; padding:2px 8px; border-radius:5px; background:rgba(209,144,75,.14); color:var(--accent); flex-shrink:0; }
@@ -1948,19 +1951,26 @@ function buildBaristaCardInner(o) {
     const badge = o.status === 'Preparing'
         ? `<span class="bcard-badge ${overdue ? 'overdue' : 'prep'}">${overdue ? '<i class="fa-solid fa-circle-exclamation"></i> Overdue' : '<i class="fa-solid fa-hourglass-half"></i> Preparing'}</span>`
         : getStatusBadge(o.status);
-    // Barista sees only unmade drinks. If somehow every item is already made on a
-    // still-open card, fall back to the full list rather than render an empty card.
-    const _all = o.items || [];
-    const _unmade = _all.filter(i => !i.is_made);
-    const _shown = _unmade.length ? _unmade : _all;
-    const items = _shown.map(i => `
-        <div class="bitem">
+    // One tappable line per drink. The first made_qty units of a row are dimmed (made);
+    // tap an active line to mark it made, tap a made line to undo. No hiding — dim instead.
+    const _lines = [];
+    (o.items || []).forEach(i => {
+        const qty  = Number(i.quantity)  || 0;
+        const made = Number(i.made_qty)  || 0;
+        for (let u = 0; u < qty; u++) {
+            const isMade = u < made;
+            const delta  = isMade ? -1 : 1;
+            _lines.push(`
+        <div class="bitem${isMade ? ' bitem-made' : ''}" onclick="markDrink(${Number(i.item_id)}, ${delta}, this)">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span class="bitem-name">${escapeHtml(String(i.quantity))}× ${escapeHtml(i.product_name)}</span>
+                <span class="bitem-name">${isMade ? '<i class="fa-solid fa-check" style="color:var(--success);margin-right:5px"></i>' : ''}1× ${escapeHtml(i.product_name)}</span>
                 ${i.category ? `<span class="bcat">${escapeHtml(i.category)}</span>` : ''}
             </div>
             <div class="bchips">${baristaItemChips(i)}</div>
-        </div>`).join('') || '<div style="color:var(--text-muted);font-size:12px;padding-left:8px">No items</div>';
+        </div>`);
+        }
+    });
+    const items = _lines.join('') || '<div style="color:var(--text-muted);font-size:12px;padding-left:8px">No items</div>';
     // Fulfilment type from order_type (drink_in / drink_out); real name + stand no. when present
     const isOut     = o.order_type === 'drink_out';
     const typeLabel = isOut ? 'Drink Out' : 'Drink In';
@@ -2634,6 +2644,32 @@ async function markPrepare(id) {
 }
 
 // ── Complete Order ──
+// Tap a drink line on the barista card: mark it made (dim) or undo. Optimistic —
+// revert immediately on failure. On the last drink the order auto-completes.
+let _markBusy = false;
+async function markDrink(itemId, delta, el) {
+    if (_markBusy) return;
+    _markBusy = true;
+    if (el) el.style.pointerEvents = 'none';
+    const wasMade = el && el.classList.contains('bitem-made');
+    if (el) el.classList.toggle('bitem-made', delta === 1);   // optimistic dim/un-dim
+    try {
+        const r = await fetch(`view_order.php?action=mark_made&item_id=${itemId}&delta=${delta}`, { cache: 'no-store' });
+        const res = await r.json();
+        if (!res.ok) throw new Error(res.error || 'failed');
+        if (res.completed) { showToast('✅ Order completed'); }
+        // Reconcile in its own try — a failed poll must NOT revert a mark the server accepted;
+        // the regular poll will reconcile shortly anyway.
+        try { await loadOrders(); } catch (e) { /* self-heals on next poll */ }
+    } catch (err) {
+        if (el) el.classList.toggle('bitem-made', wasMade);   // revert immediately
+        showToast('❌ ' + (err.message || 'Request failed'), 'error');
+    } finally {
+        _markBusy = false;
+        if (el) el.style.pointerEvents = '';
+    }
+}
+
 async function completeOrder(id) {
     const btn = document.querySelector(`#row-${id} .complete-btn`);
     if (btn) {
