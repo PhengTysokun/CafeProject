@@ -3090,6 +3090,72 @@ if ($action === "prepare") {
 }
 
 /* ===============================
+   MARK ONE DRINK MADE / UNDO
+================================ */
+if ($action === "mark_made") {
+    header('Content-Type: application/json');
+    if (!can('barista_station')) { http_response_code(403); echo json_encode(["ok"=>0,"error"=>"Not allowed"]); exit; }
+
+    $item_id = (int)($_GET['item_id'] ?? 0);
+    $delta   = (int)($_GET['delta'] ?? 0);
+    if ($item_id <= 0 || ($delta !== 1 && $delta !== -1)) {
+        echo json_encode(["ok"=>0,"error"=>"Invalid request"]); exit;
+    }
+
+    $conn->begin_transaction();
+    try {
+        // Which order does this item belong to?
+        $st = $conn->prepare("SELECT order_id FROM order_items WHERE item_id = ?");
+        $st->bind_param("i", $item_id); $st->execute();
+        $row = $st->get_result()->fetch_assoc();
+        if (!$row) { throw new Exception("Item not found"); }
+        $order_id = (int)$row['order_id'];
+
+        // Lock the order row + ALL its item rows so concurrent taps (and a concurrent
+        // whole-order Complete) serialise before the auto-complete UPDATE.
+        $lockOrd = $conn->prepare("SELECT order_id FROM orders WHERE order_id = ? FOR UPDATE");
+        $lockOrd->bind_param("i", $order_id); $lockOrd->execute(); $lockOrd->get_result();
+        $lock = $conn->prepare("SELECT item_id, quantity, made_qty FROM order_items WHERE order_id = ? FOR UPDATE");
+        $lock->bind_param("i", $order_id); $lock->execute();
+        $rows = $lock->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        // Apply delta to the tapped row (clamped to [0, quantity]); recompute its made_at.
+        $new_made = 0;
+        foreach ($rows as $r) {
+            if ((int)$r['item_id'] !== $item_id) continue;
+            $qty      = (int)$r['quantity'];
+            $new_made = max(0, min($qty, (int)$r['made_qty'] + $delta));
+            $made_at_sql = ($new_made >= $qty && $qty > 0) ? "NOW()" : "NULL";
+            $up = $conn->prepare("UPDATE order_items SET made_qty = ?, made_at = $made_at_sql WHERE item_id = ?");
+            $up->bind_param("ii", $new_made, $item_id); $up->execute();
+        }
+
+        // Order fully made = no row still has unmade units.
+        $chk = $conn->prepare("SELECT COUNT(*) AS unmade FROM order_items WHERE order_id = ? AND made_qty < quantity");
+        $chk->bind_param("i", $order_id); $chk->execute();
+        $unmade = (int)$chk->get_result()->fetch_assoc()['unmade'];
+
+        $completed = 0;
+        if ($unmade === 0) {
+            // Only complete an order that is still preparing (don't touch terminal states).
+            $prepared_by      = $_SESSION['username'] ?? '';
+            $prepared_by_role = $_SESSION['role']     ?? '';
+            $cu = $conn->prepare("UPDATE orders SET status = 'Completed', is_open = 0, completed_at = NOW(), prepared_by = ?, prepared_by_role = ? WHERE order_id = ? AND status = 'Preparing'");
+            $cu->bind_param("ssi", $prepared_by, $prepared_by_role, $order_id); $cu->execute();
+            $completed = $cu->affected_rows > 0 ? 1 : 0;
+        }
+
+        $conn->commit();
+        echo json_encode(["ok"=>1, "made_qty"=>$new_made, "completed"=>$completed]);
+        exit;
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(["ok"=>0, "error"=>$e->getMessage()]);
+        exit;
+    }
+}
+
+/* ===============================
    COMPLETE ORDER
 ================================ */
 if ($action === "complete") {
