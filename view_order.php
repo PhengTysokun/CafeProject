@@ -3138,9 +3138,12 @@ if ($action === "mark_made") {
         $completed = 0;
         if ($unmade === 0) {
             // Only complete an order that is still preparing (don't touch terminal states).
+            // NOTE: do NOT change is_open here — matching action=complete. Completion means the
+            // drinks are made, NOT that the tab is paid; a pay-later order must stay open
+            // (is_open=1) until the cashier settles it, else it drops off the Pay Later queue.
             $prepared_by      = $_SESSION['username'] ?? '';
             $prepared_by_role = $_SESSION['role']     ?? '';
-            $cu = $conn->prepare("UPDATE orders SET status = 'Completed', is_open = 0, completed_at = NOW(), prepared_by = ?, prepared_by_role = ? WHERE order_id = ? AND status = 'Preparing'");
+            $cu = $conn->prepare("UPDATE orders SET status = 'Completed', completed_at = NOW(), prepared_by = ?, prepared_by_role = ? WHERE order_id = ? AND status = 'Preparing'");
             $cu->bind_param("ssi", $prepared_by, $prepared_by_role, $order_id); $cu->execute();
             $completed = $cu->affected_rows > 0 ? 1 : 0;
         }
