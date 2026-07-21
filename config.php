@@ -135,6 +135,13 @@ _migrate($conn, 'order_items_made_at_v1', function($db) {
     ");
 });
 
+// Per-drink made tracking: made_qty = how many units of a row are made (0..quantity).
+// Backfill rows already fully made (made_at set) to their full quantity.
+_migrate($conn, 'order_items_made_qty_v1', function($db) {
+    $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS made_qty INT NOT NULL DEFAULT 0");
+    $db->query("UPDATE order_items SET made_qty = quantity WHERE made_at IS NOT NULL AND made_qty = 0");
+});
+
 /**
  * The badge label to show for a product: a non-zero promo auto-generates "N% OFF"
  * and wins over the free-text badge; otherwise fall back to the manual badge_text.
