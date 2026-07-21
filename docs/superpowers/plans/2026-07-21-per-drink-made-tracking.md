@@ -225,7 +225,10 @@ if ($action === "mark_made") {
         if (!$row) { throw new Exception("Item not found"); }
         $order_id = (int)$row['order_id'];
 
-        // Lock ALL of the order's rows so concurrent taps on different items serialise.
+        // Lock the order row + ALL its item rows so concurrent taps (and a concurrent
+        // whole-order Complete) serialise before the auto-complete UPDATE.
+        $lockOrd = $conn->prepare("SELECT order_id FROM orders WHERE order_id = ? FOR UPDATE");
+        $lockOrd->bind_param("i", $order_id); $lockOrd->execute(); $lockOrd->get_result();
         $lock = $conn->prepare("SELECT item_id, quantity, made_qty FROM order_items WHERE order_id = ? FOR UPDATE");
         $lock->bind_param("i", $order_id); $lock->execute();
         $rows = $lock->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -426,7 +429,9 @@ async function markDrink(itemId, delta, el) {
         const res = await r.json();
         if (!res.ok) throw new Error(res.error || 'failed');
         if (res.completed) { showToast('✅ Order completed'); }
-        await loadOrders();          // reconcile card (re-render handles pointerEvents)
+        // Reconcile in its own try — a failed poll must NOT revert a mark the server accepted;
+        // the regular 30s poll will reconcile shortly anyway.
+        try { await loadOrders(); } catch (e) { /* self-heals on next poll */ }
     } catch (err) {
         if (el) el.classList.toggle('bitem-made', wasMade);   // revert immediately
         showToast('❌ ' + (err.message || 'Request failed'), 'error');
