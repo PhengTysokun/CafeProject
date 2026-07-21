@@ -121,6 +121,20 @@ _migrate($conn, 'order_items_orig_price', function($db) {
     $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS orig_price DECIMAL(10,2) NOT NULL DEFAULT 0");
 });
 
+// Barista unmade-item tracking: made_at NULL = drink not yet made (in the queue).
+// Stamped when the barista completes an order. Backfill everything not currently in the
+// queue so history doesn't flood the barista station on first load.
+_migrate($conn, 'order_items_made_at_v1', function($db) {
+    $db->query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS made_at DATETIME NULL DEFAULT NULL");
+    $db->query("
+        UPDATE order_items oi
+        JOIN orders o ON o.order_id = oi.order_id
+        SET oi.made_at = COALESCE(o.completed_at, o.order_date)
+        WHERE oi.made_at IS NULL
+          AND o.status NOT IN ('Preparing','PendingPayment')
+    ");
+});
+
 /**
  * The badge label to show for a product: a non-zero promo auto-generates "N% OFF"
  * and wins over the free-text badge; otherwise fall back to the manual badge_text.
