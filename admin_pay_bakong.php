@@ -62,9 +62,12 @@ if (($khqrResponse->status['code'] ?? 1) !== 0 || empty($khqrResponse->data['qr'
 $qrString = $khqrResponse->data['qr'];
 $qrMd5    = $khqrResponse->data['md5'] ?? '';
 
-// First-time setup: store md5 and wire up payment records so check_payment.php can track this transaction
-$existing_md5 = $order['bakong_md5'] ?? '';
-if (empty($existing_md5) && !empty($qrMd5)) {
+// Persist the md5 and wire up payment records so check_payment.php can track this transaction.
+// A fresh KHQR (new md5) is generated on every load, so ALWAYS store it — otherwise an order
+// that already carried an older md5 (e.g. a checkout order shown once at payment.php) would
+// display this new QR while check_payment.php still verified the stale md5, and payment would
+// never be detected.
+if (!empty($qrMd5)) {
     $conn->begin_transaction();
     try {
         // Persist md5 — required by check_payment.php to verify with Bakong API

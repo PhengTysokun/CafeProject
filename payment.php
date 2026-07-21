@@ -136,6 +136,16 @@ if (empty($md5)) {
 
     $khqrResponse = BakongKHQR::generateIndividual($individualInfo);
     $qrString = $khqrResponse->data['qr'] ?? '';
+    // A fresh KHQR carries a NEW md5; keep the stored value in sync with the QR
+    // actually displayed, or check_payment.php would verify a stale md5 and never
+    // detect the payment on a reload / return visit.
+    $newMd5 = $khqrResponse->data['md5'] ?? '';
+    if (!empty($newMd5) && $newMd5 !== $md5) {
+        $md5 = $newMd5;
+        $stmt = $conn->prepare("UPDATE orders SET bakong_md5 = ? WHERE order_id = ?");
+        $stmt->bind_param("si", $md5, $order_id);
+        $stmt->execute();
+    }
 }
 
 $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($qrString);
