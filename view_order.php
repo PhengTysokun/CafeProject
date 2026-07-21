@@ -1291,6 +1291,7 @@ body.barista-mode { padding: 0; }
 .bcard-badge { font-size:10.5px; font-weight:700; letter-spacing:.03em; padding:4px 10px; border-radius:20px; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
 .bcard-badge.overdue { background:rgba(255,92,92,.13); color:var(--danger); }
 .bcard-badge.prep    { background:rgba(243,156,18,.13); color:var(--warning); }
+.bcard-badge.returning { background:rgba(155,89,182,.16); color:#b07cc6; border:1px solid rgba(155,89,182,.4); }
 .bcard-sub { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:12px; padding:0 8px; }
 .bcard-sub i { font-size:11px; margin-right:4px; opacity:.8; }
 .bitem { padding:0 8px; margin-bottom:12px; }
@@ -1947,7 +1948,12 @@ function buildBaristaCardInner(o) {
     const badge = o.status === 'Preparing'
         ? `<span class="bcard-badge ${overdue ? 'overdue' : 'prep'}">${overdue ? '<i class="fa-solid fa-circle-exclamation"></i> Overdue' : '<i class="fa-solid fa-hourglass-half"></i> Preparing'}</span>`
         : getStatusBadge(o.status);
-    const items = (o.items || []).map(i => `
+    // Barista sees only unmade drinks. If somehow every item is already made on a
+    // still-open card, fall back to the full list rather than render an empty card.
+    const _all = o.items || [];
+    const _unmade = _all.filter(i => !i.is_made);
+    const _shown = _unmade.length ? _unmade : _all;
+    const items = _shown.map(i => `
         <div class="bitem">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <span class="bitem-name">${escapeHtml(String(i.quantity))}× ${escapeHtml(i.product_name)}</span>
@@ -1965,6 +1971,7 @@ function buildBaristaCardInner(o) {
         <div class="bcard-top">
             <span class="bcard-num">#${escapeHtml(String(o.daily_order_no))}</span>
             ${badge}
+            ${o.is_returning ? '<span class="bcard-badge returning"><i class="fa-solid fa-rotate-right"></i> Returning tab</span>' : ''}
         </div>
         <div class="bcard-sub">
             <span><i class="fa-solid ${typeIcon}"></i> ${typeLabel}${standTag}${realName}</span>
