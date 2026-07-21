@@ -39,11 +39,10 @@ $stmt->execute();
 $payments = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // ── Derived values ──
-// Pay-later settles start from the Pay Later queue — send the cashier back there,
-// not to the barista board. Regular cash orders keep the all-orders link.
+// Pay-later settles start from the Pay Later queue — its success screen shows only
+// Print Receipt + a Back-to-Pay-Later button (New Order / View All Orders are hidden,
+// since the cashier is working the queue). Regular cash orders keep all three actions.
 $is_paylater = ($order['payment_method'] ?? '') === 'paylater';
-$back_href   = $is_paylater ? 'find_order.php?tab=paylater' : 'view_order.php';
-$back_label  = $is_paylater ? 'Pay Later Queue' : 'View All Orders';
 $total       = (float)$order['total'];
 $discount    = (float)$order['promotion_discount'];
 $manual_disc = (float)$order['manual_discount'];
@@ -620,12 +619,18 @@ body {
             <a href="receipt_pdf.php?order_id=<?= $order_id ?>" target="_blank" class="btn btn-print">
                 <i class="fa-solid fa-file-pdf"></i> Print Receipt
             </a>
+            <?php if ($is_paylater): ?>
+            <a href="find_order.php?tab=paylater" class="btn btn-new">
+                <i class="fa-solid fa-arrow-left"></i> Back to Pay Later
+            </a>
+            <?php else: ?>
             <a href="menu.php" class="btn btn-new">
                 <i class="fa-solid fa-plus"></i> New Order
             </a>
-            <a href="<?= $back_href ?>" class="btn btn-sec">
-                <i class="fa-solid fa-list"></i> <?= $back_label ?>
+            <a href="view_order.php" class="btn btn-sec">
+                <i class="fa-solid fa-list"></i> View All Orders
             </a>
+            <?php endif; ?>
         </div>
 
     </div><!-- /.card-body -->

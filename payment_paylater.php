@@ -455,8 +455,8 @@ $_SESSION['cart'] = [];
         <a href="receipt_paylater.php?order_id=<?php echo $order_id; ?>" target="_blank" class="btn btn-print">
             <i class="fa-solid fa-file-pdf"></i> Print Receipt
         </a>
-        <a href="menu.php" class="btn btn-secondary">
-            <i class="fa-solid fa-arrow-left"></i> Back to Menu
+        <a href="find_order.php?tab=paylater" class="btn btn-secondary">
+            <i class="fa-solid fa-arrow-left"></i> Back to Pay Later
         </a>
     </div>
 </div>
