@@ -3017,7 +3017,10 @@ if ($action === "fetch") {
                 "refund_reason"        => $r['refund_reason'] ?? '',
                 "refunded_by"          => $r['refunded_by'] ?? '',
                 "remake_reasons" => $r['remake_reasons'] ? explode('|||', $r['remake_reasons']) : [],
-                "is_returning" => 0,
+                // Genuinely re-opened tab = was completed once (completed_at stamped) and is
+                // Preparing again. NOT derived from made_qty — with per-drink marking a made
+                // row no longer implies a re-open (tapping one drink would false-positive).
+                "is_returning" => ((($r['status'] ?? '') === 'Preparing') && !empty($r['completed_at'])) ? 1 : 0,
                 "items" => []
             ];
             if ($__isBarista) {
@@ -3045,10 +3048,6 @@ if ($action === "fetch") {
             ];
             if ($__isBarista) { $item["category"] = $r["category"] ?? ''; }
             $map[$id]["items"][] = $item;
-            // A Preparing order that already has a fully-made row = a re-opened ("returning") tab.
-            if ($is_made && $map[$id]["status"] === 'Preparing') {
-                $map[$id]["is_returning"] = 1;
-            }
         }
     }
 
