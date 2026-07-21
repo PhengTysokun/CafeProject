@@ -2910,6 +2910,7 @@ if ($action === "fetch") {
             oi.size_label,
             oi.addons_snapshot,
             oi.quantity,
+            oi.made_at,
             oi.product_id,
             p.category
         FROM orders o
@@ -2922,7 +2923,7 @@ if ($action === "fetch") {
         LEFT JOIN order_cancellations oc ON oc.order_id = o.order_id
         LEFT JOIN order_refunds orr ON orr.order_id = o.order_id
         WHERE o.business_date = ?
-        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.addons_snapshot, oi.quantity, oi.product_id, p.category
+        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.addons_snapshot, oi.quantity, oi.made_at, oi.product_id, p.category
         ORDER BY
             CASE o.status
                 WHEN 'PendingPayment' THEN 1
@@ -2966,6 +2967,7 @@ if ($action === "fetch") {
                 "refund_reason"        => $r['refund_reason'] ?? '',
                 "refunded_by"          => $r['refunded_by'] ?? '',
                 "remake_reasons" => $r['remake_reasons'] ? explode('|||', $r['remake_reasons']) : [],
+                "is_returning" => 0,
                 "items" => []
             ];
             if ($__isBarista) {
@@ -2976,6 +2978,7 @@ if ($action === "fetch") {
         }
 
         if (!empty($r['product_name'])) {
+            $is_made = !empty($r["made_at"]) ? 1 : 0;
             $item = [
                 "item_id"      => (int)$r["item_id"],
                 "product_name" => $r["product_name"],
@@ -2984,10 +2987,15 @@ if ($action === "fetch") {
                 "ice"          => $r["ice"],
                 "milk"         => $r["milk"],
                 "addons"       => array_map(fn($a) => $a['name'], json_decode($r["addons_snapshot"] ?? '[]', true) ?: []),
-                "quantity"     => $r["quantity"]
+                "quantity"     => $r["quantity"],
+                "is_made"      => $is_made
             ];
             if ($__isBarista) { $item["category"] = $r["category"] ?? ''; }
             $map[$id]["items"][] = $item;
+            // A Preparing order that already has a made item = a re-opened ("returning") tab.
+            if ($is_made && $map[$id]["status"] === 'Preparing') {
+                $map[$id]["is_returning"] = 1;
+            }
         }
     }
 
