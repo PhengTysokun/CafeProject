@@ -2918,6 +2918,7 @@ if ($action === "fetch") {
             oi.addons_snapshot,
             oi.quantity,
             oi.made_at,
+            oi.made_qty,
             oi.product_id,
             p.category
         FROM orders o
@@ -2936,7 +2937,7 @@ if ($action === "fetch") {
            OR DATE(o.completed_at)  = ?
            OR DATE(oc.cancelled_at) = ?
            OR DATE(orr.refunded_at) = ?
-        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.addons_snapshot, oi.quantity, oi.made_at, oi.product_id, p.category
+        GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.addons_snapshot, oi.quantity, oi.made_at, oi.made_qty, oi.product_id, p.category
         ORDER BY
             CASE o.status
                 WHEN 'PendingPayment' THEN 1
@@ -2991,7 +2992,9 @@ if ($action === "fetch") {
         }
 
         if (!empty($r['product_name'])) {
-            $is_made = !empty($r["made_at"]) ? 1 : 0;
+            $qty      = (int)$r["quantity"];
+            $made_qty = (int)$r["made_qty"];
+            $is_made  = ($qty > 0 && $made_qty >= $qty) ? 1 : 0;   // row fully made — from the count, not made_at
             $item = [
                 "item_id"      => (int)$r["item_id"],
                 "product_name" => $r["product_name"],
@@ -3000,12 +3003,13 @@ if ($action === "fetch") {
                 "ice"          => $r["ice"],
                 "milk"         => $r["milk"],
                 "addons"       => array_map(fn($a) => $a['name'], json_decode($r["addons_snapshot"] ?? '[]', true) ?: []),
-                "quantity"     => $r["quantity"],
+                "quantity"     => $qty,
+                "made_qty"     => $made_qty,
                 "is_made"      => $is_made
             ];
             if ($__isBarista) { $item["category"] = $r["category"] ?? ''; }
             $map[$id]["items"][] = $item;
-            // A Preparing order that already has a made item = a re-opened ("returning") tab.
+            // A Preparing order that already has a fully-made row = a re-opened ("returning") tab.
             if ($is_made && $map[$id]["status"] === 'Preparing') {
                 $map[$id]["is_returning"] = 1;
             }
