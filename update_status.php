@@ -64,6 +64,14 @@ $stmt = $conn->prepare("UPDATE orders SET status = ? $extra_sql WHERE order_id =
 $stmt->bind_param("si", $new_status, $order_id);
 $stmt->execute();
 
+// Stamp the drinks made at this completion — only those still unmade. First completion
+// stamps all items; a re-opened pay-later tab stamps only its newly-added rows.
+if ($new_status === 'Completed') {
+    $stmt_made = $conn->prepare("UPDATE order_items SET made_at = NOW() WHERE order_id = ? AND made_at IS NULL");
+    $stmt_made->bind_param("i", $order_id);
+    $stmt_made->execute();
+}
+
 // ── LOYALTY: Earn points when order is Paid or Completed ──
 if ($new_status === 'Paid' || $new_status === 'Completed') {
     // Get loyalty card ID from order
