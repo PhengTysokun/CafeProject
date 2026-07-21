@@ -2929,7 +2929,13 @@ if ($action === "fetch") {
         LEFT JOIN products p ON p.product_id = oi.product_id
         LEFT JOIN order_cancellations oc ON oc.order_id = o.order_id
         LEFT JOIN order_refunds orr ON orr.order_id = o.order_id
+        -- Show today's orders, PLUS any order whose terminal action happened today
+        -- (a pay-later tab opened days ago but completed/cancelled/refunded today still
+        --  belongs on today's board — otherwise it silently never appears).
         WHERE o.business_date = ?
+           OR DATE(o.completed_at)  = ?
+           OR DATE(oc.cancelled_at) = ?
+           OR DATE(orr.refunded_at) = ?
         GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.addons_snapshot, oi.quantity, oi.made_at, oi.product_id, p.category
         ORDER BY
             CASE o.status
@@ -2943,7 +2949,7 @@ if ($action === "fetch") {
             o.order_id ASC
     ");
 
-    $stmt->bind_param("s", $business_date);
+    $stmt->bind_param("ssss", $business_date, $business_date, $business_date, $business_date);
     $stmt->execute();
     $result = $stmt->get_result();
 
