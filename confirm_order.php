@@ -134,18 +134,17 @@ if ($existing_order_id > 0) {
         if ($p < $min_price) $min_price = $p;
     }
 
-    $buy3 = 0;
-    if (BUY_X_GET_1_ENABLED && $total_qty >= BUY_X_COUNT && $min_price < PHP_FLOAT_MAX) {
-        $buy3 = floor($total_qty / BUY_X_COUNT) * $min_price;
-    }
+    // Buy X Get 1 Free is a GIFT, not a discount — the free drink is an *extra* on top.
+    // The customer pays full price for every ordered drink, so it must NOT reduce the total.
+    // (Matches the new-order path below; only happy hour + manual discount reduce the charge.)
     $happy_hour = 0;
     if ($was_happy_hour && HAPPY_HOUR_ENABLED) {
-        $happy_hour = ($subtotal - $buy3) * (HAPPY_HOUR_DISCOUNT / 100);
+        $happy_hour = $subtotal * (HAPPY_HOUR_DISCOUNT / 100);
     }
     // Re-apply the manual discount the order already had — otherwise adding items
     // silently drops it and the customer's total jumps back up.
     $manual_existing = (float)($existing_order['manual_discount'] ?? 0);
-    $final_discount = $buy3 + $happy_hour;                       // promotions (stored in promotion_discount)
+    $final_discount = $happy_hour;                               // promotions only (happy hour); stored in promotion_discount
     $after          = $subtotal - $final_discount - $manual_existing;
     if ($after < 0) $after = 0;
     $final_total    = round($after + ($after * (TAX_RATE / 100)), 2);
