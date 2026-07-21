@@ -3121,6 +3121,13 @@ if ($action === "complete") {
         $stmt_update->bind_param("ssi", $prepared_by, $prepared_by_role, $order_id);
         $stmt_update->execute();
 
+        // Stamp the drinks made at this completion — only those still unmade. First completion
+        // stamps all items; a re-opened pay-later tab stamps only its newly-added rows. This is
+        // the primary barista "Complete" path (the button hits action=complete, not update_status.php).
+        $stmt_made = $conn->prepare("UPDATE order_items SET made_at = NOW() WHERE order_id = ? AND made_at IS NULL");
+        $stmt_made->bind_param("i", $order_id);
+        $stmt_made->execute();
+
         $conn->commit();
         echo json_encode(["ok" => 1]);
         exit;
