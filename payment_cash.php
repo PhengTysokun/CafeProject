@@ -10,7 +10,7 @@ if ($order_id <= 0) die('Invalid order.');
 // ── Fetch order ──
 $stmt = $conn->prepare("
     SELECT order_id, customer_name, total, status, daily_order_no,
-           promotion_discount, manual_discount, order_type,
+           promotion_discount, manual_discount, order_type, payment_method,
            completed_at, order_date, employee_name, points_earned, table_number
     FROM orders WHERE order_id = ? LIMIT 1
 ");
@@ -39,6 +39,11 @@ $stmt->execute();
 $payments = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // ── Derived values ──
+// Pay-later settles start from the Pay Later queue — send the cashier back there,
+// not to the barista board. Regular cash orders keep the all-orders link.
+$is_paylater = ($order['payment_method'] ?? '') === 'paylater';
+$back_href   = $is_paylater ? 'find_order.php?tab=paylater' : 'view_order.php';
+$back_label  = $is_paylater ? 'Pay Later Queue' : 'View All Orders';
 $total       = (float)$order['total'];
 $discount    = (float)$order['promotion_discount'];
 $manual_disc = (float)$order['manual_discount'];
@@ -618,8 +623,8 @@ body {
             <a href="menu.php" class="btn btn-new">
                 <i class="fa-solid fa-plus"></i> New Order
             </a>
-            <a href="view_order.php" class="btn btn-sec">
-                <i class="fa-solid fa-list"></i> View All Orders
+            <a href="<?= $back_href ?>" class="btn btn-sec">
+                <i class="fa-solid fa-list"></i> <?= $back_label ?>
             </a>
         </div>
 
