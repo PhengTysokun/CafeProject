@@ -607,7 +607,11 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
   <div class="header-left">
     <?php
     $_role = $_SESSION['role'] ?? '';
-    if (in_array($_role, ['admin', 'manager'])): ?>
+    if ($add_to_order_mode > 0): ?>
+    <a href="find_order.php?tab=paylater" class="btn-nav btn-orders">
+      <i class="fa-solid fa-arrow-left"></i> Back to Pay Later
+    </a>
+    <?php elseif (in_array($_role, ['admin', 'manager'])): ?>
     <a href="dashboard.php" class="btn-nav btn-orders">
       <i class="fa-solid fa-arrow-left"></i> Back
     </a>
