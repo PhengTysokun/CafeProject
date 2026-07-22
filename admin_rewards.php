@@ -90,6 +90,7 @@ if (isset($_GET['edit'])) {
     <title>Manage Rewards | Bird's Nest Coffee</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>(function(){var t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();</script>
     <style>
         /* ── CSS VARIABLES (dark-only) ── */
         :root {
@@ -114,6 +115,17 @@ if (isset($_GET['edit'])) {
             --shadow-accent: 0 4px 20px rgba(209,144,75,0.15);
             --transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
             --radius: 12px;
+        }
+
+        [data-theme="light"] {
+            --bg: #f5f0eb;
+            --bg-card: #ffffff;
+            --bg-card-hover: #fdf8f3;
+            --border: #e8ddd2;
+            --border-hover: #d4c4b0;
+            --text: #1a1008;
+            --text-muted: #7a6a58;
+            --text-light: #1a1008;
         }
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -876,9 +888,15 @@ if (isset($_GET['edit'])) {
 
                             <td>
                                 <div class="actions-cell">
-                                    <a href="admin_rewards.php?edit=<?= (int)$reward['reward_id'] ?>" class="btn btn-secondary btn-sm">
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                        data-id="<?= (int)$reward['reward_id'] ?>"
+                                        data-name="<?= htmlspecialchars($reward['reward_name'], ENT_QUOTES) ?>"
+                                        data-points="<?= (int)$reward['points_required'] ?>"
+                                        data-desc="<?= htmlspecialchars($reward['description'] ?? '', ENT_QUOTES) ?>"
+                                        data-active="<?= (int)$reward['is_active'] ?>"
+                                        onclick="openEditModal(this)">
                                         <i class="fa-solid fa-pen-to-square"></i> Edit
-                                    </a>
+                                    </button>
                                     <a href="admin_rewards.php?delete=<?= (int)$reward['reward_id'] ?>"
                                        class="btn btn-danger btn-sm"
                                        onclick="return confirm('Delete reward \'<?= addslashes(htmlspecialchars($reward['reward_name'])) ?>\'?\n\nThis cannot be undone.');">
@@ -899,6 +917,14 @@ if (isset($_GET['edit'])) {
 </div>
 
 <script>
+// ── THEME (follows shared key; toggled elsewhere) ──
+window.addEventListener('storage', function (e) {
+    if (e.key === 'theme') {
+        if (e.newValue === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        else document.documentElement.removeAttribute('data-theme');
+    }
+});
+
 // ── Client-side table pagination (10 rows/page) ──
 const __pagers = {};
 function setupPager(tableId, pagerId, pageSize) {
@@ -952,5 +978,64 @@ function buildPagerControls(tableId, pages) {
 setupPager('rewardsTable', 'rewardsPager', 10);
 </script>
 
+<!-- ── Edit Reward Modal (opens in-page, no navigation) ── -->
+<style>
+    .rw-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(4px); z-index:1000; align-items:center; justify-content:center; padding:20px; }
+    .rw-modal-overlay.open { display:flex; }
+    .rw-modal { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; width:100%; max-width:440px; padding:22px 24px; box-shadow:var(--shadow-lg); animation:rwIn .18s ease both; }
+    @keyframes rwIn { from { opacity:0; transform:translateY(10px) scale(.98); } to { opacity:1; transform:none; } }
+    .rw-modal-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+    .rw-modal-head h3 { margin:0; font-size:18px; color:var(--text-light); display:flex; align-items:center; gap:8px; }
+    .rw-modal-head h3 i { color:var(--accent); }
+    .rw-modal-close { background:none; border:none; color:var(--text-muted); font-size:26px; line-height:1; cursor:pointer; transition:var(--transition); }
+    .rw-modal-close:hover { color:var(--danger); }
+</style>
+<div class="rw-modal-overlay" id="editModal">
+    <div class="rw-modal">
+        <div class="rw-modal-head">
+            <h3><i class="fa-solid fa-pen-to-square"></i> Edit Reward</h3>
+            <button type="button" class="rw-modal-close" onclick="closeEditModal()" aria-label="Close">&times;</button>
+        </div>
+        <form method="POST" action="admin_rewards.php">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="reward_id" id="em_id">
+            <div class="form-group">
+                <label>Reward Name</label>
+                <input type="text" name="reward_name" id="em_name" required>
+            </div>
+            <div class="form-group">
+                <label>Points Required</label>
+                <input type="number" name="points_required" id="em_points" min="1" required>
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" id="em_desc" placeholder="Brief description of the reward (optional)"></textarea>
+            </div>
+            <div class="form-group">
+                <div class="checkbox-row">
+                    <input type="checkbox" name="is_active" id="em_active" value="1">
+                    <label for="em_active">Active (visible to customers)</label>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-full"><i class="fa-solid fa-floppy-disk"></i> Update Reward</button>
+                <button type="button" class="btn btn-secondary" style="flex-shrink:0;" onclick="closeEditModal()"><i class="fa-solid fa-xmark"></i> Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+function openEditModal(btn) {
+    document.getElementById('em_id').value     = btn.dataset.id;
+    document.getElementById('em_name').value   = btn.dataset.name || '';
+    document.getElementById('em_points').value = btn.dataset.points || '1';
+    document.getElementById('em_desc').value   = btn.dataset.desc || '';
+    document.getElementById('em_active').checked = btn.dataset.active === '1';
+    document.getElementById('editModal').classList.add('open');
+}
+function closeEditModal() { document.getElementById('editModal').classList.remove('open'); }
+document.getElementById('editModal').addEventListener('click', function (e) { if (e.target === this) closeEditModal(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeEditModal(); });
+</script>
 </body>
 </html>
