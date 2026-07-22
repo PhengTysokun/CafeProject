@@ -1294,10 +1294,7 @@ body.barista-mode { padding: 0; }
 .bcard-badge.returning { background:rgba(155,89,182,.16); color:#b07cc6; border:1px solid rgba(155,89,182,.4); }
 .bcard-sub { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:12px; padding:0 8px; }
 .bcard-sub i { font-size:11px; margin-right:4px; opacity:.8; }
-.bitem { padding:0 8px; margin-bottom:12px; cursor:pointer; border-radius:8px; transition:opacity .15s, background .15s; }
-.bitem:hover { background:rgba(255,255,255,.03); }
-.bitem-made { opacity:.4; }
-.bitem-made:hover { background:transparent; }
+.bitem { padding:0 8px; margin-bottom:12px; }
 .bitem:last-of-type { margin-bottom:0; }
 .bitem-name { font-size:17px; font-weight:700; color:var(--text-light); letter-spacing:-.01em; line-height:1.25; }
 .bcat { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; padding:2px 8px; border-radius:5px; background:rgba(209,144,75,.14); color:var(--accent); flex-shrink:0; }
@@ -1951,26 +1948,21 @@ function buildBaristaCardInner(o) {
     const badge = o.status === 'Preparing'
         ? `<span class="bcard-badge ${overdue ? 'overdue' : 'prep'}">${overdue ? '<i class="fa-solid fa-circle-exclamation"></i> Overdue' : '<i class="fa-solid fa-hourglass-half"></i> Preparing'}</span>`
         : getStatusBadge(o.status);
-    // One tappable line per drink. The first made_qty units of a row are dimmed (made);
-    // tap an active line to mark it made, tap a made line to undo. No hiding — dim instead.
-    const _lines = [];
-    (o.items || []).forEach(i => {
-        const qty  = Number(i.quantity)  || 0;
-        const made = Number(i.made_qty)  || 0;
-        for (let u = 0; u < qty; u++) {
-            const isMade = u < made;
-            const delta  = isMade ? -1 : 1;
-            _lines.push(`
-        <div class="bitem${isMade ? ' bitem-made' : ''}" onclick="markDrink(${Number(i.item_id)}, ${delta}, this)">
+    // Barista sees only UNMADE drinks — made ones are hidden so the queue shows just what's
+    // left to make (baristas don't triage new-vs-old, they only make what's shown). On a
+    // re-opened tab the already-made drinks drop off; only the newly-added ones remain.
+    // Fall back to the full list if somehow every drink is already made (never an empty card).
+    const _all = o.items || [];
+    const _unmade = _all.filter(i => !i.is_made);
+    const _shown = _unmade.length ? _unmade : _all;
+    const items = _shown.map(i => `
+        <div class="bitem">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span class="bitem-name">${isMade ? '<i class="fa-solid fa-check" style="color:var(--success);margin-right:5px"></i>' : ''}1× ${escapeHtml(i.product_name)}</span>
+                <span class="bitem-name">${escapeHtml(String(i.quantity))}× ${escapeHtml(i.product_name)}</span>
                 ${i.category ? `<span class="bcat">${escapeHtml(i.category)}</span>` : ''}
             </div>
             <div class="bchips">${baristaItemChips(i)}</div>
-        </div>`);
-        }
-    });
-    const items = _lines.join('') || '<div style="color:var(--text-muted);font-size:12px;padding-left:8px">No items</div>';
+        </div>`).join('') || '<div style="color:var(--text-muted);font-size:12px;padding-left:8px">No items</div>';
     // Fulfilment type from order_type (drink_in / drink_out); real name + stand no. when present
     const isOut     = o.order_type === 'drink_out';
     const typeLabel = isOut ? 'Drink Out' : 'Drink In';
@@ -2644,32 +2636,6 @@ async function markPrepare(id) {
 }
 
 // ── Complete Order ──
-// Tap a drink line on the barista card: mark it made (dim) or undo. Optimistic —
-// revert immediately on failure. On the last drink the order auto-completes.
-let _markBusy = false;
-async function markDrink(itemId, delta, el) {
-    if (_markBusy) return;
-    _markBusy = true;
-    if (el) el.style.pointerEvents = 'none';
-    const wasMade = el && el.classList.contains('bitem-made');
-    if (el) el.classList.toggle('bitem-made', delta === 1);   // optimistic dim/un-dim
-    try {
-        const r = await fetch(`view_order.php?action=mark_made&item_id=${itemId}&delta=${delta}`, { cache: 'no-store' });
-        const res = await r.json();
-        if (!res.ok) throw new Error(res.error || 'failed');
-        if (res.completed) { showToast('✅ Order completed'); }
-        // Reconcile in its own try — a failed poll must NOT revert a mark the server accepted;
-        // the regular poll will reconcile shortly anyway.
-        try { await loadOrders(); } catch (e) { /* self-heals on next poll */ }
-    } catch (err) {
-        if (el) el.classList.toggle('bitem-made', wasMade);   // revert immediately
-        showToast('❌ ' + (err.message || 'Request failed'), 'error');
-    } finally {
-        _markBusy = false;
-        if (el) el.style.pointerEvents = '';
-    }
-}
-
 async function completeOrder(id) {
     const btn = document.querySelector(`#row-${id} .complete-btn`);
     if (btn) {
@@ -3122,75 +3088,6 @@ if ($action === "prepare") {
         echo json_encode(["ok" => 0, "error" => "Failed to update status"]);
     }
     exit;
-}
-
-/* ===============================
-   MARK ONE DRINK MADE / UNDO
-================================ */
-if ($action === "mark_made") {
-    header('Content-Type: application/json');
-    if (!can('barista_station')) { http_response_code(403); echo json_encode(["ok"=>0,"error"=>"Not allowed"]); exit; }
-
-    $item_id = (int)($_GET['item_id'] ?? 0);
-    $delta   = (int)($_GET['delta'] ?? 0);
-    if ($item_id <= 0 || ($delta !== 1 && $delta !== -1)) {
-        echo json_encode(["ok"=>0,"error"=>"Invalid request"]); exit;
-    }
-
-    $conn->begin_transaction();
-    try {
-        // Which order does this item belong to?
-        $st = $conn->prepare("SELECT order_id FROM order_items WHERE item_id = ?");
-        $st->bind_param("i", $item_id); $st->execute();
-        $row = $st->get_result()->fetch_assoc();
-        if (!$row) { throw new Exception("Item not found"); }
-        $order_id = (int)$row['order_id'];
-
-        // Lock the order row + ALL its item rows so concurrent taps (and a concurrent
-        // whole-order Complete) serialise before the auto-complete UPDATE.
-        $lockOrd = $conn->prepare("SELECT order_id FROM orders WHERE order_id = ? FOR UPDATE");
-        $lockOrd->bind_param("i", $order_id); $lockOrd->execute(); $lockOrd->get_result();
-        $lock = $conn->prepare("SELECT item_id, quantity, made_qty FROM order_items WHERE order_id = ? FOR UPDATE");
-        $lock->bind_param("i", $order_id); $lock->execute();
-        $rows = $lock->get_result()->fetch_all(MYSQLI_ASSOC);
-
-        // Apply delta to the tapped row (clamped to [0, quantity]); recompute its made_at.
-        $new_made = 0;
-        foreach ($rows as $r) {
-            if ((int)$r['item_id'] !== $item_id) continue;
-            $qty      = (int)$r['quantity'];
-            $new_made = max(0, min($qty, (int)$r['made_qty'] + $delta));
-            $made_at_sql = ($new_made >= $qty && $qty > 0) ? "NOW()" : "NULL";
-            $up = $conn->prepare("UPDATE order_items SET made_qty = ?, made_at = $made_at_sql WHERE item_id = ?");
-            $up->bind_param("ii", $new_made, $item_id); $up->execute();
-        }
-
-        // Order fully made = no row still has unmade units.
-        $chk = $conn->prepare("SELECT COUNT(*) AS unmade FROM order_items WHERE order_id = ? AND made_qty < quantity");
-        $chk->bind_param("i", $order_id); $chk->execute();
-        $unmade = (int)$chk->get_result()->fetch_assoc()['unmade'];
-
-        $completed = 0;
-        if ($unmade === 0) {
-            // Only complete an order that is still preparing (don't touch terminal states).
-            // NOTE: do NOT change is_open here — matching action=complete. Completion means the
-            // drinks are made, NOT that the tab is paid; a pay-later order must stay open
-            // (is_open=1) until the cashier settles it, else it drops off the Pay Later queue.
-            $prepared_by      = $_SESSION['username'] ?? '';
-            $prepared_by_role = $_SESSION['role']     ?? '';
-            $cu = $conn->prepare("UPDATE orders SET status = 'Completed', completed_at = NOW(), prepared_by = ?, prepared_by_role = ? WHERE order_id = ? AND status = 'Preparing'");
-            $cu->bind_param("ssi", $prepared_by, $prepared_by_role, $order_id); $cu->execute();
-            $completed = $cu->affected_rows > 0 ? 1 : 0;
-        }
-
-        $conn->commit();
-        echo json_encode(["ok"=>1, "made_qty"=>$new_made, "completed"=>$completed]);
-        exit;
-    } catch (Exception $e) {
-        $conn->rollback();
-        echo json_encode(["ok"=>0, "error"=>$e->getMessage()]);
-        exit;
-    }
 }
 
 /* ===============================

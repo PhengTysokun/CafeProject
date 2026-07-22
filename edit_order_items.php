@@ -107,11 +107,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Snapshot current quantities BEFORE mutating, then for each item compute
         // new-vs-old: removed → restore full, reduced → restore diff, increased → deduct diff.
         $pre = [];
-        $stmt_pre = $conn->prepare("SELECT item_id, product_id, quantity, milk FROM order_items WHERE order_id = ?");
+        $stmt_pre = $conn->prepare("SELECT item_id, product_id, quantity, milk, made_qty FROM order_items WHERE order_id = ?");
         $stmt_pre->bind_param("i", $order_id);
         $stmt_pre->execute();
         $pre_res = $stmt_pre->get_result();
         while ($r = $pre_res->fetch_assoc()) { $pre[(int)$r['item_id']] = $r; }
+
+        // ── Made drinks are locked ── the barista already made them (made_qty >= quantity),
+        // so they cannot be removed or re-quantified. The edit UI hides those controls; this
+        // strips any such change from a crafted/stale request before it is applied.
+        foreach ($pre as $iid => $r) {
+            $q = (int)$r['quantity']; $mq = (int)($r['made_qty'] ?? 0);
+            if ($q > 0 && $mq >= $q) {
+                unset($qtys[$iid], $qtys[(string)$iid]);
+                $remove_ids = array_values(array_filter($remove_ids, fn($x) => (int)$x !== $iid));
+            }
+        }
 
         $stock_warnings = [];
         foreach ($pre as $iid => $r) {
@@ -259,7 +270,7 @@ if (!$order) { header("Location: find_order.php"); exit; }
 
 // ── Fetch items ──
 $stmt = $conn->prepare("
-    SELECT item_id, product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot, promo_percent
+    SELECT item_id, product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot, promo_percent, made_qty
     FROM order_items WHERE order_id = ? ORDER BY item_id ASC
 ");
 $stmt->bind_param("i", $order_id);
@@ -340,6 +351,13 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
 
 .item-line-total { font-size: 14px; font-weight: 600; color: var(--accent); min-width: 52px; text-align: right; }
 .item-row.removed .item-line-total { color: var(--text-muted); }
+/* Made drinks: barista already made them — locked, cannot edit/remove. */
+.item-row.made { opacity: .6; background: rgba(255,255,255,.015); }
+.item-row.made:hover { background: rgba(255,255,255,.015); border-color: var(--border); }
+.item-row.made .item-name { color: var(--text-muted); }
+.made-tag { font-size: 11px; font-weight: 700; color: var(--success); background: rgba(85,224,135,.12); border: 1px solid rgba(85,224,135,.3); border-radius: 20px; padding: 1px 8px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+.item-qty-made { font-size: 15px; font-weight: 700; color: var(--text-muted); min-width: 44px; text-align: center; }
+.item-locked { color: var(--text-muted); font-size: 13px; width: 34px; text-align: center; }
 
 /* Remove / undo buttons */
 .btn-remove { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid rgba(255,95,95,.25); background: rgba(255,95,95,.08); color: var(--danger); cursor: pointer; transition: var(--transition); font-size: 13px; }
@@ -458,12 +476,16 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                 $__ad = json_decode($item['addons_snapshot'] ?? '[]', true) ?: [];
                 if ($__ad) $customs[] = 'Add-ons: ' . implode(', ', array_map(fn($a) => $a['name'], $__ad));
             ?>
-            <div class="item-row" id="row-<?= $item['item_id'] ?>" data-id="<?= $item['item_id'] ?>" data-price="<?= (float)$item['price'] ?>" data-name="<?= htmlspecialchars($item['product_name'], ENT_QUOTES) ?>">
+            <?php
+                $__qty  = (int)$item['quantity'];
+                $__made = ((int)($item['made_qty'] ?? 0) >= $__qty && $__qty > 0);  // drink already made by barista
+            ?>
+            <div class="item-row<?= $__made ? ' made' : '' ?>" id="row-<?= $item['item_id'] ?>" data-id="<?= $item['item_id'] ?>" data-price="<?= (float)$item['price'] ?>" data-name="<?= htmlspecialchars($item['product_name'], ENT_QUOTES) ?>" data-made="<?= $__made ? '1' : '0' ?>">
 
                 <span class="item-num"><?= $n + 1 ?></span>
 
                 <div class="item-info">
-                    <div class="item-name"><?= htmlspecialchars($item['product_name']) ?></div>
+                    <div class="item-name"><?= htmlspecialchars($item['product_name']) ?><?php if ($__made): ?> <span class="made-tag"><i class="fa-solid fa-check"></i> Made</span><?php endif; ?></div>
                     <?php if ((int)($item['promo_percent'] ?? 0) > 0): ?>
                     <div class="item-custom" style="color:#c0392b;font-weight:600;"><?= (int)$item['promo_percent'] ?>% OFF applied</div>
                     <?php endif; ?>
@@ -474,6 +496,15 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                 </div>
 
                 <div class="item-controls">
+                    <?php if ($__made): ?>
+                    <!-- Made drinks are locked: no qty change, no removal. Hidden qty keeps recalc/save consistent. -->
+                    <span class="item-qty-made">×<?= $__qty ?></span>
+                    <input type="hidden" id="qty-<?= $item['item_id'] ?>" value="<?= $__qty ?>">
+                    <span class="item-line-total" id="line-<?= $item['item_id'] ?>">
+                        $<?= number_format($lineTotal, 2) ?>
+                    </span>
+                    <span class="item-locked" title="Already made — cannot edit"><i class="fa-solid fa-lock"></i></span>
+                    <?php else: ?>
                     <div class="qty-control">
                         <button type="button" onclick="changeQty(<?= $item['item_id'] ?>, -1)" id="minus-<?= $item['item_id'] ?>">−</button>
                         <input type="number" id="qty-<?= $item['item_id'] ?>" value="<?= $item['quantity'] ?>" min="1" max="99"
@@ -493,6 +524,7 @@ body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--t
                             onclick="undoRemove(<?= $item['item_id'] ?>)" title="Undo remove" style="display:none;">
                         <i class="fa-solid fa-rotate-left"></i>
                     </button>
+                    <?php endif; ?>
                 </div>
 
             </div>
