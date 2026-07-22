@@ -1563,7 +1563,7 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                  data-price="<?= (float)$row['price'] ?>"
                  data-id="<?= (int)$row['product_id'] ?>"
                  data-avail="<?= $available ?>"
-                 data-badge="<?= !empty($row['badge_text']) ? '1' : '0' ?>"
+                 data-badge="<?= product_badge_label($row) !== '' ? '1' : '0' ?>"
                  style="animation-delay:<?= min($i * 0.04, 0.6) ?>s">
 
                 <!-- Selection overlay (intercepts clicks in select mode) -->
@@ -1580,8 +1580,8 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                     <?php if (!$available): ?>
                     <div class="sold-out-badge">Sold Out</div>
                     <?php endif; ?>
-                    <?php if (!empty($row['badge_text'])): ?>
-                    <span class="product-badge"><?= htmlspecialchars($row['badge_text']) ?></span>
+                    <?php $__badge = product_badge_label($row); if ($__badge !== ''): ?>
+                    <span class="product-badge"><?= htmlspecialchars($__badge) ?></span>
                     <?php endif; ?>
                     <?php if ($_can_manage_products): ?>
                     <div class="overlay">
