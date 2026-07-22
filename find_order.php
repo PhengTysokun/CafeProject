@@ -540,12 +540,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'list') {
             <i class="fa-solid fa-clock"></i> Pending Payment
             <span class="tab-count" data-tab="pending"><?= $tab_counts['pending'] ?></span>
         </a>
-        <a href="?tab=paid_open<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
-           class="tab-btn tab-addable <?= $filter_tab === 'paid_open' ? 'active' : '' ?>"
-           title="Paid orders still open — you can add more items">
-            <i class="fa-solid fa-circle-plus"></i> Open Tabs
-            <span class="tab-count" data-tab="paid_open"><?= $tab_counts['paid_open'] ?></span>
-        </a>
+        <?php /* "Open Tabs" (paid_open = Paid + is_open=1) tab hidden — redundant with Pay Later
+                 and no live flow deliberately creates that state. Filter/poll code left dormant
+                 (find_order.php:74 etc.) so it can be restored by re-adding this button. */ ?>
         <?php endif; ?>
         <a href="?tab=paylater<?= !empty($search_value) ? '&search_type='.urlencode($search_type).'&search_value='.urlencode($search_value) : '' ?>"
            class="tab-btn tab-paylater <?= $filter_tab === 'paylater' ? 'active' : '' ?>">
