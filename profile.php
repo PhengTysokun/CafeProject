@@ -381,7 +381,7 @@ body {
     </div>
     <div class="topbar-right">
         <div class="user-chip">
-            <div class="user-avatar"><?= strtoupper(substr($username, 0, 1)) ?></div>
+            <div class="user-avatar"><?php $__ph = current_user_photo($conn); if ($__ph): ?><img src="<?= htmlspecialchars($__ph) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block"><?php else: ?><?= strtoupper(substr($username, 0, 1)) ?><?php endif; ?></div>
             <div>
                 <div class="user-name"><?= htmlspecialchars($username) ?></div>
                 <div class="user-role"><?= htmlspecialchars($role_display) ?></div>
@@ -422,7 +422,7 @@ body {
     <!-- ── Profile Summary ── -->
     <div class="card" style="margin-bottom:24px">
         <div class="profile-summary">
-            <div class="profile-avatar"><?= strtoupper(substr($username, 0, 1)) ?></div>
+            <div class="profile-avatar"><?php $__ph = current_user_photo($conn); if ($__ph): ?><img src="<?= htmlspecialchars($__ph) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block"><?php else: ?><?= strtoupper(substr($username, 0, 1)) ?><?php endif; ?></div>
             <div class="profile-info">
                 <div class="profile-name"><?= htmlspecialchars($username) ?></div>
                 <div class="profile-badges">

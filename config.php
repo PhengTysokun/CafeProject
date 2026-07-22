@@ -157,6 +157,24 @@ if (!function_exists('product_badge_label')) {
 }
 
 /**
+ * The logged-in user's profile photo path (employees.photo) or '' if none set.
+ * Cached per-request so the various header/sidebar avatars share one lookup.
+ * Used to render the real photo (with an initial fallback) instead of just initials.
+ */
+if (!function_exists('current_user_photo')) {
+    function current_user_photo(mysqli $conn): string {
+        static $cached = null;
+        if ($cached !== null) return $cached;
+        $uid = (int)($_SESSION['user_id'] ?? 0);
+        if ($uid <= 0) return $cached = '';
+        $st = $conn->prepare("SELECT photo FROM employees WHERE user_id = ? AND photo IS NOT NULL AND photo <> '' LIMIT 1");
+        $st->bind_param("i", $uid); $st->execute();
+        $row = $st->get_result()->fetch_assoc();
+        return $cached = ($row ? (string)$row['photo'] : '');
+    }
+}
+
+/**
  * WHERE fragment selecting orders whose money is actually collected — the single
  * source of truth for "revenue = payment received" across dashboard/reports.
  * Cash/riel are paid at checkout, Bakong after the QR scan, Pay Later after settle;

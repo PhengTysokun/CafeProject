@@ -1127,7 +1127,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
     <?php else: ?>
     <div class="sidebar-profile" style="cursor:default">
     <?php endif; ?>
-        <div class="profile-avatar"><i class="fa-solid fa-user"></i></div>
+        <div class="profile-avatar"><?php $__ph = current_user_photo($conn); if ($__ph): ?><img src="<?= htmlspecialchars($__ph) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block"><?php else: ?><i class="fa-solid fa-user"></i><?php endif; ?></div>
         <div class="profile-info">
             <div class="profile-name"><?= htmlspecialchars($admin_name) ?></div>
             <div class="profile-role" style="--role-color:<?= $_cur_role_color ?>;">
@@ -1679,7 +1679,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
         <?php if (can('my_profile')): ?>
         <a href="profile.php" class="inv-userchip">
         <?php else: ?><div class="inv-userchip" style="cursor:default"><?php endif; ?>
-          <div class="inv-avatar"><?= htmlspecialchars(strtoupper(substr($admin_name,0,2))) ?></div>
+          <div class="inv-avatar"><?php $__ph = current_user_photo($conn); if ($__ph): ?><img src="<?= htmlspecialchars($__ph) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block"><?php else: ?><?= htmlspecialchars(strtoupper(substr($admin_name,0,2))) ?><?php endif; ?></div>
           <div><div class="inv-uname"><?= htmlspecialchars($admin_name) ?></div>
           <div class="inv-urole"><?= htmlspecialchars($_cur_role_name) ?></div></div>
         <?php if (can('my_profile')): ?></a><?php else: ?></div><?php endif; ?>

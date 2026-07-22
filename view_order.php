@@ -1451,7 +1451,7 @@ function showClockToast(msg, isErr) {
   <aside class="bsidebar">
      <div class="bsidebar-brand"><span class="logo"><i class="fa-solid fa-mug-hot"></i></span> Bird's Nest</div>
      <div class="buser">
-        <div class="avatar"><?= strtoupper(substr($_vo_username,0,1)) ?></div>
+        <div class="avatar"><?php $__ph = current_user_photo($conn); if ($__ph): ?><img src="<?= htmlspecialchars($__ph) ?>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block"><?php else: ?><?= strtoupper(substr($_vo_username,0,1)) ?><?php endif; ?></div>
         <div>
            <div style="font-weight:700;font-size:14px;color:var(--text)"><?= $_vo_username ?></div>
            <div style="font-size:11px;color:<?= $_role_color ?>"><?= $_role_label ?></div>
