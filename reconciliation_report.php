@@ -36,13 +36,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resol
 
     // A matched drawer has nothing to investigate — guarding in SQL keeps a
     // crafted POST from stamping a resolution onto a $0.00 row.
+    // resolved_at IS NULL makes this a one-shot claim: without it a second manager
+    // could overwrite the first one's findings in place, leaving no record that the
+    // original investigation ever happened. Re-opening a resolution deliberately
+    // has no endpoint — it would need its own permission and an append-only history.
     $upd = $conn->prepare("UPDATE cash_counts
         SET resolved_at = NOW(), resolved_by = ?, resolution_note = ?
-        WHERE id = ? AND ABS(difference) >= 0.01");
+        WHERE id = ? AND ABS(difference) >= 0.01 AND resolved_at IS NULL");
     $upd->bind_param("ssi", $by, $note, $count_id);
     $upd->execute();
     if ($upd->affected_rows === 0) {
-        echo json_encode(['ok'=>false,'msg'=>'That count is already resolved with this note, or has no variance to resolve.']); exit;
+        echo json_encode(['ok'=>false,'msg'=>'That count has already been resolved, or has no variance to resolve. Reload to see the current note.']); exit;
     }
     $upd->close();
 
