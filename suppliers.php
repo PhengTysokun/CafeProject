@@ -112,7 +112,11 @@ $suppliers = [];
 $res = $conn->query("
     SELECT s.*,
            COUNT(p.po_id)          AS po_count,
-           IFNULL(SUM(p.total_cost),0) AS total_spent
+           IFNULL(SUM(p.total_cost),0) AS total_spent,
+           -- Last time we actually placed an order. Draft POs have a NULL
+           -- ordered_at (not ordered yet) and Cancelled ones never happened,
+           -- so neither should count as 'we restocked from them'.
+           MAX(CASE WHEN p.status IN ('Ordered','Received') THEN p.ordered_at END) AS last_ordered_at
     FROM suppliers s
     LEFT JOIN purchase_orders p ON p.supplier_id = s.supplier_id
     GROUP BY s.supplier_id
@@ -125,6 +129,18 @@ $total_pos       = (int)array_sum(array_column($suppliers,'po_count'));
 $total_spent     = (float)array_sum(array_column($suppliers,'total_spent'));
 
 function he($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
+
+/* Relative age of the last order — the actual question a manager is asking is
+   "is it time to reorder?", which a bare date makes them work out in their head. */
+function ago_label(int $days): string {
+    if ($days <= 0)  return 'today';
+    if ($days === 1) return 'yesterday';
+    if ($days < 7)   return $days . ' days ago';
+    if ($days < 14)  return 'last week';
+    if ($days < 60)  { $w = (int)round($days / 7); return $w . ' weeks ago'; }
+    $m = (int)round($days / 30);
+    return $m . ' month' . ($m !== 1 ? 's' : '') . ' ago';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -224,7 +240,11 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
 .badge-accent{background:rgba(209,144,75,.15);color:var(--accent);}
 .badge-muted{background:rgba(255,255,255,.06);color:var(--text-muted);}
+.last-order{font-size:13px;color:var(--text);white-space:nowrap;}
+.last-order-ago{font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap;}
+.last-order.stale,.last-order-ago.stale{color:var(--warning);}
 .actions{display:flex;gap:6px;justify-content:flex-end;}
+.actions .btn{white-space:nowrap;}
 .empty-state{text-align:center;padding:60px 20px;color:var(--text-muted);}
 .empty-state i{font-size:48px;color:var(--border-hover);display:block;margin-bottom:12px;}
 .empty-state p{font-size:14px;}
@@ -331,6 +351,7 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
                     <th>Contact</th>
                     <th>Phone / Email</th>
                     <th style="text-align:right">POs</th>
+                    <th>Last Order</th>
                     <th style="text-align:right">Total Spent</th>
                     <th style="text-align:right">Actions</th>
                 </tr>
@@ -350,6 +371,21 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
                 </td>
                 <td style="text-align:right">
                     <span class="badge badge-accent"><?= (int)$s['po_count'] ?></span>
+                </td>
+                <?php
+                    $last = $s['last_ordered_at'];
+                    // Amber past 30 days: long enough that a cafe owner should be
+                    // asking whether it is time to reorder from this supplier.
+                    $days = $last ? (int)floor((time() - strtotime($last)) / 86400) : null;
+                    $stale = $days !== null && $days > 30;
+                ?>
+                <td>
+                    <?php if ($last): ?>
+                        <div class="last-order<?= $stale ? ' stale' : '' ?>"><?= date('M j, Y', strtotime($last)) ?></div>
+                        <div class="last-order-ago<?= $stale ? ' stale' : '' ?>"><?= he(ago_label($days)) ?></div>
+                    <?php else: ?>
+                        <span style="color:var(--text-muted)">Never ordered</span>
+                    <?php endif; ?>
                 </td>
                 <td style="text-align:right;font-weight:600;color:var(--success)">
                     $<?= number_format($s['total_spent'],2) ?>
