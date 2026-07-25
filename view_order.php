@@ -2905,6 +2905,7 @@ if ($action === "fetch") {
             o.prepared_by_role,
             o.table_number,
             o.order_type,
+            o.payment_method,
             COUNT(rm.id) AS remake_count,
             oc.cancel_reason,
             oc.cancelled_by,
@@ -2986,7 +2987,10 @@ if ($action === "fetch") {
                 // Genuinely re-opened tab = was completed once (completed_at stamped) and is
                 // Preparing again. NOT derived from made_qty — with per-drink marking a made
                 // row no longer implies a re-open (tapping one drink would false-positive).
-                "is_returning" => ((($r['status'] ?? '') === 'Preparing') && !empty($r['completed_at'])) ? 1 : 0,
+                // Re-opened tab = a PAY-LATER order that was completed then re-opened (Preparing +
+                // completed_at set). Gate on paylater: cash/bakong orders get completed_at stamped
+                // at creation (confirm_order), so without this they'd all false-show "Returning tab".
+                "is_returning" => ((($r['status'] ?? '') === 'Preparing') && !empty($r['completed_at']) && (($r['payment_method'] ?? '') === 'paylater')) ? 1 : 0,
                 "items" => []
             ];
             if ($__isBarista) {
