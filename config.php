@@ -142,6 +142,51 @@ _migrate($conn, 'order_items_made_qty_v1', function($db) {
     $db->query("UPDATE order_items SET made_qty = quantity WHERE made_at IS NOT NULL AND made_qty = 0");
 });
 
+// Order audit trail: who changed a placed order, when, and what the money did.
+// Dashboard/report figures are SUMs over `orders`, so the only way to falsify them
+// is to alter an order after the fact — this table makes that leave a mark.
+// Append-only by convention: nothing in the app updates or deletes a row here.
+_migrate($conn, 'order_audit_log_v1', function($db) {
+    $db->query("
+        CREATE TABLE IF NOT EXISTS order_audit_log (
+            audit_id     INT AUTO_INCREMENT PRIMARY KEY,
+            order_id     INT NOT NULL,
+            user_id      INT NULL,
+            user_name    VARCHAR(120) NULL,
+            action       VARCHAR(40)  NOT NULL,
+            detail       TEXT NULL,
+            total_before DECIMAL(10,2) NULL,
+            total_after  DECIMAL(10,2) NULL,
+            created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_oal_order (order_id),
+            INDEX idx_oal_created (created_at),
+            CONSTRAINT fk_oal_order FOREIGN KEY (order_id)
+                REFERENCES orders(order_id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+});
+
+/**
+ * Record a change to an already-placed order. Deliberately never throws and never
+ * blocks the caller: a failed audit write must not roll back a real sale.
+ */
+if (!function_exists('log_order_audit')) {
+    function log_order_audit($conn, $order_id, $action, $detail = '', $total_before = null, $total_after = null) {
+        $uid   = $_SESSION['user_id'] ?? null;
+        $uname = $_SESSION['username'] ?? ($_SESSION['name'] ?? null);
+        try {
+            $st = $conn->prepare("INSERT INTO order_audit_log
+                (order_id, user_id, user_name, action, detail, total_before, total_after)
+                VALUES (?,?,?,?,?,?,?)");
+            if (!$st) return false;
+            $st->bind_param("iisssdd", $order_id, $uid, $uname, $action, $detail, $total_before, $total_after);
+            return $st->execute();
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+}
+
 /**
  * The badge label to show for a product: a non-zero promo auto-generates "N% OFF"
  * and wins over the free-text badge; otherwise fall back to the manual badge_text.
@@ -153,6 +198,20 @@ if (!function_exists('product_badge_label')) {
         $promo = (int)($row['promo_percent'] ?? 0);
         if ($promo > 0) return $promo . '% OFF';
         return trim((string)($row['badge_text'] ?? ''));
+    }
+}
+
+/**
+ * Human-readable shift duration. Anything under an hour reads as minutes —
+ * number_format(0.02, 1) rendered a real 1-minute shift as "0.0h", which looks
+ * like a broken total rather than a short shift.
+ * Shared by attendance.php and attendance_action.php so both agree.
+ */
+if (!function_exists('fmt_hours')) {
+    function fmt_hours(float $h): string {
+        if ($h <= 0)  return '0m';
+        if ($h < 1)   return max(1, (int)round($h * 60)) . 'm';
+        return rtrim(rtrim(number_format($h, 1), '0'), '.') . 'h';
     }
 }
 
@@ -376,6 +435,23 @@ _migrate($conn, 'stock_counts_reconciled_v1', function($db) {
     $db->query("ALTER TABLE stock_counts
         ADD COLUMN IF NOT EXISTS reconciled_at DATETIME NULL,
         ADD COLUMN IF NOT EXISTS reconciled_by VARCHAR(100) NULL");
+});
+_migrate($conn, 'attendance_manager_adjust_v1', function($db) {
+    // A manager can clock staff in/out on their behalf. That writes payroll data
+    // for someone else, so record who did it — an unattributed override is exactly
+    // the "can the numbers be falsified?" hole.
+    $db->query("ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS adjusted_by VARCHAR(100) NULL,
+        ADD COLUMN IF NOT EXISTS adjusted_at DATETIME NULL");
+});
+_migrate($conn, 'cash_counts_resolution_v1', function($db) {
+    // Manager follow-up on an Over/Short drawer. Deliberately does NOT touch
+    // expected_cash/actual_cash/difference — the variance is a financial fact and
+    // stays on the record; resolving only attaches the investigation outcome.
+    $db->query("ALTER TABLE cash_counts
+        ADD COLUMN IF NOT EXISTS resolved_at DATETIME NULL,
+        ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(100) NULL,
+        ADD COLUMN IF NOT EXISTS resolution_note TEXT NULL");
 });
 _migrate($conn, 'users_must_set_security_v1', function($db) {
     $db->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_set_security TINYINT(1) NOT NULL DEFAULT 0");
