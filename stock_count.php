@@ -638,7 +638,10 @@ $next = date('Y-m-d', strtotime($bdate . ' +1 day'));
             </td>
             <td class="num-cell col-open"><?= number_format($opening, 1) ?></td>
             <td class="num-cell col-used" style="color:<?= $used > 0 ? '#f87171' : '#555' ?>">
-                <?= $used > 0 ? '−'.number_format($used, 1) : '—' ?>
+                <?php /* No leading minus: the column already says these units were used up,
+                         so "−40.0" under "Used Today" reads as a double negative. The red
+                         keeps the drawdown cue. */ ?>
+                <?= $used > 0 ? number_format($used, 1) : '—' ?>
             </td>
             <td class="num-cell expected"><?= number_format($expected, 1) ?></td>
             <td>
