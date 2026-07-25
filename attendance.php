@@ -33,6 +33,25 @@ $still_working  = count(array_filter($records, fn($r) => is_null($r['clock_out']
 $done           = $total_present - $still_working;
 $total_hours    = array_sum(array_column($records, 'hours_worked'));
 $is_today       = $date === date('Y-m-d');
+
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+// Clocking staff in/out on their behalf is a manager action; viewing the log is not.
+// Only offered for today — back-dating a shift is a payroll edit, not a clock.
+$can_manage = in_array($_SESSION['role'] ?? '', ['admin','manager'], true) && $is_today;
+
+// Staff who are not already clocked in right now, for the manual clock-in picker.
+$clockable = [];
+if ($can_manage) {
+    $open_ids = array_column(array_filter($records, fn($r) => is_null($r['clock_out'])), 'user_id');
+    $cq = $conn->query("SELECT u.user_id, u.username, e.name AS emp_name
+                        FROM users u
+                        LEFT JOIN employees e ON e.user_id = u.user_id
+                        ORDER BY COALESCE(e.name, u.username) ASC");
+    while ($row = $cq->fetch_assoc()) {
+        if (in_array((int)$row['user_id'], array_map('intval', $open_ids), true)) continue;
+        $clockable[] = $row;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -157,6 +176,46 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
 .badge-working { background:rgba(85,224,135,.1); color:var(--success); border:1px solid rgba(85,224,135,.25); }
 .badge-done    { background:rgba(255,255,255,.05); color:var(--text-muted); border:1px solid var(--border); }
 
+/* ── Manager clock-in / clock-out ── */
+.clockin-btn {
+    display:inline-flex; align-items:center; gap:7px;
+    padding:7px 14px; border-radius:10px; cursor:pointer;
+    font-family:inherit; font-size:13px; font-weight:600;
+    background:var(--success); border:1px solid var(--success); color:#08130c;
+    transition:all .2s;
+}
+.clockin-btn:hover { filter:brightness(1.08); }
+.act-cell { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.mini-btn {
+    display:inline-flex; align-items:center; gap:5px;
+    padding:3px 10px; border-radius:20px; cursor:pointer;
+    font-family:inherit; font-size:11px; font-weight:600;
+    background:transparent; border:1px solid var(--border); color:var(--text-muted);
+    transition:all .2s;
+}
+.mini-btn i { font-size:9px; }
+.mini-btn:hover { border-color:var(--accent); color:var(--accent); background:rgba(209,144,75,.1); }
+.mini-btn:disabled { opacity:.5; cursor:not-allowed; }
+.adj-tag { font-size:10px; color:var(--text-muted); opacity:.8; white-space:nowrap; }
+.adj-tag i { font-size:9px; margin-right:2px; }
+
+.ci-back { display:none; position:fixed; inset:0; z-index:9999; padding:20px; background:rgba(0,0,0,.72); backdrop-filter:blur(6px); align-items:center; justify-content:center; }
+.ci-back.open { display:flex; }
+.ci { width:100%; max-width:400px; background:var(--card); border:1px solid var(--border); border-radius:16px; overflow:hidden; }
+.ci-head { padding:18px 20px; border-bottom:1px solid var(--border); }
+.ci-head h3 { font-size:15px; font-weight:700; }
+.ci-head p { font-size:12px; color:var(--text-muted); margin-top:3px; }
+.ci-body { padding:18px 20px; }
+.ci-body label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--text-muted); font-weight:600; margin-bottom:7px; }
+.ci-body select { width:100%; padding:10px 12px; border-radius:10px; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:inherit; font-size:13px; }
+.ci-body select:focus { outline:none; border-color:var(--success); }
+.ci-err { display:none; margin-top:10px; font-size:12px; color:#fca5a5; background:rgba(231,76,60,.1); border:1px solid rgba(231,76,60,.3); border-radius:8px; padding:8px 11px; }
+.ci-foot { display:flex; gap:9px; padding:0 20px 18px; }
+.ci-btn { flex:1; padding:9px 16px; border-radius:10px; cursor:pointer; font-family:inherit; font-size:13px; font-weight:600; background:transparent; border:1px solid var(--border); color:var(--text-muted); transition:all .2s; }
+.ci-btn:hover { color:var(--text); }
+.ci-btn.go { background:var(--success); border-color:var(--success); color:#08130c; }
+.ci-btn:disabled { opacity:.6; cursor:not-allowed; }
+
 .empty-state { padding:48px 20px; text-align:center; color:var(--text-muted); }
 .empty-state i { font-size:40px; margin-bottom:14px; opacity:.25; display:block; }
 .empty-state p { font-size:13px; }
@@ -230,6 +289,11 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
         <a href="dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
         <span class="page-title">Staff <span>Attendance</span></span>
         <a href="attendance_history.php" class="back-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
+        <?php if ($can_manage): ?>
+        <button type="button" class="clockin-btn" id="openClockIn">
+            <i class="fa-solid fa-plus"></i> Clock In
+        </button>
+        <?php endif; ?>
     </div>
     <?php if ($is_today): ?>
     <div id="liveIndicatorWrap" style="display:<?= $still_working > 0 ? 'flex' : 'none' ?>;align-items:center;gap:8px;font-size:13px;color:var(--success)">
@@ -275,7 +339,7 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
             <div class="scard-lbl"><i class="fa-solid fa-circle-check"></i> Clocked Out</div>
         </div>
         <div class="scard c-orange">
-            <div class="scard-val" id="s-hours"><?= number_format($total_hours, 1) ?>h</div>
+            <div class="scard-val" id="s-hours"><?= fmt_hours((float)$total_hours) ?></div>
             <div class="scard-lbl"><i class="fa-solid fa-clock"></i> Total Hours</div>
         </div>
     </div>
@@ -296,7 +360,7 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
                     <th>Clock In</th>
                     <th>Clock Out</th>
                     <th>Hours</th>
-                    <th>Status</th>
+                    <th>Status / Actions</th>
                 </tr>
             </thead>
             <tbody id="attTbody">
@@ -322,19 +386,34 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
                 <td><?= $working ? '<span style="color:var(--text-muted)">—</span>' : date('g:i A', strtotime($r['clock_out'])) ?></td>
                 <td>
                     <span style="font-weight:600;color:<?= $working ? 'var(--success)' : 'var(--text)' ?>">
-                        <?= $hrs ?>h <?= $working ? '<span style="font-size:11px;font-weight:400;color:var(--text-muted)">(ongoing)</span>' : '' ?>
+                        <?= fmt_hours((float)$hrs) ?> <?= $working ? '<span style="font-size:11px;font-weight:400;color:var(--text-muted)">(ongoing)</span>' : '' ?>
                     </span>
                 </td>
                 <td>
-                    <?php if ($working && $hrs >= 12): ?>
-                    <span class="badge" style="background:rgba(243,156,18,.1);color:#f39c12;border:1px solid rgba(243,156,18,.3)">
-                        <i class="fa-solid fa-triangle-exclamation"></i> Forgot to clock out?
-                    </span>
-                    <?php elseif ($working): ?>
-                    <span class="badge badge-working"><span class="live-dot" style="width:6px;height:6px"></span> Working</span>
-                    <?php else: ?>
-                    <span class="badge badge-done"><i class="fa-solid fa-circle-check"></i> Done</span>
-                    <?php endif; ?>
+                    <div class="act-cell">
+                        <?php if ($working && $hrs >= 12): ?>
+                        <span class="badge" style="background:rgba(243,156,18,.1);color:#f39c12;border:1px solid rgba(243,156,18,.3)">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Forgot to clock out?
+                        </span>
+                        <?php elseif ($working): ?>
+                        <span class="badge badge-working"><span class="live-dot" style="width:6px;height:6px"></span> Working</span>
+                        <?php else: ?>
+                        <span class="badge badge-done"><i class="fa-solid fa-circle-check"></i> Done</span>
+                        <?php endif; ?>
+
+                        <?php if ($working && $can_manage): ?>
+                        <button type="button" class="mini-btn js-clock-out"
+                                data-att="<?= (int)$r['id'] ?>" data-name="<?= htmlspecialchars($name, ENT_QUOTES) ?>">
+                            <i class="fa-solid fa-right-from-bracket"></i> Clock Out
+                        </button>
+                        <?php endif; ?>
+
+                        <?php if (!empty($r['adjusted_by'])): ?>
+                        <span class="adj-tag" title="Recorded by a manager, not the employee">
+                            <i class="fa-solid fa-user-pen"></i> by <?= htmlspecialchars($r['adjusted_by']) ?>
+                        </span>
+                        <?php endif; ?>
+                    </div>
                 </td>
             </tr>
             <?php endforeach; ?>
@@ -345,6 +424,91 @@ tbody td { padding:13px 20px; font-size:13px; vertical-align:middle; }
     </div>
 
 </div>
+
+<?php if ($can_manage): ?>
+<!-- Manual clock-in (manager) -->
+<div class="ci-back" id="ciBack">
+  <div class="ci" role="dialog" aria-modal="true" aria-labelledby="ciTitle">
+    <div class="ci-head">
+      <h3 id="ciTitle">Clock in an employee</h3>
+      <p>Use when someone forgets to clock in themselves. Recorded against your name.</p>
+    </div>
+    <div class="ci-body">
+      <label for="ciWho">Employee</label>
+      <select id="ciWho">
+        <option value="">Select an employee…</option>
+        <?php foreach ($clockable as $c): ?>
+        <option value="<?= (int)$c['user_id'] ?>"><?= htmlspecialchars($c['emp_name'] ?: $c['username']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <div class="ci-err" id="ciErr"></div>
+    </div>
+    <div class="ci-foot">
+      <button type="button" class="ci-btn" id="ciCancel">Cancel</button>
+      <button type="button" class="ci-btn go" id="ciGo">Clock In</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ATT_CSRF = <?= json_encode($_SESSION['csrf_token']) ?>;
+
+(function () {
+    const back = document.getElementById('ciBack');
+    const err  = document.getElementById('ciErr');
+    const who  = document.getElementById('ciWho');
+    const go   = document.getElementById('ciGo');
+    let busy = false;
+
+    function open()  { err.style.display='none'; who.value=''; back.classList.add('open'); setTimeout(()=>who.focus(),60); }
+    function close() { if (!busy) back.classList.remove('open'); }
+
+    document.getElementById('openClockIn').addEventListener('click', open);
+    document.getElementById('ciCancel').addEventListener('click', close);
+    back.addEventListener('click', e => { if (e.target === back) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+
+    go.addEventListener('click', async () => {
+        if (busy) return;
+        if (!who.value) { err.textContent = 'Pick an employee first.'; err.style.display='block'; return; }
+        busy = true; go.disabled = true; go.textContent = 'Clocking in…';
+        try {
+            const fd = new FormData();
+            fd.append('action','manager_clock_in');
+            fd.append('csrf_token', ATT_CSRF);
+            fd.append('user_id', who.value);
+            const d = await (await fetch('attendance_action.php',{method:'POST',body:fd})).json();
+            if (d.ok) { location.reload(); return; }
+            err.textContent = d.msg || 'Could not clock in.'; err.style.display='block';
+        } catch (e) {
+            err.textContent = 'Network error. Try again.'; err.style.display='block';
+        }
+        busy = false; go.disabled = false; go.textContent = 'Clock In';
+    });
+
+    // Delegated so rows replaced by the live poll keep working.
+    document.addEventListener('click', async e => {
+        const btn = e.target.closest('.js-clock-out');
+        if (!btn || btn.disabled) return;
+        const name = btn.dataset.name || 'this employee';
+        if (!confirm('Clock out ' + name + ' now?')) return;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> …';
+        const fd = new FormData();
+        fd.append('action','manager_clock_out');
+        fd.append('csrf_token', ATT_CSRF);
+        fd.append('att_id', btn.dataset.att);
+        try {
+            const d = await (await fetch('attendance_action.php',{method:'POST',body:fd})).json();
+            if (d.ok) { location.reload(); return; }
+            alert(d.msg || 'Could not clock out.');
+        } catch (_) { alert('Network error.'); }
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Clock Out';
+    });
+})();
+</script>
+<?php endif; ?>
 
 <!-- Pagination (client-side; survives live-poll re-render) -->
 <script>
@@ -401,25 +565,39 @@ attRenderPage();
 
 <?php if ($is_today): ?>
 <script>
-var POLL_DATE = '<?= $date ?>';
+var POLL_DATE  = '<?= $date ?>';
+var CAN_MANAGE = <?= $can_manage ? 'true' : 'false' ?>;
 
 function renderRow(r) {
+    // hours_display arrives pre-formatted from fmt_hours() ("2m" / "1.5h") — do not
+    // append 'h' here or a short shift renders as "2mh". Threshold uses hours_raw.
     var hoursHtml = r.working
-        ? '<span style="font-weight:600;color:#55e087">' + r.hours_display + 'h <span style="font-size:11px;font-weight:400;color:#777">(ongoing)</span></span>'
-        : '<span style="font-weight:600">' + r.hours_display + 'h</span>';
-    var longShift  = r.working && r.hours_display >= 12;
+        ? '<span style="font-weight:600;color:#55e087">' + r.hours_display + ' <span style="font-size:11px;font-weight:400;color:#777">(ongoing)</span></span>'
+        : '<span style="font-weight:600">' + r.hours_display + '</span>';
+    var longShift  = r.working && Number(r.hours_raw) >= 12;
     var statusHtml = r.working
         ? (longShift
             ? '<span class="badge" style="background:rgba(243,156,18,.1);color:#f39c12;border:1px solid rgba(243,156,18,.3)"><i class="fa-solid fa-triangle-exclamation"></i> Forgot to clock out?</span>'
             : '<span class="badge badge-working"><span class="live-dot" style="width:6px;height:6px"></span> Working</span>')
         : '<span class="badge badge-done"><i class="fa-solid fa-circle-check"></i> Done</span>';
+
+    // Re-emit the manager controls the server rendered, so a poll tick doesn't
+    // strip the Clock Out button out from under the manager mid-shift.
+    var actionHtml = (r.working && CAN_MANAGE)
+        ? '<button type="button" class="mini-btn js-clock-out" data-att="' + Number(r.att_id) +
+          '" data-name="' + escHtml(r.display_name) + '"><i class="fa-solid fa-right-from-bracket"></i> Clock Out</button>'
+        : '';
+    var adjHtml = r.adjusted_by
+        ? '<span class="adj-tag" title="Recorded by a manager, not the employee"><i class="fa-solid fa-user-pen"></i> by ' + escHtml(r.adjusted_by) + '</span>'
+        : '';
+
     return '<tr>' +
         '<td><div style="font-weight:600">' + escHtml(r.display_name) + '</div>' +
              '<div style="font-size:11px;color:#777">' + escHtml(r.username) + '</div></td>' +
         '<td>' + r.clock_in_fmt + '</td>' +
         '<td>' + (r.clock_out_fmt || '<span style="color:#777">—</span>') + '</td>' +
         '<td>' + hoursHtml + '</td>' +
-        '<td>' + statusHtml + '</td>' +
+        '<td><div class="act-cell">' + statusHtml + actionHtml + adjHtml + '</div></td>' +
         '</tr>';
 }
 
@@ -443,7 +621,7 @@ async function pollAttendance() {
         document.getElementById('s-present').textContent = data.total_present;
         document.getElementById('s-working').textContent = data.still_working;
         document.getElementById('s-done').textContent    = data.done;
-        document.getElementById('s-hours').textContent   = data.total_hours + 'h';
+        document.getElementById('s-hours').textContent   = data.total_hours_display;
 
         // Update topbar live indicator (always present in DOM, toggle visibility)
         var liveWrap = document.getElementById('liveIndicatorWrap');
