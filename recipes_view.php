@@ -158,6 +158,20 @@ $lowStockRecipes  = count(array_filter($recipes, fn($r) => $r['has_low_stock']))
 $totalProducts    = $totalRecipes + $totalNoRecipe;
 $okStockRecipes   = $totalRecipes - $lowStockRecipes;
 
+/* Ingredients used in a recipe but carrying no unit cost contribute $0 to that
+   recipe's COGS, so the cost shown is silently too low. Surface them rather than
+   letting a confident-looking figure quietly understate the margin. */
+$uncostedIngs = [];
+foreach ($recipes as $rec) {
+    foreach ($rec['items'] as $it) {
+        $meta = $ingredientMeta[$it['ingredient_id']] ?? null;
+        if ($meta && $meta['cpu'] <= 0) $uncostedIngs[$meta['name']] = true;
+    }
+}
+$uncostedIngs = array_keys($uncostedIngs);
+sort($uncostedIngs);
+$uncostedCount = count($uncostedIngs);
+
 /* ── Category counts ── */
 $categoryCounts = [];
 foreach ($recipes as $r) {
@@ -292,6 +306,20 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 .stat-label { font-size:11px; color:var(--text-muted); font-weight:500; }
 .stat-value { font-size:20px; font-weight:800; color:var(--text-light); line-height:1.1; }
 .stat-sub   { font-size:10px; color:var(--text-muted); font-weight:500; margin-top:2px; opacity:.75; }
+
+/* Cost-integrity notice: informational, not an error — the recipes are fine,
+   the costing input is incomplete. */
+.cost-gap-bar{
+    display:flex; align-items:flex-start; gap:10px;
+    margin:0 28px 16px; padding:11px 16px; border-radius:12px;
+    font-size:12.5px; line-height:1.55;
+    background:rgba(241,196,15,.08); border:1px solid rgba(241,196,15,.22); color:#f1c40f;
+}
+.cost-gap-bar i{ margin-top:2px; flex-shrink:0; }
+.cost-gap-bar strong{ color:#ffd964; font-weight:700; }
+.cost-gap-names{ color:var(--text-muted); }
+.cost-gap-bar a{ color:var(--accent); text-decoration:none; font-weight:600; margin-left:6px; white-space:nowrap; }
+.cost-gap-bar a:hover{ text-decoration:underline; }
 
 /* ── CATEGORY PILLS ── */
 .cat-bar {
@@ -639,6 +667,21 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         </div>
     </div>
 </div>
+
+<!-- ── INGREDIENTS WITH NO COST ── -->
+<?php if ($uncostedCount > 0): ?>
+<div class="cost-gap-bar">
+    <i class="fa-solid fa-circle-info"></i>
+    <div>
+        <strong><?= $uncostedCount ?> ingredient<?= $uncostedCount !== 1 ? 's' : '' ?></strong>
+        used in these recipes ha<?= $uncostedCount !== 1 ? 've' : 's' ?> no unit cost, so the costs below are understated:
+        <span class="cost-gap-names"><?= h(implode(' · ', $uncostedIngs)) ?></span>
+        <?php if (can('manage_ingredients') || can('inventory')): ?>
+        <a href="ingredients.php">Set costs →</a>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- ── PRODUCTS WITH NO RECIPE ── -->
 <?php if (!empty($noRecipe)): ?>

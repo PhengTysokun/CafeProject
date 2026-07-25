@@ -436,6 +436,14 @@ _migrate($conn, 'stock_counts_reconciled_v1', function($db) {
         ADD COLUMN IF NOT EXISTS reconciled_at DATETIME NULL,
         ADD COLUMN IF NOT EXISTS reconciled_by VARCHAR(100) NULL");
 });
+_migrate($conn, 'ingredients_cost_precision_v1', function($db) {
+    // Ingredients are costed per ml / per g, so real unit costs are sub-cent:
+    // $3.00 for a 1000ml bottle is 0.003/ml. DECIMAL(10,2) rounded every one of
+    // those to 0.01 — 29 of 50 rows sat at exactly that floor — which silently
+    // inflated cheap ingredients and made recipe COGS meaningless.
+    // Widening only; no existing value loses precision.
+    $db->query("ALTER TABLE ingredients MODIFY COLUMN cost_per_unit DECIMAL(10,4) NOT NULL DEFAULT 0.0000");
+});
 _migrate($conn, 'attendance_manager_adjust_v1', function($db) {
     // A manager can clock staff in/out on their behalf. That writes payroll data
     // for someone else, so record who did it — an unattributed override is exactly
