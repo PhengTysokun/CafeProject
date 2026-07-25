@@ -291,6 +291,16 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
     .menu-scroll::-webkit-scrollbar-thumb:hover { background: rgba(209,144,75,.65); }
     #cpItems::-webkit-scrollbar { display: none; }
 
+    /* Stand picker cells: scrolls (STAND_COUNT is configurable) but no visible
+       scrollbar, matching #cpItems. overflow-x hidden or the reserved gutter
+       pushes the columns wide enough to add a horizontal bar too. */
+    .stand-cells {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+      gap: 6px; max-height: 190px; overflow-y: auto; overflow-x: hidden;
+      scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .stand-cells::-webkit-scrollbar { display: none; }
+
     .menu-main { padding: 0 20px; }
     .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
 
@@ -1022,6 +1032,7 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
         </div>
         <?php endif; ?>
 
+        <?php if (!$add_to_order_mode): ?>
         <!-- Customer name -->
         <div class="cp-form-group">
           <label><i class="fa-regular fa-user"></i> Customer Name</label>
@@ -1030,13 +1041,14 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
 
         <!-- Stand number (drink in only) -->
         <div class="cp-form-group" id="cpTableNumberGroup">
-          <label style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-hashtag"></i> Stand Number <span style="color:var(--text-muted);font-weight:400;font-size:11px;">(optional)</span>
+          <label style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-hashtag"></i> Stand Number <span id="cpStandReq" style="color:#f0ad4e;font-weight:600;font-size:11px;">(required for Drink In)</span>
             <button type="button" onclick="cpToggleStandGrid()" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:#aaa;display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-table-cells-large"></i> Pick</button>
           </label>
           <input type="text" id="cpTableNumber" name="table_number" maxlength="10" placeholder="e.g. 1, 7, 12..." onblur="cpCheckStand(this.value)">
           <div id="cpStandWarn" style="display:none;margin-top:6px;padding:7px 10px;background:rgba(255,193,7,.1);border:1px solid rgba(255,193,7,.35);border-radius:8px;font-size:12px;color:#f0ad4e;align-items:center;gap:6px;"><i class="fa-solid fa-triangle-exclamation"></i> <span id="cpStandWarnText"></span></div>
           <div id="cpStandGrid" style="display:none;margin-top:6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px;"></div>
         </div>
+        <?php endif; // add-to-order: name + stand belong to the existing order, never re-asked ?>
 
       </div><!-- /cp-summary -->
       <?php endif; ?>
@@ -1576,18 +1588,21 @@ function renderCartPanel(data) {
       '</div></div>';
   }
 
-  // Customer name
+  // Customer name + stand number — only for a NEW order. In add-to-order mode both already
+  // belong to the existing order and are never re-asked (nor re-sent on submit).
+  if (!ADD_TO_ORDER_MODE) {
   itemsHtml += '<div class="cp-form-group"><label><i class="fa-regular fa-user"></i> Customer Name</label>' +
     '<input type="text" id="cpCustomerName" placeholder="Leave blank for Guest"></div>';
 
   // Stand number (drink in only)
   itemsHtml += '<div class="cp-form-group" id="cpTableNumberGroup">' +
-    '<label style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-hashtag"></i> Stand Number <span style="color:var(--text-muted);font-weight:400;font-size:11px;">(optional)</span>' +
+    '<label style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-hashtag"></i> Stand Number <span id="cpStandReq" style="color:#f0ad4e;font-weight:600;font-size:11px;">(required for Drink In)</span>' +
     '<button type="button" onclick="cpToggleStandGrid()" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:#aaa;display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-table-cells-large"></i> Pick</button></label>' +
     '<input type="text" id="cpTableNumber" name="table_number" maxlength="10" placeholder="e.g. 1, 7, 12..." onblur="cpCheckStand(this.value)">' +
     '<div id="cpStandWarn" style="display:none;margin-top:6px;padding:7px 10px;background:rgba(255,193,7,.1);border:1px solid rgba(255,193,7,.35);border-radius:8px;font-size:12px;color:#f0ad4e;align-items:center;gap:6px;"><i class="fa-solid fa-triangle-exclamation"></i> <span id="cpStandWarnText"></span></div>' +
     '<div id="cpStandGrid" style="display:none;margin-top:6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px;"></div>' +
     '</div>';
+  }
 
   itemsHtml += '</div>'; // /cp-summary
 
@@ -1800,7 +1815,120 @@ function cpUpdateConfirmBtn(selected) {
 }
 
 // ── PAYMENT MODAL OPEN/CLOSE ──
+// ── STAND NUMBER GATE ──
+// A Drink In order with no stand number can't be delivered — staff have no way to
+// find the customer. So an empty stand blocks checkout instead of just warning.
+// The only way past is the takeaway path, which REQUIRES a customer name: the
+// barista card shows a name only when it isn't 'Guest' (view_order.php), so a
+// nameless drink_out order is the same mystery drink under a different label.
+// No route may produce a Drink In with no stand.
+function cpStandGateShow(freeCount, onTakeaway) {
+  var allBusy = freeCount === 0;
+  var old = document.getElementById('cpStandGate');
+  if (old) old.remove();
+  var wrap = document.createElement('div');
+  wrap.id = 'cpStandGate';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;';
+  wrap.innerHTML =
+    '<div style="background:#161616;border:1px solid rgba(255,193,7,.35);border-radius:16px;padding:26px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.5);">' +
+      '<div style="font-size:38px;color:#f0ad4e;margin-bottom:12px;"><i class="fa-solid fa-hashtag"></i></div>' +
+      '<div style="font-size:17px;font-weight:700;color:#fff;margin-bottom:8px;">Stand Number Required</div>' +
+      '<div style="font-size:13px;color:#9a9a9a;line-height:1.6;margin-bottom:18px;">' +
+        (allBusy
+          ? 'Every stand is currently in use. Ask staff to release returned placards on the Stands page, or hand this order over the counter.'
+          : 'This is a <b style="color:#ccc;">Drink In</b> order. Without a stand number, staff won\'t know where to deliver it.') +
+      '</div>' +
+      '<div id="cpStandGateChoices" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
+        '<button type="button" id="cpStandGateSet" style="padding:11px 20px;border-radius:50px;border:none;background:#d1904b;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">' +
+          '<i class="fa-solid fa-table-cells-large"></i> Set Stand</button>' +
+        '<button type="button" id="cpStandGateTa" style="padding:11px 20px;border-radius:50px;border:1px solid rgba(255,255,255,.2);background:transparent;color:#bbb;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">' +
+          '<i class="fa-solid fa-bag-shopping"></i> No stand — Takeaway</button>' +
+      '</div>' +
+      // Revealed by the takeaway button — the customer must be callable by name.
+      '<div id="cpStandGateName" style="display:none;margin-top:16px;text-align:left;">' +
+        '<div style="font-size:12px;color:#9a9a9a;margin-bottom:6px;">Customer name so the barista can call it out:</div>' +
+        '<input type="text" id="cpStandGateNameInput" maxlength="120" placeholder="e.g. Sokha" ' +
+          'style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:#101010;color:#eee;font-size:13px;font-family:inherit;">' +
+        '<div id="cpStandGateNameErr" style="display:none;margin-top:6px;font-size:11.5px;color:#ff6b6b;"></div>' +
+        '<button type="button" id="cpStandGateTaGo" style="margin-top:10px;width:100%;padding:11px 20px;border-radius:50px;border:none;background:#d1904b;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">' +
+          '<i class="fa-solid fa-check"></i> Confirm Takeaway</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(wrap);
+  function close() { wrap.remove(); }
+  wrap.addEventListener('click', function(e) { if (e.target === wrap) close(); });
+
+  document.getElementById('cpStandGateSet').onclick = function() {
+    close();
+    var inp = document.getElementById('cpTableNumber');
+    if (inp) inp.focus();
+    var grid = document.getElementById('cpStandGrid');
+    if (grid && grid.style.display === 'none') cpToggleStandGrid();
+  };
+
+  document.getElementById('cpStandGateTa').onclick = function() {
+    document.getElementById('cpStandGateChoices').style.display = 'none';
+    document.getElementById('cpStandGateName').style.display = 'block';
+    var ni = document.getElementById('cpStandGateNameInput');
+    var existing = document.getElementById('cpCustomerName');
+    if (existing && existing.value.trim()) ni.value = existing.value.trim();
+    ni.focus();
+  };
+
+  function submitTakeaway() {
+    var ni  = document.getElementById('cpStandGateNameInput');
+    var err = document.getElementById('cpStandGateNameErr');
+    var name = ni.value.trim();
+    if (name === '' || name.toLowerCase() === 'guest') {
+      err.textContent = name === '' ? 'Enter a name — the barista has no stand to deliver to.'
+                                    : '"Guest" won\'t help the barista find them. Use a real name.';
+      err.style.display = 'block';
+      ni.focus();
+      return;
+    }
+    // Push the name into the real form field, flip the order to takeaway, drop
+    // any stale stand value, then continue to payment.
+    var cn = document.getElementById('cpCustomerName');
+    if (cn) cn.value = name;
+    var tn = document.getElementById('cpTableNumber');
+    if (tn) tn.value = '';
+    cpSetDrinkType('drink_out');
+    close();
+    onTakeaway();
+  }
+  document.getElementById('cpStandGateTaGo').onclick = submitTakeaway;
+  document.getElementById('cpStandGateNameInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitTakeaway(); }
+  });
+}
+
+function cpRequireStand(onOk) {
+  // Only new Drink In orders need a stand.
+  if (typeof ADD_TO_ORDER_MODE !== 'undefined' && ADD_TO_ORDER_MODE) { onOk(); return; }
+  var typeEl = document.getElementById('cpOrderTypeInput');
+  if (!typeEl || typeEl.value !== 'drink_in') { onOk(); return; }
+  var inp = document.getElementById('cpTableNumber');
+  if (inp && inp.value.trim() !== '') { onOk(); return; }
+  fetch('get_stands.php')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var active = d.stands || {}, free = 0;
+      for (var i = 1; i <= CP_STAND_MAX; i++) { if (!active[String(i)]) free++; }
+      cpStandGateShow(free, onOk);
+    })
+    .catch(function() { cpStandGateShow(0, onOk); });  // lookup failed — still gated
+}
+
+// Gate before the payment step — catches both the Confirm button and the
+// B/C/P/R shortcuts, which call this directly. cpRequireStand is async when it
+// has to look up occupancy, so the real modal body lives in cpOpenPayModalNow.
 function cpOpenPayModal() {
+  if (cpGetCartTotal() <= 0) return; // empty cart guard
+  if (document.getElementById('cpStandGate')) return; // gate already up
+  cpRequireStand(cpOpenPayModalNow);
+}
+
+function cpOpenPayModalNow() {
   var total = cpGetCartTotal();
   if (total <= 0) return; // empty cart guard
   var sub = total / (1 + CP_TAX_RATE / 100);
@@ -1968,25 +2096,30 @@ document.addEventListener('DOMContentLoaded', function() {
       if (selected.length === 0 && !ADD_TO_ORDER_MODE) { alert('Please select a payment method.'); return; }
       if (ADD_TO_ORDER_MODE) selected = ['paylater'];
 
-      // Sync customer name to hidden input in form
-      var nameInput = document.getElementById('cpCustomerName');
-      var existingName = form.querySelector('input[name="customer_name"]');
-      if (!existingName) {
-        existingName = document.createElement('input');
-        existingName.type = 'hidden'; existingName.name = 'customer_name';
-        form.appendChild(existingName);
-      }
-      existingName.value = nameInput ? nameInput.value : '';
+      // Customer name / stand number are properties of the ORDER, not of an add. In
+      // add-to-order mode the fields aren't rendered and nothing is posted, so the
+      // existing order keeps its own name and stand.
+      if (!ADD_TO_ORDER_MODE) {
+        // Sync customer name to hidden input in form
+        var nameInput = document.getElementById('cpCustomerName');
+        var existingName = form.querySelector('input[name="customer_name"]');
+        if (!existingName) {
+          existingName = document.createElement('input');
+          existingName.type = 'hidden'; existingName.name = 'customer_name';
+          form.appendChild(existingName);
+        }
+        existingName.value = nameInput ? nameInput.value : '';
 
-      // Sync table number to hidden input in form
-      var tableInput = document.getElementById('cpTableNumber');
-      var existingTable = form.querySelector('input[name="table_number"]');
-      if (!existingTable) {
-        existingTable = document.createElement('input');
-        existingTable.type = 'hidden'; existingTable.name = 'table_number';
-        form.appendChild(existingTable);
+        // Sync table number to hidden input in form
+        var tableInput = document.getElementById('cpTableNumber');
+        var existingTable = form.querySelector('input[name="table_number"]');
+        if (!existingTable) {
+          existingTable = document.createElement('input');
+          existingTable.type = 'hidden'; existingTable.name = 'table_number';
+          form.appendChild(existingTable);
+        }
+        existingTable.value = (tableInput && document.getElementById('cpOrderTypeInput').value === 'drink_in') ? tableInput.value : '';
       }
-      existingTable.value = (tableInput && document.getElementById('cpOrderTypeInput').value === 'drink_in') ? tableInput.value : '';
 
       var total = cpGetCartTotal();
       var splits = document.querySelectorAll('.cp-split-amount');
@@ -2069,6 +2202,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (['b','c','p','r'].includes(key)) {
       e.preventDefault();
       if (!modalOpen) cpOpenPayModal();
+      // Stand gate is up (or opening async) — don't pre-select a method behind it.
+      if (document.getElementById('cpStandGate') || !document.getElementById('cpPayModal').classList.contains('active')) return;
       var map = { b:'bakong', c:'cash', p:'paylater', r:'riel' };
       cpClickPayMethod(map[key]);
     } else if (key === 'enter') {
@@ -2272,8 +2407,11 @@ function cpToggleStandGrid() {
           cells += '<div onclick="cpPickStand(' + i + ')" style="display:flex;align-items:center;justify-content:center;height:36px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;background:rgba(62,207,112,.15);color:#3ecf70;border:1px solid rgba(62,207,112,.3);transition:transform .1s;" onmouseover="this.style.transform=\'scale(1.1)\'" onmouseout="this.style.transform=\'\'">' + i + '</div>';
         }
       }
+      // Cells scroll inside a capped box (.stand-cells) — STAND_COUNT is configurable
+      // (70+ is valid) and .cp-summary can't grow past the panel, so an uncapped grid
+      // gets clipped with no way to reach the lower stands. Legend stays outside it.
       grid.innerHTML =
-        '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">' + cells + '</div>' +
+        '<div class="stand-cells">' + cells + '</div>' +
         '<div style="margin-top:8px;font-size:10px;color:#666;display:flex;gap:12px;">' +
         '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(62,207,112,.15);border:1px solid rgba(62,207,112,.3);vertical-align:middle;margin-right:3px;"></span>Free</span>' +
         '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,.18);border:1px solid rgba(231,76,60,.35);vertical-align:middle;margin-right:3px;"></span>In use</span>' +

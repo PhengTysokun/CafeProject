@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $qtys = isset($_POST['qtys']) ? json_decode($_POST['qtys'], true) : [];
 
     // Verify order is still editable and fetch order_date to preserve happy hour
-    $stmt = $conn->prepare("SELECT order_id, order_date, loyalty_card_id, points_earned FROM orders WHERE order_id = ? AND payment_method = 'paylater' AND status = 'Preparing'");
+    $stmt = $conn->prepare("SELECT order_id, order_date, total, loyalty_card_id, points_earned FROM orders WHERE order_id = ? AND payment_method = 'paylater' AND status = 'Preparing'");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
     $editable_order = $stmt->get_result()->fetch_assoc();
@@ -107,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Snapshot current quantities BEFORE mutating, then for each item compute
         // new-vs-old: removed → restore full, reduced → restore diff, increased → deduct diff.
         $pre = [];
-        $stmt_pre = $conn->prepare("SELECT item_id, product_id, quantity, milk, made_qty FROM order_items WHERE order_id = ?");
+        $stmt_pre = $conn->prepare("SELECT item_id, product_id, product_name, quantity, milk, made_qty FROM order_items WHERE order_id = ?");
         $stmt_pre->bind_param("i", $order_id);
         $stmt_pre->execute();
         $pre_res = $stmt_pre->get_result();
@@ -204,6 +204,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt_upd = $conn->prepare("UPDATE orders SET total = ?, promotion_discount = ? WHERE order_id = ?");
         $stmt_upd->bind_param("ddi", $total, $total_discount, $order_id);
         $stmt_upd->execute();
+
+        // ── AUDIT ── Record what this edit did to a already-placed order. Revenue on the
+        // dashboard/report is SUM(orders.total), so an edit here moves the reported figures;
+        // this is the trail that says who moved them. Written inside the transaction so the
+        // log can't claim a change that was rolled back.
+        $_changes = [];
+        foreach ($pre as $iid => $r) {
+            $nm   = $r['product_name'] ?? ('item ' . $iid);
+            $oldQ = (int)$r['quantity'];
+            if (in_array($iid, $remove_ids)) {
+                $_changes[] = "removed {$nm} x{$oldQ}";
+            } elseif (isset($qtys[$iid])) {
+                $newQ = max(1, (int)$qtys[$iid]);
+                if ($newQ !== $oldQ) $_changes[] = "{$nm} qty {$oldQ}→{$newQ}";
+            }
+        }
+        if ($_changes) {
+            $_total_before = (float)($editable_order['total'] ?? 0);
+            log_order_audit($conn, $order_id, 'items_edited', implode('; ', $_changes), $_total_before, $total);
+        }
 
         // ── LOYALTY: keep points in sync with the new drink count ──
         // Points were granted at order creation (points_earned). After editing, adjust

@@ -88,6 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <title>Add Ingredient | Obsidian Cafe</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){var t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();</script>
 
 <style>
 /* ── RESET & ROOT ── */
@@ -104,7 +105,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     --text-muted: #aaa;
     --text-light: #f5f5f5;
     --danger: #ff7b7b;
-    
+    --bg-input: #161616;
+    --bg-input-focus: #1a1a1a;
+    --placeholder: #555;
+
     /* ── Shadow System ── */
     --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
     --shadow-md: 0 4px 20px rgba(0,0,0,0.4);
@@ -113,6 +117,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     /* ── Transitions ── */
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="light"] {
+    --bg: #f5f0eb;
+    --bg-card: #ffffff;
+    --bg-card-hover: #fdf8f3;
+    --border: #e8ddd2;
+    --border-hover: #d4c4b0;
+    --text: #1a1008;
+    --text-muted: #7a6a58;
+    --text-light: #1a1008;
+    --bg-input: #f0e9e0;
+    --bg-input-focus: #fdf8f3;
+    --placeholder: #a89a88;
 }
 
 /* ── RESET: Remove all scrollbars ── */
@@ -232,7 +250,7 @@ body::after {
 
 /* ── Card ── */
 .card {
-    background: rgba(18, 18, 18, 0.95);
+    background: var(--bg-card);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--border);
@@ -358,7 +376,7 @@ label i {
     padding: 14px 16px;
     border-radius: 12px;
     border: 1px solid var(--border);
-    background: #161616;
+    background: var(--bg-input);
     color: var(--text);
     font-size: 15px;
     font-family: 'Poppins', sans-serif;
@@ -366,16 +384,16 @@ label i {
     outline: none;
     appearance: none;
 }
-.input-wrapper select option { background: #1a1a1a; }
+.input-wrapper select option { background: var(--bg-input-focus); color: var(--text); }
 
 .input-wrapper input::placeholder {
-    color: #555;
+    color: var(--placeholder);
 }
 
 .input-wrapper input:focus,
 .input-wrapper select:focus {
     border-color: var(--accent);
-    background: #1a1a1a;
+    background: var(--bg-input-focus);
     box-shadow: var(--shadow-accent);
 }
 
@@ -615,7 +633,7 @@ label i {
             <?php if (!empty($supplierList)): ?>
             <div class="form-group">
                 <label>
-                    <i class="fa-solid fa-truck-ramp-box"></i> Preferred Supplier <span style="font-size:11px;color:#555;font-weight:400">(optional)</span>
+                    <i class="fa-solid fa-truck-ramp-box"></i> Preferred Supplier <span style="font-size:11px;color:var(--text-muted);font-weight:400">(optional)</span>
                 </label>
                 <div class="input-wrapper">
                     <select name="supplier_id">
@@ -635,6 +653,16 @@ label i {
         </form>
     </div>
 </div>
+
+<script>
+// follows shared theme key (toggled elsewhere)
+window.addEventListener('storage', function (e) {
+    if (e.key === 'theme') {
+        if (e.newValue === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        else document.documentElement.removeAttribute('data-theme');
+    }
+});
+</script>
 
 </body>
 </html>

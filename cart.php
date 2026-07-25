@@ -1111,6 +1111,16 @@ body {
     from { opacity:0; transform:translateY(8px); }
     to   { opacity:1; transform:translateY(0); }
 }
+
+/* Stand picker cells: scrolls (STAND_COUNT is configurable) but no visible
+   scrollbar. overflow-x hidden or the reserved gutter pushes the columns wide
+   enough to add a horizontal bar too. */
+.stand-cells {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+    gap: 6px; max-height: 190px; overflow-y: auto; overflow-x: hidden;
+    scrollbar-width: none; -ms-overflow-style: none;
+}
+.stand-cells::-webkit-scrollbar { display: none; }
 </style>
 </head>
 
@@ -1389,7 +1399,7 @@ body {
                        placeholder="Leave blank for Guest">
             </div>
             <div class="form-group" id="tableNumberGroup">
-                <label for="table_number" style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-ticket"></i> Stand Number <span style="color:var(--text-muted);font-weight:400;font-size:12px;">(optional)</span><button type="button" onclick="toggleStandGrid('standGrid','table_number','standWarn','standWarnText')" style="margin-left:auto;background:none;border:1px solid var(--border-color,#ccc);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--text-secondary,#888);display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-table-cells-large"></i> Pick</button></label>
+                <label for="table_number" style="display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-ticket"></i> Stand Number <span style="color:#f0ad4e;font-weight:600;font-size:12px;">(required for Drink In)</span><button type="button" onclick="toggleStandGrid('standGrid','table_number','standWarn','standWarnText')" style="margin-left:auto;background:none;border:1px solid var(--border-color,#ccc);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--text-secondary,#888);display:flex;align-items:center;gap:4px;"><i class="fa-solid fa-table-cells-large"></i> Pick</button></label>
                 <input type="text" name="table_number" id="table_number" maxlength="10"
                        placeholder="e.g. 1, 7, 12..." onblur="checkStandNumber(this.value,'standWarn','standWarnText')">
                 <div id="standWarn" style="display:none;margin-top:6px;padding:7px 10px;background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.4);border-radius:8px;font-size:12px;color:#856404;align-items:center;gap:6px;"><i class="fa-solid fa-triangle-exclamation" style="color:#f0ad4e;"></i> <span id="standWarnText"></span></div>
@@ -1937,9 +1947,28 @@ function updateSplitAmounts() {
 }
 
 // ── Checkout Form Submit ──
+// ── STAND NUMBER GATE ──
+// Mirrors menu.php: a Drink In order with no stand can't be delivered, so it blocks.
+// Softens to an override only when every stand is occupied (or occupancy can't be
+// read), so the till is never stuck. See standGateShow below.
+let __standChecked = false;
+
 document.getElementById('checkoutForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    
+
+    if (!__standChecked) {
+        const __form = this;
+        // requestSubmit() is ignored while this submit event is still firing, so the
+        // resubmit is deferred a tick — the gate's sync path (stand already filled)
+        // would otherwise silently do nothing.
+        requireStand(function() {
+            __standChecked = true;
+            setTimeout(function() { __form.requestSubmit(); }, 0);
+        });
+        return;
+    }
+    __standChecked = false;   // reset so the next attempt is re-checked
+
     const selected = [];
     const selectedAmounts = [];
     
@@ -2242,6 +2271,104 @@ async function redeemReward(rewardName, pointsRequired) {
 // ── Stand occupancy grid ──
 var STAND_MAX = <?= STAND_COUNT ?>;
 
+// ── Stand number gate (see the submit handler above) ──
+// Mirrors menu.php. The only way past is the takeaway path, which REQUIRES a
+// customer name — the barista card shows a name only when it isn't 'Guest'
+// (view_order.php), so a nameless drink_out order is still a mystery drink.
+function standGateShow(freeCount, onTakeaway) {
+    var allBusy = freeCount === 0;
+    var old = document.getElementById('standGate');
+    if (old) old.remove();
+    var wrap = document.createElement('div');
+    wrap.id = 'standGate';
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px;';
+    wrap.innerHTML =
+      '<div style="background:var(--bg-card,#161616);border:1px solid rgba(255,193,7,.35);border-radius:16px;padding:26px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);">' +
+        '<div style="font-size:38px;color:#f0ad4e;margin-bottom:12px;"><i class="fa-solid fa-hashtag"></i></div>' +
+        '<div style="font-size:17px;font-weight:700;color:var(--text-primary,#fff);margin-bottom:8px;">Stand Number Required</div>' +
+        '<div style="font-size:13px;color:var(--text-muted,#9a9a9a);line-height:1.6;margin-bottom:18px;">' +
+          (allBusy
+            ? 'Every stand is currently in use. Ask staff to release returned placards on the Stands page, or hand this order over the counter.'
+            : 'This is a <b>Drink In</b> order. Without a stand number, staff won\'t know where to deliver it.') +
+        '</div>' +
+        '<div id="standGateChoices" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
+          '<button type="button" id="standGateSet" style="padding:11px 20px;border-radius:50px;border:none;background:#d1904b;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">' +
+            '<i class="fa-solid fa-table-cells-large"></i> Set Stand</button>' +
+          '<button type="button" id="standGateTa" style="padding:11px 20px;border-radius:50px;border:1px solid var(--border-color,rgba(255,255,255,.2));background:transparent;color:var(--text-muted,#bbb);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">' +
+            '<i class="fa-solid fa-bag-shopping"></i> No stand — Takeaway</button>' +
+        '</div>' +
+        '<div id="standGateName" style="display:none;margin-top:16px;text-align:left;">' +
+          '<div style="font-size:12px;color:var(--text-muted,#9a9a9a);margin-bottom:6px;">Customer name so the barista can call it out:</div>' +
+          '<input type="text" id="standGateNameInput" maxlength="120" placeholder="e.g. Sokha" ' +
+            'style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border-color,rgba(255,255,255,.15));background:var(--bg-card-hover,#101010);color:var(--text-primary,#eee);font-size:13px;font-family:inherit;">' +
+          '<div id="standGateNameErr" style="display:none;margin-top:6px;font-size:11.5px;color:#ff6b6b;"></div>' +
+          '<button type="button" id="standGateTaGo" style="margin-top:10px;width:100%;padding:11px 20px;border-radius:50px;border:none;background:#d1904b;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">' +
+            '<i class="fa-solid fa-check"></i> Confirm Takeaway</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    function close() { wrap.remove(); }
+    wrap.addEventListener('click', function(e) { if (e.target === wrap) close(); });
+
+    document.getElementById('standGateSet').onclick = function() {
+        close();
+        var inp = document.getElementById('table_number');
+        if (inp) inp.focus();
+        var grid = document.getElementById('standGrid');
+        if (grid && grid.style.display === 'none') toggleStandGrid('standGrid', 'table_number', 'standWarn', 'standWarnText');
+    };
+
+    document.getElementById('standGateTa').onclick = function() {
+        document.getElementById('standGateChoices').style.display = 'none';
+        document.getElementById('standGateName').style.display = 'block';
+        var ni = document.getElementById('standGateNameInput');
+        var existing = document.querySelector('[name="customer_name"]');
+        if (existing && existing.value.trim()) ni.value = existing.value.trim();
+        ni.focus();
+    };
+
+    function submitTakeaway() {
+        var ni  = document.getElementById('standGateNameInput');
+        var err = document.getElementById('standGateNameErr');
+        var name = ni.value.trim();
+        if (name === '' || name.toLowerCase() === 'guest') {
+            err.textContent = name === '' ? 'Enter a name — the barista has no stand to deliver to.'
+                                          : '"Guest" won\'t help the barista find them. Use a real name.';
+            err.style.display = 'block';
+            ni.focus();
+            return;
+        }
+        var cn = document.querySelector('[name="customer_name"]');
+        if (cn) cn.value = name;
+        var tn = document.getElementById('table_number');
+        if (tn) tn.value = '';
+        var ot = document.getElementById('orderTypeInput');
+        if (ot) ot.value = 'drink_out';
+        if (typeof setDrinkType === 'function') { try { setDrinkType('drink_out'); } catch (e) {} }
+        close();
+        onTakeaway();
+    }
+    document.getElementById('standGateTaGo').onclick = submitTakeaway;
+    document.getElementById('standGateNameInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitTakeaway(); }
+    });
+}
+
+function requireStand(onOk) {
+    var typeEl = document.getElementById('orderTypeInput');
+    if (!typeEl || typeEl.value !== 'drink_in') { onOk(); return; }
+    var inp = document.getElementById('table_number');
+    if (inp && inp.value.trim() !== '') { onOk(); return; }
+    fetch('get_stands.php')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var active = d.stands || {}, free = 0;
+            for (var i = 1; i <= STAND_MAX; i++) { if (!active[String(i)]) free++; }
+            standGateShow(free, onOk);
+        })
+        .catch(function() { standGateShow(0, onOk); });  // lookup failed — allow override
+}
+
 function toggleStandGrid(gridId, inputId, warnId, warnTextId) {
     var grid = document.getElementById(gridId);
     if (!grid) return;
@@ -2268,8 +2395,10 @@ function loadStandGrid(gridId, inputId, warnId, warnTextId) {
                     cells += '<div onclick="pickStand(' + i + ',\'' + inputId + '\',\'' + gridId + '\',\'' + warnId + '\',\'' + warnTextId + '\')" style="display:flex;align-items:center;justify-content:center;height:36px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;background:#dcfce7;color:#15803d;border:1px solid #86efac;transition:transform .1s;" onmouseover="this.style.transform=\'scale(1.1)\'" onmouseout="this.style.transform=\'\'">' + i + '</div>';
                 }
             }
+            // Cells scroll inside a capped box (.stand-cells) — STAND_COUNT is
+            // configurable (70+ is valid) and an uncapped grid runs off the page.
             grid.innerHTML =
-                '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">' + cells + '</div>' +
+                '<div class="stand-cells">' + cells + '</div>' +
                 '<div style="margin-top:8px;font-size:10px;color:#888;display:flex;gap:12px;">' +
                 '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dcfce7;border:1px solid #86efac;vertical-align:middle;margin-right:3px;"></span>Free — click to pick</span>' +
                 '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#fee2e2;border:1px solid #fca5a5;vertical-align:middle;margin-right:3px;"></span>In use — hover for details</span>' +

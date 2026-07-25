@@ -104,7 +104,9 @@ try {
             // 3. If no pending payments, advance order status
             if ($pending['pending_count'] == 0) {
                 if ($order['payment_method'] === 'paylater') {
-                    // Paylater order settled via Bakong at the counter → mark Paid & close (drops from unpaid list)
+                    // Paylater settled via Bakong → 'Paid' + closed. 'Paid' is the SETTLED
+                    // state; find_order.php treats paylater orders on 'Completed' as still
+                    // owing, so this must not be changed to preserve fulfilment state.
                     $stmt_status = $conn->prepare("
                         UPDATE orders SET status = 'Paid', is_open = 0
                         WHERE order_id = ?

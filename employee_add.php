@@ -113,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <title>Add Employee | Bird's Nest Coffee</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){var t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();</script>
 <style>
 :root {
     --accent: #d1904b;
@@ -129,9 +130,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     --text-muted: #888;
     --text-dim: #444;
     --input: #0c0c0c;
+    --nav-bg: rgba(8,8,8,0.92);
+    --menu-bg: #141414;
+    --scheme: dark;
     --shadow-accent: 0 4px 20px rgba(209,144,75,0.2);
     --radius: 14px;
     --transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+
+[data-theme="light"] {
+    --bg: #f5f0eb;
+    --bg-card: #ffffff;
+    --border: #e8ddd2;
+    --border-hover: #d4c4b0;
+    --text: #1a1008;
+    --text-muted: #7a6a58;
+    --text-dim: #b3a591;
+    --input: #f0e9e0;
+    --nav-bg: rgba(245,240,235,0.92);
+    --menu-bg: #ffffff;
+    --scheme: light;
 }
 
 *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -155,7 +173,7 @@ body {
     position: sticky;
     top: 0;
     z-index: 100;
-    background: rgba(8,8,8,0.92);
+    background: var(--nav-bg);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border);
     padding: 0 28px;
@@ -286,7 +304,7 @@ body {
     border: 2px dashed var(--border);
     transition: var(--transition);
     overflow: hidden;
-    background: #0a0a0a;
+    background: var(--input);
 }
 
 .photo-drop:hover,
@@ -488,7 +506,7 @@ body {
 .input-wrapper input[type="date"] {
     -webkit-appearance: auto;
     appearance: auto;
-    color-scheme: dark;
+    color-scheme: var(--scheme);
 }
 
 .input-wrapper textarea {
@@ -804,7 +822,7 @@ kbd {
 .cdd-menu {
     display: none;
     position: absolute; top: 100%; left: 0; right: 0;
-    background: #141414;
+    background: var(--menu-bg);
     border: 1px solid var(--accent);
     border-top: none;
     border-radius: 0 0 12px 12px;
@@ -1645,6 +1663,14 @@ document.getElementById('addForm').addEventListener('submit', function() {
     const btn = document.getElementById('submitBtn');
     btn.classList.add('loading');
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+});
+
+// follows shared theme key (toggled elsewhere)
+window.addEventListener('storage', function (e) {
+    if (e.key === 'theme') {
+        if (e.newValue === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        else document.documentElement.removeAttribute('data-theme');
+    }
 });
 </script>
 </body>

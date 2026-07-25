@@ -23,14 +23,23 @@ if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', 
     die("Invalid request. Please try again from the cart page.");
 }
 
+// Declared up-front: adding to an existing order must not re-apply order-level fields
+// (customer name, stand) that already belong to that order.
+$is_add_to_order = ($_POST['is_add_to_order'] ?? '0') === '1';
+
 $customer_name = trim($_POST['customer_name'] ?? '');
 if (strlen($customer_name) < 1 || strlen($customer_name) > 120) {
     $customer_name = 'Guest';
 }
-$_SESSION['customer_name'] = $customer_name;
+if (!$is_add_to_order) {
+    $_SESSION['customer_name'] = $customer_name;
+}
 
 $order_type    = in_array($_POST['order_type'] ?? '', ['drink_in','drink_out']) ? $_POST['order_type'] : 'drink_in';
 $table_number  = ($order_type === 'drink_in') ? (substr(trim($_POST['table_number'] ?? ''), 0, 10) ?: null) : null;
+if ($is_add_to_order) {
+    $table_number = null;   // never re-stamp or re-validate the stand on an add
+}
 
 // ── STAND DUPLICATE BLOCK ──
 if (!empty($table_number)) {
@@ -85,7 +94,6 @@ if (in_array('riel', $payment_methods) && count($payment_methods) > 1) {
 // Only honour the session var when the form explicitly declares add-to-order mode.
 // A stale $_SESSION['add_to_order_id'] left over from a previous, abandoned
 // add-to-order flow would otherwise hijack every subsequent normal checkout.
-$is_add_to_order   = ($_POST['is_add_to_order'] ?? '0') === '1';
 $existing_order_id = ($is_add_to_order && isset($_SESSION['add_to_order_id']))
     ? (int)$_SESSION['add_to_order_id']
     : 0;

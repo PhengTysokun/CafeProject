@@ -38,7 +38,7 @@ if (!$order) {
 
 // ── FETCH ITEMS ──
 $stmt = $conn->prepare("
-    SELECT product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot, promo_percent
+    SELECT product_name, price, quantity, size_label, sweetness, ice, milk, addons_snapshot, promo_percent, made_qty
     FROM order_items
     WHERE order_id = ?
 ");
@@ -51,6 +51,7 @@ $drinks = [];
 $rewards = [];
 $subtotal = 0;
 $total_qty = 0;
+$pending_qty = 0;   // drink units the barista hasn't made yet — counted BEFORE the merge below
 
 while ($item = $items->fetch_assoc()) {
     if (strpos($item['product_name'], '(Loyalty)') !== false) {
@@ -59,6 +60,7 @@ while ($item = $items->fetch_assoc()) {
         $drinks[] = $item;
         $subtotal += $item['price'] * $item['quantity'];
         $total_qty += $item['quantity'];
+        $pending_qty += max(0, (int)$item['quantity'] - (int)($item['made_qty'] ?? 0));
     }
 }
 
@@ -496,9 +498,17 @@ if ($order_loyalty['loyalty_card_id']) {
 </div>';
 }
 
+// Items are billed whether or not they are made yet — the total covers the whole order.
+// This note just tells the customer some drinks are still coming.
+$pending_note = '';
+if ($pending_qty > 0) {
+    $pending_note = '<p style="color: #e67e22;">* ' . (int)$pending_qty . ' item' . ($pending_qty > 1 ? 's' : '') . ' still being prepared.</p>';
+}
+
 $html .= '
 <div class="footer">
     <p>Thank you for being here!</p>
+    ' . $pending_note . '
     <p style="color: #9b59b6;">* This is a Pay Later order. Payment pending.</p>
 </div>
 

@@ -1595,14 +1595,11 @@ function showClockToast(msg, isErr) {
 
 <!-- Status Tabs -->
 <div class="status-tabs" id="statusTabs">
-    <?php if ($r !== 'staff' && $r !== 'barista'): ?>
+    <?php /* Awaiting-payment orders live in find_order.php, not on this board — so staff
+             now get "All" as their landing tab instead of the removed Pending tab. */ ?>
+    <?php if ($r !== 'barista'): ?>
     <button class="status-tab active" data-status="all" onclick="filterStatus('all')">
         📋 All <span class="badge" id="count-all">0</span>
-    </button>
-    <?php endif; ?>
-    <?php if ($r !== 'barista'): ?>
-    <button class="status-tab <?= $r === 'staff' ? 'active' : '' ?>" data-status="PendingPayment" onclick="filterStatus('PendingPayment')">
-        ⏳ Pending <span class="badge" id="count-PendingPayment">0</span>
     </button>
     <?php endif; ?>
     <?php if ($r !== 'staff'): ?>
@@ -1610,6 +1607,9 @@ function showClockToast(msg, isErr) {
         👨‍🍳 Preparing <span class="badge" id="count-Preparing">0</span>
     </button>
     <?php endif; ?>
+    <?php /* No Paid tab: 'Paid' is a payment state, and payment is find_order.php's job.
+             boardState() folds it into Preparing (still open, not made) or Completed
+             (settled and closed), so nothing is orphaned and the tabs still sum to All. */ ?>
     <?php if ($r !== 'barista'): ?>
     <button class="status-tab" data-status="Completed" onclick="filterStatus('Completed')">
         ✅ Completed <span class="badge" id="count-Completed">0</span>
@@ -1743,7 +1743,7 @@ function showClockToast(msg, isErr) {
 <script>
 const tbody = document.getElementById("ordersBody");
 const known = new Set();
-let currentFilter = '<?= ($_SESSION['role'] ?? '') === 'staff' ? 'PendingPayment' : (($_SESSION['role'] ?? '') === 'barista' ? 'Preparing' : 'all') ?>';
+let currentFilter = '<?= ($_SESSION['role'] ?? '') === 'barista' ? 'Preparing' : 'all' ?>';
 let showCompleted = true;
 let searchQuery = '';
 let currentCancelId = 0;
@@ -1822,15 +1822,28 @@ function buildItems(items) {
     return html;
 }
 
+// ── Board state ──
+// This board is about FULFILMENT; money lives in find_order.php. `orders.status`
+// mixes both concerns, so 'Paid' would otherwise surface as a money-word tab here.
+// Translate it into what it means for making drinks:
+//   Paid + is_open=0 → settled and closed, nothing left to do  → Completed
+//   Paid + is_open=1 → paid, tab still open, not yet made      → Preparing (work queue)
+// Everything else already names a fulfilment state. Action buttons deliberately keep
+// using the REAL o.status — only display/filtering is translated.
+function boardState(o) {
+    if (o.status === 'Paid') return Number(o.is_open) === 1 ? 'Preparing' : 'Completed';
+    return o.status;
+}
+
 // ── Determine Status Badge ──
 function getStatusBadge(status) {
     let statusClass = status;
     let statusText = status;
-    
+
     if (status === 'PendingPayment') {
         statusText = '⏳ Pending';
     } else if (status === 'Paid') {
-        statusText = '🕐 Queued';
+        statusText = '💵 Paid';
     } else if (status === 'Preparing') {
         statusText = '👨‍🍳 Preparing';
     } else if (status === 'Completed') {
@@ -1897,7 +1910,7 @@ function buildCardInner(o) {
         <div class="card-header">
             <div class="card-order-num">#${escapeHtml(String(o.daily_order_no))}</div>
             <div class="card-header-right">
-                ${getStatusBadge(o.status)}
+                ${getStatusBadge(boardState(o))}
                 ${ageBadgeHtml(o.order_date, o.status)}
                 ${o.remake_count > 0 ? `<span class="badge-remade"><i class="fa-solid fa-repeat" style="font-size:9px"></i> Remade${o.remake_count > 1 ? ` ×${o.remake_count}` : ''}</span>` : ''}
                 <div class="card-total">$${parseFloat(o.total || 0).toFixed(2)}</div>
@@ -1947,7 +1960,7 @@ function buildBaristaCardInner(o) {
     const overdue = o.status === 'Preparing' && age >= OVERDUE_MINUTES;
     const badge = o.status === 'Preparing'
         ? `<span class="bcard-badge ${overdue ? 'overdue' : 'prep'}">${overdue ? '<i class="fa-solid fa-circle-exclamation"></i> Overdue' : '<i class="fa-solid fa-hourglass-half"></i> Preparing'}</span>`
-        : getStatusBadge(o.status);
+        : getStatusBadge(boardState(o));
     // Barista sees only UNMADE drinks — made ones are hidden so the queue shows just what's
     // left to make (baristas don't triage new-vs-old, they only make what's shown). On a
     // re-opened tab the already-made drinks drop off; only the newly-added ones remain.
@@ -2069,7 +2082,7 @@ function addRow(o) {
     const card = document.createElement("div");
     card.id = "row-" + o.order_id;
     card.className = "order-card" + (o.remake_count > 0 ? " is-remade" : "");
-    card.dataset.status = o.status;
+    card.dataset.status = boardState(o);
     card.dataset.orderId = o.order_id;
     if (userRole === 'barista') {
         card.classList.add('bcard');
@@ -2173,7 +2186,7 @@ function updateExistingRow(o) {
     } else {
         card.style.display = '';
     }
-    card.dataset.status = o.status;
+    card.dataset.status = boardState(o);
     card.className = "order-card" + (o.remake_count > 0 ? " is-remade" : "");
     if (userRole === 'barista') {
         card.classList.add('bcard');
@@ -2250,17 +2263,19 @@ function updateCounts(data) {
         Refunded: 0
     };
     
+    // Count by BOARD state, not raw status, so the tabs always sum to All.
     data.forEach(o => {
         counts.all++;
-        if (counts[o.status] !== undefined) {
-            counts[o.status]++;
+        const s = boardState(o);
+        if (counts[s] !== undefined) {
+            counts[s]++;
         }
     });
-    
+
     const setCount = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     setCount('count-all', counts.all);
-    setCount('count-PendingPayment', counts.PendingPayment);
-    setCount('count-Paid', counts.Paid);
+    // No PendingPayment tab (worked in find_order.php) and no Paid tab (a money word on a
+    // fulfilment board) — boardState folds Paid into Preparing/Completed.
     setCount('count-Preparing', counts.Preparing);
     setCount('count-Completed', counts.Completed);
     setCount('count-Cancelled', counts.Cancelled);
@@ -2769,7 +2784,6 @@ loadOrders().then(() => {
     const highlight = params.get('highlight');
 
     if (tab) filterStatus(tab);
-    else if (userRole === 'staff') filterStatus('PendingPayment');
     else if (userRole === 'barista') filterStatus('Preparing');
 
     if (highlight) {
@@ -2906,6 +2920,7 @@ if ($action === "fetch") {
             o.table_number,
             o.order_type,
             o.payment_method,
+            o.is_open,
             COUNT(rm.id) AS remake_count,
             oc.cancel_reason,
             oc.cancelled_by,
@@ -2936,10 +2951,14 @@ if ($action === "fetch") {
         -- Show today's orders, PLUS any order whose terminal action happened today
         -- (a pay-later tab opened days ago but completed/cancelled/refunded today still
         --  belongs on today's board — otherwise it silently never appears).
-        WHERE o.business_date = ?
-           OR DATE(o.completed_at)  = ?
-           OR DATE(oc.cancelled_at) = ?
-           OR DATE(orr.refunded_at) = ?
+        -- PendingPayment is deliberately excluded: awaiting-payment orders are worked in
+        -- find_order.php (its own 'pending' tab). This board is for fulfilment. Leaving
+        -- them in would put them in the All list with no tab to filter by.
+        WHERE o.status <> 'PendingPayment'
+          AND ( o.business_date = ?
+             OR DATE(o.completed_at)  = ?
+             OR DATE(oc.cancelled_at) = ?
+             OR DATE(orr.refunded_at) = ? )
         GROUP BY o.order_id, oi.item_id, oi.product_name, oi.sweetness, oi.ice, oi.milk, oi.size_label, oi.addons_snapshot, oi.quantity, oi.made_at, oi.made_qty, oi.product_id, p.category
         ORDER BY
             CASE o.status
@@ -2984,6 +3003,9 @@ if ($action === "fetch") {
                 "refund_reason"        => $r['refund_reason'] ?? '',
                 "refunded_by"          => $r['refunded_by'] ?? '',
                 "remake_reasons" => $r['remake_reasons'] ? explode('|||', $r['remake_reasons']) : [],
+                // Needed by getStatusBadge to tell a queued 'Paid' order (is_open=1) from a
+                // settled pay-later tab (is_open=0) — same status, opposite meanings.
+                "is_open" => (int)($r['is_open'] ?? 0),
                 // Genuinely re-opened tab = was completed once (completed_at stamped) and is
                 // Preparing again. NOT derived from made_qty — with per-drink marking a made
                 // row no longer implies a re-open (tapping one drink would false-positive).

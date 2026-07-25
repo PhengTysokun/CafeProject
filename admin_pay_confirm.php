@@ -10,11 +10,16 @@ if ($order_id <= 0) {
 }
 
 // Determine correct next status
-$stmt_cur = $conn->prepare("SELECT status, payment_method, table_number FROM orders WHERE order_id = ?");
+$stmt_cur = $conn->prepare("SELECT status, payment_method, table_number, completed_at FROM orders WHERE order_id = ?");
 $stmt_cur->bind_param("i", $order_id);
 $stmt_cur->execute();
 $cur = $stmt_cur->get_result()->fetch_assoc();
 if ($cur && $cur['payment_method'] === 'paylater') {
+    // 'Paid' is the SETTLED state for a pay-later tab and must stay that way:
+    // find_order.php lists paylater orders still in ('Preparing','PendingPayment',
+    // 'Completed') as outstanding debt, so leaving a settled order on 'Completed'
+    // puts it back in the unpaid list. Fulfilment is shown from completed_at, not
+    // from this column.
     $new_status = 'Paid';
 } else {
     $new_status = ($cur && $cur['status'] === 'PendingPayment') ? 'Preparing' : 'Completed';

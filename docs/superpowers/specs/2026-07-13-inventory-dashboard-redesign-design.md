@@ -51,8 +51,10 @@ Reuses existing infrastructure already present in `dashboard.php`:
 | Pending POs | `SELECT COUNT(*) FROM purchase_orders WHERE status IN ('Draft','Ordered')` |
 | Monthly Usage (this month) | `SELECT IFNULL(SUM(amount),0) FROM ingredient_history WHERE change_type='order_deduct' AND YEAR(created_at)=YEAR(CURDATE()) AND MONTH(created_at)=MONTH(CURDATE())` |
 | Monthly Usage (last month) | same, previous calendar month → for the `% vs last month` delta |
-| Low-stock list | `SELECT name, stock_quantity, minimum_stock, unit FROM ingredients WHERE stock_quantity < minimum_stock ORDER BY (stock_quantity/NULLIF(minimum_stock,0)) ASC` (worst-first; verify `unit`/`name` column names at build) |
-| Recent Activity | `SELECT ih.change_type, ih.amount, ih.created_at, i.name FROM ingredient_history ih JOIN ingredients i ON ih.ingredient_id=i.ingredient_id WHERE ih.change_type NOT IN ('order_deduct','order_restore') ORDER BY ih.created_at DESC LIMIT 6` |
+| Low-stock list | `SELECT ingredient_name, stock_quantity, minimum_stock, unit FROM ingredients WHERE stock_quantity < minimum_stock ORDER BY (stock_quantity/NULLIF(minimum_stock,0)) ASC` (worst-first) |
+| Recent Activity | `SELECT ih.change_type, ih.amount, ih.created_at, i.ingredient_name FROM ingredient_history ih JOIN ingredients i ON ih.ingredient_id=i.ingredient_id WHERE ih.change_type NOT IN ('order_deduct','order_restore') ORDER BY ih.created_at DESC LIMIT 6` |
+
+**Confirmed columns** (`ingredients`): `ingredient_id`, `ingredient_name`, `stock_quantity`, `minimum_stock`, `unit`, `cost_per_unit`, `supplier_id`. There is **no** `name` column — use `ingredient_name`.
 
 **Why exclude `order_deduct`/`order_restore` from the feed:** those fire on every drink sale/void, which would flood the panel and bury the restock / PO-received / count-adjust events an inventory clerk actually acts on (and which the mockup shows). The feed is a *stock-management* log, not a sales log.
 
@@ -61,7 +63,7 @@ Monthly-usage `amount` sign for `order_deduct` to be confirmed at build (use `AB
 ## Components
 
 ### 1. Sidebar
-Bird's Nest brand/logo (unchanged), nav: Dashboard, Products, Ingredients, Recipes, Suppliers, Purchase Orders, Reports (if `can('report')`), Settings — each gated by existing `can()`. User profile block at bottom (existing pattern). The **Dashboard** nav item carries the active-pill state (amber rounded background) since this layout *is* the dashboard — the clerk should see where they are.
+NOTE: the current non-manager dashboard branch renders **no sidebar** (only `$_is_mgr` gets `.sidebar`). The inventory layout builds its **own** `.sidebar` reusing existing classes (`.sidebar`, `.sidebar-profile`, `.sidebar-header`, `.sidebar-nav`, `.nav-item`, `.nav-item.active`, `.order-badge`). Bird's Nest brand/logo (`fa-mug-hot` + "Bird's Nest", unchanged), nav: Dashboard, Products, Ingredients, Recipes, Suppliers, Purchase Orders, Reports (if `can('report')`), Settings — each gated by existing `can()`. User profile block at bottom (existing pattern). The **Dashboard** nav item carries the active-pill state (amber rounded background) since this layout *is* the dashboard — the clerk should see where they are.
 
 ### 2. Header
 `Good morning, {username}` + live date; right cluster = theme toggle, notifications bell (badge = `$_unread_ann`), Clock In/Out, Logout. Bell opens a dropdown that reuses the existing announcements render pipeline + `ann_dismissed` localStorage (identical mechanism to barista `#bNotifPanel`). "Good morning/afternoon/evening" chosen by server hour.

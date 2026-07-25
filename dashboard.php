@@ -33,17 +33,29 @@ $business_date = (int)$_now->format("H") < 6
     ? (clone $_now)->modify("-1 day")->format("Y-m-d")
     : $_now->format("Y-m-d");
 
-$sales_result   = mysqli_query($conn, "SELECT IFNULL(SUM(total),0) AS total_sales FROM orders WHERE DATE(order_date)=CURDATE() AND " . paid_orders_where());
-$sales          = mysqli_fetch_assoc($sales_result)['total_sales'];
+// All "today" figures key off business_date (6 AM rollover), NOT DATE(order_date)/CURDATE().
+// They used to disagree: between midnight and 6 AM the KPI values counted the calendar day
+// while the status pills below them counted the business day, so the same card contradicted
+// itself. business_date is what every other page uses — this is the single definition.
+$prev_business_date = (new DateTime($business_date))->modify('-1 day')->format('Y-m-d');
 
-$yesterday_result  = mysqli_query($conn, "SELECT IFNULL(SUM(total),0) AS yesterday_sales FROM orders WHERE DATE(order_date)=CURDATE()-INTERVAL 1 DAY AND " . paid_orders_where());
-$yesterday_sales   = mysqli_fetch_assoc($yesterday_result)['yesterday_sales'];
+$stmt_sales = $conn->prepare("SELECT IFNULL(SUM(total),0) AS total_sales FROM orders WHERE business_date=? AND " . paid_orders_where());
+$stmt_sales->bind_param("s", $business_date);
+$stmt_sales->execute();
+$sales = $stmt_sales->get_result()->fetch_assoc()['total_sales'];
+
+$stmt_yest = $conn->prepare("SELECT IFNULL(SUM(total),0) AS yesterday_sales FROM orders WHERE business_date=? AND " . paid_orders_where());
+$stmt_yest->bind_param("s", $prev_business_date);
+$stmt_yest->execute();
+$yesterday_sales   = $stmt_yest->get_result()->fetch_assoc()['yesterday_sales'];
 $sales_trend       = $yesterday_sales > 0 ? round(($sales - $yesterday_sales) / $yesterday_sales * 100, 1) : 0;
 $trend_class       = $sales_trend >= 0 ? 'up' : 'down';
 $trend_icon        = $sales_trend >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
 
-$order_result  = mysqli_query($conn, "SELECT COUNT(*) AS total_orders FROM orders WHERE DATE(order_date)=CURDATE()");
-$total_orders  = mysqli_fetch_assoc($order_result)['total_orders'];
+$stmt_ord = $conn->prepare("SELECT COUNT(*) AS total_orders FROM orders WHERE business_date=?");
+$stmt_ord->bind_param("s", $business_date);
+$stmt_ord->execute();
+$total_orders = $stmt_ord->get_result()->fetch_assoc()['total_orders'];
 
 $low_result  = mysqli_query($conn, "SELECT COUNT(*) AS low_count FROM ingredients WHERE stock_quantity < minimum_stock");
 $low_stock   = mysqli_fetch_assoc($low_result)['low_count'];
@@ -116,8 +128,10 @@ if (can('announcements')) {
     $_ar->close();
 }
 
-$unpaid_result = mysqli_query($conn, "SELECT COUNT(*) AS unpaid_count FROM orders WHERE status='PendingPayment' AND DATE(order_date)=CURDATE()");
-$unpaid_count  = mysqli_fetch_assoc($unpaid_result)['unpaid_count'];
+$stmt_unpaid = $conn->prepare("SELECT COUNT(*) AS unpaid_count FROM orders WHERE status='PendingPayment' AND business_date=?");
+$stmt_unpaid->bind_param("s", $business_date);
+$stmt_unpaid->execute();
+$unpaid_count = $stmt_unpaid->get_result()->fetch_assoc()['unpaid_count'];
 
 $paylater_result = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM orders WHERE payment_method='paylater' AND status IN ('Preparing','PendingPayment','Completed')");
 $paylater_count  = (int)mysqli_fetch_assoc($paylater_result)['cnt'];
@@ -142,13 +156,20 @@ $preparing_count = $status_counts['Preparing']      ?? 0;
 $completed_count = $status_counts['Completed']      ?? 0;
 $cancelled_count = $status_counts['Cancelled']      ?? 0;
 
-$items_sold_result = mysqli_query($conn, "SELECT IFNULL(SUM(oi.quantity),0) AS total_items FROM order_items oi JOIN orders o ON oi.order_id=o.order_id WHERE DATE(o.order_date)=CURDATE() AND " . paid_orders_where('o'));
-$items_sold = mysqli_fetch_assoc($items_sold_result)['total_items'];
+$stmt_items = $conn->prepare("SELECT IFNULL(SUM(oi.quantity),0) AS total_items FROM order_items oi JOIN orders o ON oi.order_id=o.order_id WHERE o.business_date=? AND " . paid_orders_where('o'));
+$stmt_items->bind_param("s", $business_date);
+$stmt_items->execute();
+$items_sold = $stmt_items->get_result()->fetch_assoc()['total_items'];
 
-$kitchen_result = mysqli_query($conn, "SELECT order_id, daily_order_no, customer_name, total, order_date, token_number FROM orders WHERE DATE(order_date)=CURDATE() AND status='Preparing' ORDER BY order_date ASC LIMIT 8");
+$stmt_kitchen = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, order_date, token_number FROM orders WHERE business_date=? AND status='Preparing' ORDER BY order_date ASC LIMIT 8");
+$stmt_kitchen->bind_param("s", $business_date);
+$stmt_kitchen->execute();
+$kitchen_result = $stmt_kitchen->get_result();
 
-$recent_sql = "SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() ORDER BY order_date DESC LIMIT 20";
-$recent_orders = mysqli_query($conn, $recent_sql);
+$stmt_recent = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE business_date=? ORDER BY order_date DESC LIMIT 20");
+$stmt_recent->bind_param("s", $business_date);
+$stmt_recent->execute();
+$recent_orders = $stmt_recent->get_result();
 
 $top_selling_result = mysqli_query($conn, "SELECT p.name, p.image, SUM(oi.quantity) as total_sold, p.price FROM products p JOIN order_items oi ON p.product_id=oi.product_id JOIN orders o ON oi.order_id=o.order_id WHERE " . paid_orders_where('o') . " GROUP BY p.product_id ORDER BY total_sold DESC LIMIT 5");
 
@@ -156,8 +177,8 @@ $activity_result = mysqli_query($conn, "SELECT * FROM (SELECT 'order' as type, o
 
 $filter_status = isset($_GET['status']) ? trim($_GET['status']) : '';
 if ($filter_status) {
-    $stmt_filter = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE DATE(order_date)=CURDATE() AND status=? ORDER BY order_date DESC LIMIT 20");
-    $stmt_filter->bind_param("s", $filter_status);
+    $stmt_filter = $conn->prepare("SELECT order_id, daily_order_no, customer_name, total, status, order_date FROM orders WHERE business_date=? AND status=? ORDER BY order_date DESC LIMIT 20");
+    $stmt_filter->bind_param("ss", $business_date, $filter_status);
     $stmt_filter->execute();
     $recent_orders = $stmt_filter->get_result();
 }
@@ -561,6 +582,18 @@ body.no-sidebar{--sidebar-w:0px;}
 .kpi-card.c-amber { --kc:var(--amber);   --kg:var(--amber-dim);   }
 .kpi-card.c-green { --kc:var(--emerald); --kg:var(--emerald-dim); }
 .kpi-card.c-blue  { --kc:var(--blue);    --kg:var(--blue-dim);    }
+
+/* KPI cards are links to the records behind the number — the figure is never a
+   dead end, you can always open the orders it was computed from. */
+a.kpi-card { display:block; text-decoration:none; color:inherit; cursor:pointer; }
+.kpi-drill{
+    position:absolute; right:16px; bottom:14px;
+    font-size:11px; font-weight:600; color:var(--kc,var(--amber));
+    opacity:0; transform:translateX(-4px);
+    transition:.22s var(--ease); pointer-events:none;
+}
+a.kpi-card:hover .kpi-drill{ opacity:.95; transform:translateX(0); }
+@media (hover:none){ .kpi-drill{ opacity:.7; transform:none; } }
 
 .kpi-watermark{
     position:absolute;right:16px;bottom:10px;
@@ -1482,9 +1515,10 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
     <!-- KPI ROW -->
     <div class="kpi-row fu" style="animation-delay:.1s">
 
-        <!-- Revenue -->
-        <div class="kpi-card c-amber">
+        <!-- Revenue → the day's report (payment breakdown + the orders it sums) -->
+        <a href="report.php?mode=daily&amp;date=<?= urlencode($business_date) ?>" class="kpi-card c-amber" title="Open today's sales report">
             <i class="kpi-watermark fa-solid fa-dollar-sign"></i>
+            <span class="kpi-drill">View report <i class="fa-solid fa-arrow-right"></i></span>
             <div class="kpi-label">Today's Revenue</div>
             <div class="kpi-value">$<span id="kpiRevenue"><?= number_format($sales, 2) ?></span></div>
             <?php if ($sales <= 0): ?>
@@ -1497,29 +1531,31 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
             <?php else: ?>
             <span class="kpi-pill flat"><i class="fa-solid fa-minus"></i> No data yesterday</span>
             <?php endif; ?>
-        </div>
+        </a>
 
-        <!-- Orders -->
-        <div class="kpi-card c-green">
+        <!-- Orders → the order board holding these orders -->
+        <a href="view_order.php" class="kpi-card c-green" title="Open the orders board">
             <i class="kpi-watermark fa-solid fa-receipt"></i>
+            <span class="kpi-drill">View orders <i class="fa-solid fa-arrow-right"></i></span>
             <div class="kpi-label">Orders Today</div>
             <div class="kpi-value"><span id="kpiOrders"><?= (int)$total_orders ?></span></div>
             <span class="kpi-pill flat">
                 <i class="fa-solid fa-circle-check"></i>
                 <?= $completed_count ?> completed
             </span>
-        </div>
+        </a>
 
-        <!-- Items Sold -->
-        <div class="kpi-card c-blue">
+        <!-- Items Sold → the report's item/product breakdown -->
+        <a href="report.php?mode=daily&amp;date=<?= urlencode($business_date) ?>#kv-items" class="kpi-card c-blue" title="Open the item breakdown">
             <i class="kpi-watermark fa-solid fa-mug-hot"></i>
+            <span class="kpi-drill">View breakdown <i class="fa-solid fa-arrow-right"></i></span>
             <div class="kpi-label">Items Served</div>
             <div class="kpi-value"><span id="kpiItems"><?= (int)$items_sold ?></span></div>
             <span class="kpi-pill flat">
                 <i class="fa-solid fa-box-open"></i>
                 from completed orders
             </span>
-        </div>
+        </a>
 
     </div>
 
@@ -1620,7 +1656,12 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
     <div class="panel fu" style="animation-delay:.2s">
         <div class="panel-head">
             <h3><i class="fa-solid fa-clock-rotate-left"></i> Recent Orders</h3>
-            <a href="view_order.php" class="panel-link">View all <i class="fa-solid fa-arrow-right"></i></a>
+            <div style="display:flex;gap:14px;align-items:center;">
+                <?php if ($_is_mgr): ?>
+                <a href="order_audit.php" class="panel-link" title="Who changed an order after it was placed">Change log <i class="fa-solid fa-shield-halved"></i></a>
+                <?php endif; ?>
+                <a href="view_order.php" class="panel-link">View all <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
         </div>
         <table class="orders-tbl">
             <thead>
