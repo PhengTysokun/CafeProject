@@ -7,17 +7,33 @@ $po_id = (int)($_GET['po_id'] ?? 0);
 if ($po_id <= 0) { header('Location: purchase_orders.php'); exit; }
 
 $created_msg = isset($_GET['created']) ? 'Purchase order created successfully.' : '';
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+// These actions can be fired from the PO list as well as this page; send the user
+// back where they came from so a one-click receive from the list stays on the list.
+$from_list = ($_POST['return'] ?? '') === 'list';
+function po_redirect(bool $from_list, int $po_id, string $msg): void {
+    header($from_list
+        ? "Location: purchase_orders.php?msg=$msg"
+        : "Location: purchase_order_view.php?po_id=$po_id&msg=$msg");
+    exit;
+}
 
 // ── HANDLE STATUS ACTIONS ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
+    // Every action below mutates stock or PO state.
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        po_redirect($from_list, $po_id, 'badtoken');
+    }
+
     if ($action === 'mark_ordered') {
         $stmt = $conn->prepare("UPDATE purchase_orders SET status='Ordered', ordered_at=NOW() WHERE po_id=? AND status='Draft'");
         $stmt->bind_param('i', $po_id);
         $stmt->execute();
-        header("Location: purchase_order_view.php?po_id=$po_id&msg=ordered");
-        exit;
+        if ($stmt->affected_rows === 0) po_redirect($from_list, $po_id, 'nochange');
+        po_redirect($from_list, $po_id, 'ordered');
     }
 
     if ($action === 'mark_received') {
@@ -27,6 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $s1 = $conn->prepare("UPDATE purchase_orders SET status='Received', received_at=NOW() WHERE po_id=? AND status='Ordered'");
             $s1->bind_param('i', $po_id);
             $s1->execute();
+
+            // Atomically claim the receive. Without this the stock loop below would
+            // still run on an already-Received PO (double-submit, back-button re-POST,
+            // double-click on the list button) and add every quantity to stock twice.
+            if ($s1->affected_rows === 0) {
+                $conn->rollback();
+                po_redirect($from_list, $po_id, 'nochange');
+            }
 
             // Fetch items and update stock
             $items = $conn->prepare("SELECT ingredient_id, qty_ordered FROM purchase_order_items WHERE po_id=?");
@@ -52,8 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hist->execute();
             }
             $conn->commit();
-            header("Location: purchase_order_view.php?po_id=$po_id&msg=received");
-            exit;
+            po_redirect($from_list, $po_id, 'received');
         } catch (Exception $e) {
             $conn->rollback();
             $err_msg = $e->getMessage();
@@ -64,8 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("UPDATE purchase_orders SET status='Cancelled' WHERE po_id=? AND status IN ('Draft','Ordered')");
         $stmt->bind_param('i', $po_id);
         $stmt->execute();
-        header("Location: purchase_order_view.php?po_id=$po_id&msg=cancelled");
-        exit;
+        if ($stmt->affected_rows === 0) po_redirect($from_list, $po_id, 'nochange');
+        po_redirect($from_list, $po_id, 'cancelled');
     }
 }
 
@@ -98,12 +121,14 @@ $msg_text = match($_GET['msg'] ?? '') {
     'ordered'   => ['text'=>'Status updated to Ordered.',    'type'=>'info'],
     'received'  => ['text'=>'Stock updated — marked Received!','type'=>'success'],
     'cancelled' => ['text'=>'Purchase order cancelled.',      'type'=>'danger'],
+    'nochange'  => ['text'=>'No change — this order was already updated.','type'=>'info'],
+    'badtoken'  => ['text'=>'Session expired. Reload and try again.','type'=>'danger'],
     default     => null,
 };
 if ($created_msg) $msg_text = ['text'=>$created_msg, 'type'=>'success'];
 
 $statusColors = [
-    'Draft'     => ['bg'=>'rgba(255,255,255,.06)',  'color'=>'#888',     'icon'=>'fa-pen'],
+    'Draft'     => ['bg'=>'rgba(136,136,136,.18)',   'color'=>'#888',     'icon'=>'fa-pen'],
     'Ordered'   => ['bg'=>'rgba(52,152,219,.15)',   'color'=>'#3498db',  'icon'=>'fa-clock'],
     'Received'  => ['bg'=>'rgba(85,224,135,.13)',   'color'=>'#55e087',  'icon'=>'fa-check-circle'],
     'Cancelled' => ['bg'=>'rgba(255,95,95,.12)',    'color'=>'#ff5f5f',  'icon'=>'fa-xmark-circle'],
@@ -121,6 +146,7 @@ function fmtDate($d){ return $d ? date('M j, Y', strtotime($d)) : '—'; }
 <title><?= he($po['po_number']) ?> | Bird's Nest Coffee</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>(function(){var t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();</script>
 <style>
 :root{
     --bg:#0b0b0b; --bg-card:#131313; --bg-input:#1a1a1a;
@@ -131,6 +157,15 @@ function fmtDate($d){ return $d ? date('M j, Y', strtotime($d)) : '—'; }
     --shadow-lg:0 8px 40px rgba(0,0,0,.55);
     --shadow-accent:0 4px 20px rgba(209,144,75,.18);
     --radius:14px; --transition:all .22s cubic-bezier(.4,0,.2,1);
+    --surface:rgba(255,255,255,.02); --pill:rgba(255,255,255,.07); --btn-soft:rgba(255,255,255,.06);
+}
+
+[data-theme="light"]{
+    --bg:#f5f0eb; --bg-card:#ffffff; --bg-input:#f0e9e0;
+    --border:#e8ddd2; --border-hover:#d4c4b0;
+    --text:#1a1008; --text-muted:#7a6a58; --text-light:#1a1008;
+    --shadow-lg:0 8px 40px rgba(0,0,0,.12);
+    --surface:rgba(0,0,0,.03); --pill:rgba(0,0,0,.06); --btn-soft:rgba(0,0,0,.05);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
@@ -152,7 +187,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 .btn-danger:hover{background:rgba(255,95,95,.22);}
 .btn-info{background:rgba(52,152,219,.13);color:var(--info);border:1px solid rgba(52,152,219,.22);}
 .btn-info:hover{background:rgba(52,152,219,.22);}
-.btn-print{background:rgba(255,255,255,.06);color:var(--text-muted);border:1px solid var(--border);}
+.btn-print{background:var(--btn-soft);color:var(--text-muted);border:1px solid var(--border);}
 .btn-print:hover{color:var(--text);border-color:var(--border-hover);}
 
 .content{max-width:860px;margin:0 auto;padding:32px 24px;}
@@ -183,15 +218,15 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);min
 .items-card-header i{color:var(--accent);}
 
 table{width:100%;border-collapse:collapse;}
-thead th{padding:11px 18px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);}
+thead th{padding:11px 18px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);background:var(--surface);}
 tbody td{padding:14px 18px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle;}
 tbody tr:last-child td{border-bottom:none;}
-tbody tr:hover td{background:rgba(255,255,255,.02);}
+tbody tr:hover td{background:var(--surface);}
 
 .ing-name{font-weight:600;color:var(--text-light);}
-.unit-pill{display:inline-block;background:rgba(255,255,255,.07);border-radius:5px;padding:2px 8px;font-size:11px;color:var(--text-muted);}
+.unit-pill{display:inline-block;background:var(--pill);border-radius:5px;padding:2px 8px;font-size:11px;color:var(--text-muted);}
 
-.total-bar{display:flex;align-items:center;justify-content:flex-end;padding:16px 22px;border-top:2px solid var(--border);background:rgba(255,255,255,.02);}
+.total-bar{display:flex;align-items:center;justify-content:flex-end;padding:16px 22px;border-top:2px solid var(--border);background:var(--surface);}
 .total-bar-inner{text-align:right;}
 .total-bar-label{font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;}
 .total-bar-value{font-size:26px;font-weight:800;color:var(--accent);}
@@ -252,18 +287,21 @@ tbody tr:hover td{background:rgba(255,255,255,.02);}
         <?php if ($po['status'] === 'Draft'): ?>
         <form method="POST" style="display:inline" onsubmit="return confirm('Mark this order as Placed/Ordered?')">
             <input type="hidden" name="action" value="mark_ordered">
+            <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
             <button type="submit" class="btn btn-info"><i class="fa-solid fa-paper-plane"></i> Mark Ordered</button>
         </form>
         <?php endif; ?>
         <?php if ($po['status'] === 'Ordered'): ?>
         <form method="POST" style="display:inline" onsubmit="return confirm('Mark as Received? This will add all quantities to stock.')">
             <input type="hidden" name="action" value="mark_received">
+            <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
             <button type="submit" class="btn btn-success"><i class="fa-solid fa-check"></i> Mark Received</button>
         </form>
         <?php endif; ?>
         <?php if (in_array($po['status'], ['Draft','Ordered'])): ?>
         <form method="POST" style="display:inline" onsubmit="return confirm('Cancel this purchase order?')">
             <input type="hidden" name="action" value="cancel">
+            <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
             <button type="submit" class="btn btn-danger"><i class="fa-solid fa-xmark"></i> Cancel PO</button>
         </form>
         <?php endif; ?>
@@ -368,6 +406,16 @@ tbody tr:hover td{background:rgba(255,255,255,.02);}
     </div>
     <?php endif; ?>
 </div>
+
+<script>
+// follows shared theme key (toggled elsewhere)
+window.addEventListener('storage', function (e) {
+    if (e.key === 'theme') {
+        if (e.newValue === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        else document.documentElement.removeAttribute('data-theme');
+    }
+});
+</script>
 
 </body>
 </html>

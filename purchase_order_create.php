@@ -18,13 +18,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors = [];
     if ($supplier_id <= 0) $errors[] = 'Select a supplier.';
     $valid_items = [];
+    $unpriced    = [];
     foreach ($items as $item) {
         $iid  = (int)($item['ingredient_id'] ?? 0);
         $qty  = (float)($item['qty'] ?? 0);
         $cost = (float)($item['unit_cost'] ?? 0);
-        if ($iid > 0 && $qty > 0) $valid_items[] = ['iid'=>$iid,'qty'=>$qty,'cost'=>$cost];
+        if ($iid > 0 && $qty > 0) {
+            $valid_items[] = ['iid'=>$iid,'qty'=>$qty,'cost'=>$cost];
+            if ($cost <= 0) $unpriced[] = $iid;
+        }
     }
     if (empty($valid_items)) $errors[] = 'Add at least one item with a quantity.';
+
+    // A Draft may legitimately still be missing prices — that's what a draft is for.
+    // Placing the order is the committing act, so that one has to be fully priced.
+    // Enforced here and not only in the browser: the client-side block is a courtesy,
+    // this is the guarantee.
+    if ($status === 'Ordered' && $unpriced) {
+        $names = [];
+        if ($in = implode(',', array_map('intval', $unpriced))) {
+            $nq = $conn->query("SELECT ingredient_name FROM ingredients WHERE ingredient_id IN ($in)");
+            while ($nr = $nq->fetch_assoc()) $names[] = $nr['ingredient_name'];
+        }
+        $errors[] = 'Cannot place an order with no unit cost: ' . htmlspecialchars(implode(', ', $names))
+                  . '. Enter a price, or use Save as Draft.';
+    }
 
     if (empty($errors)) {
         $total = array_sum(array_map(fn($i) => $i['qty'] * $i['cost'], $valid_items));
@@ -156,6 +174,23 @@ table.items-tbl select option{background:#1a1a1a;}
 
 .unit-pill{display:inline-block;background:rgba(255,255,255,.07);border-radius:5px;padding:3px 8px;font-size:11px;color:var(--text-muted);}
 .line-total{font-weight:600;color:var(--success);font-size:13px;}
+/* Unpriced line: green currency implies a known, agreed price — a $0.00 the system
+   simply doesn't know must not look the same as a genuine zero. */
+.line-total.lt-missing{color:var(--danger);}
+.line-total.lt-missing i{font-size:11px;margin-right:3px;}
+table.items-tbl input.cost-missing{
+    border-color:var(--danger) !important;
+    background:rgba(255,95,95,.07);
+}
+table.items-tbl input.cost-missing:focus{border-color:var(--danger) !important;}
+.price-warn{
+    display:flex;align-items:flex-start;gap:8px;margin-top:14px;padding:10px 12px;
+    border-radius:10px;font-size:12px;line-height:1.45;
+    background:rgba(255,95,95,.1);border:1px solid rgba(255,95,95,.25);color:#ffb4b4;
+}
+.price-warn i{margin-top:1px;flex-shrink:0;}
+.btn.btn-accent:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.4);}
+.btn.btn-accent:disabled:hover{transform:none;}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 .card,.items-card{animation:fadeUp .4s ease both;}
@@ -218,11 +253,15 @@ table.items-tbl select option{background:#1a1a1a;}
                     <span style="color:var(--text-muted);font-size:13px;">Grand Total</span>
                     <span class="total-value" id="grandTotal">$0.00</span>
                 </div>
+                <div class="price-warn" id="priceWarn" style="display:none;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span></span>
+                </div>
                 <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
                     <button type="submit" name="submit_type" value="draft" class="btn btn-outline" style="width:100%;justify-content:center;">
                         <i class="fa-solid fa-floppy-disk"></i> Save as Draft
                     </button>
-                    <button type="submit" name="submit_type" value="order" class="btn btn-accent" style="width:100%;justify-content:center;">
+                    <button type="submit" name="submit_type" value="order" id="placeOrderBtn" class="btn btn-accent" style="width:100%;justify-content:center;">
                         <i class="fa-solid fa-paper-plane"></i> Place Order
                     </button>
                 </div>
@@ -298,24 +337,55 @@ function onIngChange(sel, n) {
     const opt = sel.options[sel.selectedIndex];
     document.getElementById('unit_'+n).textContent = opt.dataset.unit || '';
     const costInput = document.getElementById('cost_'+n);
-    if (!costInput.value) costInput.value = parseFloat(opt.dataset.cost||0).toFixed(2);
+    // Only prefill a price we actually know. Writing "0.00" for an ingredient with no
+    // cost on file would look like a decided price rather than a missing one.
+    const known = parseFloat(opt.dataset.cost||0);
+    if (!costInput.value) costInput.value = known > 0 ? known.toFixed(2) : '';
     calcRow(n);
 }
 
 function calcRow(n) {
-    const qty  = parseFloat(document.getElementById('qty_'+n)?.value||0);
-    const cost = parseFloat(document.getElementById('cost_'+n)?.value||0);
-    const lt   = document.getElementById('lt_'+n);
-    if (lt) lt.textContent = '$'+(qty*cost).toFixed(2);
+    const qtyEl  = document.getElementById('qty_'+n);
+    const costEl = document.getElementById('cost_'+n);
+    const lt     = document.getElementById('lt_'+n);
+    if (!lt) return;
+
+    const qty  = parseFloat(qtyEl?.value||0);
+    const cost = parseFloat(costEl?.value||0);
+
+    // A row is only "unpriced" once a quantity has been entered — an untouched
+    // blank row shouldn't shout at the manager before they've typed anything.
+    const unpriced = qty > 0 && !(cost > 0);
+
+    if (costEl) costEl.classList.toggle('cost-missing', unpriced);
+    lt.classList.toggle('lt-missing', unpriced);
+    lt.innerHTML = unpriced
+        ? '<i class="fa-solid fa-triangle-exclamation"></i> $0.00'
+        : '$'+(qty*cost).toFixed(2);
+    lt.title = unpriced ? 'No unit cost set for this ingredient — enter one before placing the order.' : '';
+
     calcTotal();
 }
 
 function calcTotal() {
-    let total = 0;
+    let total = 0, missing = 0;
     document.querySelectorAll('[id^="lt_"]').forEach(el => {
+        if (el.classList.contains('lt-missing')) { missing++; return; }
         total += parseFloat(el.textContent.replace('$','')) || 0;
     });
     document.getElementById('grandTotal').textContent = '$'+total.toFixed(2);
+
+    // Draft stays available — a half-priced order is exactly what a draft is for.
+    const orderBtn = document.getElementById('placeOrderBtn');
+    const warn     = document.getElementById('priceWarn');
+    if (orderBtn) orderBtn.disabled = missing > 0;
+    if (warn) {
+        warn.style.display = missing > 0 ? 'flex' : 'none';
+        if (missing > 0) {
+            warn.querySelector('span').textContent =
+                missing + (missing === 1 ? ' item has' : ' items have') + ' no unit cost. Enter a price to place this order.';
+        }
+    }
 }
 
 function removeRow(n) {

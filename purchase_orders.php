@@ -2,6 +2,17 @@
 require 'auth.php';
 require 'config.php';
 if (!can('purchase_orders')) { header("Location: dashboard.php?denied=1"); exit; }
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+// Result of a status action fired from this list (handled by purchase_order_view.php).
+$list_msg = match($_GET['msg'] ?? '') {
+    'ordered'   => ['text'=>'Purchase order marked as Ordered.',              'type'=>'info'],
+    'received'  => ['text'=>'Stock received and added to inventory.',         'type'=>'success'],
+    'cancelled' => ['text'=>'Purchase order cancelled.',                      'type'=>'danger'],
+    'nochange'  => ['text'=>'No change — that order was already updated.',    'type'=>'info'],
+    'badtoken'  => ['text'=>'Session expired. Reload and try again.',         'type'=>'danger'],
+    default     => null,
+};
 
 $filter = $_GET['status'] ?? 'all';
 $allowed = ['all','Draft','Ordered','Received','Cancelled'];
@@ -129,13 +140,20 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 .empty-state{text-align:center;padding:60px 20px;color:var(--text-muted);}
 .empty-state i{font-size:48px;color:var(--border-hover);display:block;margin-bottom:12px;}
 
-.po-pagination{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center;padding:16px 18px;border-top:1px solid var(--border);}
+/* Buttons stay optically centred in the row; the record count is pinned to the
+   right corner out of the flex flow so it can't shift the centring. */
+.po-pagination{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center;padding:16px 18px;border-top:1px solid var(--border);position:relative;}
 .pg-btn{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 10px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;transition:var(--transition);cursor:pointer;}
 .pg-btn:hover:not(.disabled){border-color:var(--accent);color:var(--accent);}
 .pg-btn.pg-active{background:var(--accent);border-color:var(--accent);color:#000;font-weight:700;cursor:default;}
 .pg-btn.disabled{opacity:.3;cursor:default;pointer-events:none;}
 .pg-ellipsis{color:var(--text-muted);padding:0 2px;font-size:14px;}
-.pg-info{font-size:12px;color:var(--text-muted);margin-left:6px;}
+.pg-info{position:absolute;right:18px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);white-space:nowrap;}
+/* Below ~760px the absolute label would sit on top of the buttons — drop it back
+   into flow on its own line instead. */
+@media (max-width:760px){
+    .pg-info{position:static;transform:none;width:100%;text-align:center;margin-top:10px;}
+}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:768px){
@@ -147,6 +165,32 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 /* Light theme (follows shared localStorage theme) */
 [data-theme="light"]{--bg:#ECEEF2;--bg-card:#FFFFFF;--bg-input:#F5F7FA;--border:#E2E5EA;--border-hover:#CDD0D8;--text:#111827;--text-muted:#5A6373;--text-light:#0B0F19;}
 [data-theme="light"] .topbar{background:rgba(255,255,255,.92);}
+/* ── Confirm dialog (replaces the native browser confirm) ── */
+.pc-back{display:none;position:fixed;inset:0;z-index:9999;padding:20px;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);align-items:center;justify-content:center;}
+.pc-back.open{display:flex;animation:pcFade .18s ease both;}
+@keyframes pcFade{from{opacity:0}to{opacity:1}}
+@keyframes pcPop{from{opacity:0;transform:scale(.94) translateY(8px)}to{opacity:1;transform:none}}
+.pc{width:100%;max-width:410px;background:var(--bg-card);border:1px solid var(--border);border-radius:16px;overflow:hidden;animation:pcPop .22s cubic-bezier(.2,.9,.3,1) both;}
+.pc-glow{height:3px;width:100%;}
+.pc-body{padding:24px 24px 20px;text-align:center;}
+.pc-icon{width:54px;height:54px;margin:0 auto 14px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:22px;}
+.pc-title{font-size:16px;font-weight:700;color:var(--text-light);margin-bottom:7px;}
+.pc-msg{font-size:13.5px;line-height:1.55;color:var(--text-muted);}
+.pc-msg strong{color:var(--text);font-weight:600;}
+.pc-note{margin-top:12px;padding:9px 12px;border-radius:9px;font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--text-muted);}
+.pc-foot{display:flex;gap:9px;padding:0 24px 22px;}
+.pc-btn{flex:1;padding:10px 16px;border-radius:10px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);transition:var(--transition);}
+.pc-btn:hover{color:var(--text-light);border-color:var(--border-hover);}
+.pc-btn.go{color:#000;border:none;}
+.pc-btn.go:hover{filter:brightness(1.08);}
+.pc-btn:disabled{opacity:.6;cursor:not-allowed;}
+
+.po-alert{display:flex;align-items:center;gap:9px;padding:12px 16px;border-radius:12px;margin-bottom:18px;font-size:13.5px;font-weight:500;}
+.po-alert-success{background:rgba(85,224,135,.1);border:1px solid rgba(85,224,135,.25);color:#55e087;}
+.po-alert-info{background:rgba(52,152,219,.1);border:1px solid rgba(52,152,219,.25);color:#3498db;}
+.po-alert-danger{background:rgba(255,95,95,.1);border:1px solid rgba(255,95,95,.25);color:#ff5f5f;}
+.actions form{display:inline;}
+.actions .btn{white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -158,6 +202,12 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 </div>
 
 <div class="content">
+    <?php if ($list_msg): ?>
+    <div class="po-alert po-alert-<?= $list_msg['type'] ?>">
+        <i class="fa-solid <?= $list_msg['type']==='success' ? 'fa-circle-check' : ($list_msg['type']==='danger' ? 'fa-circle-exclamation' : 'fa-circle-info') ?>"></i>
+        <?= he($list_msg['text']) ?>
+    </div>
+    <?php endif; ?>
     <div class="stats-row">
         <div class="stat-card">
             <div class="stat-icon orange"><i class="fa-solid fa-file-invoice"></i></div>
@@ -238,7 +288,32 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
                     $<?= number_format($po['total_cost'],2) ?>
                 </td>
                 <td>
+                    <?php /* Status-driven actions. The forms POST to purchase_order_view.php,
+                             which owns the only stock-mutating receive logic — duplicating it
+                             here would mean two places to keep in step. return=list sends the
+                             manager back to this list instead of the detail page. */ ?>
                     <div class="actions">
+                        <?php /* The PO number goes in a data-* attribute, never interpolated into
+                                 inline JS: htmlspecialchars protects HTML context, but the parser
+                                 decodes entities back before the JS string is parsed, so an
+                                 apostrophe would still break out. Read via dataset below. */ ?>
+                        <?php if ($po['status'] === 'Draft'): ?>
+                        <form method="POST" action="purchase_order_view.php?po_id=<?= $po['po_id'] ?>" style="display:inline"
+                              class="po-action" data-confirm="order" data-po="<?= he($po['po_number']) ?>">
+                            <input type="hidden" name="action" value="mark_ordered">
+                            <input type="hidden" name="return" value="list">
+                            <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
+                            <button type="submit" class="btn btn-info btn-sm"><i class="fa-solid fa-paper-plane"></i> Mark Ordered</button>
+                        </form>
+                        <?php elseif ($po['status'] === 'Ordered'): ?>
+                        <form method="POST" action="purchase_order_view.php?po_id=<?= $po['po_id'] ?>" style="display:inline"
+                              class="po-action" data-confirm="receive" data-po="<?= he($po['po_number']) ?>">
+                            <input type="hidden" name="action" value="mark_received">
+                            <input type="hidden" name="return" value="list">
+                            <input type="hidden" name="csrf_token" value="<?= he($_SESSION['csrf_token']) ?>">
+                            <button type="submit" class="btn btn-success btn-sm"><i class="fa-solid fa-box-open"></i> Receive Stock</button>
+                        </form>
+                        <?php endif; ?>
                         <a class="btn btn-outline btn-sm" href="purchase_order_view.php?po_id=<?= $po['po_id'] ?>">
                             <i class="fa-solid fa-eye"></i> View
                         </a>
@@ -279,5 +354,109 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
         <?php endif; ?>
     </div>
 </div>
+
+<!-- ── Confirm dialog ── -->
+<div class="pc-back" id="pcBack">
+  <div class="pc" role="alertdialog" aria-modal="true" aria-labelledby="pcTitle" aria-describedby="pcMsg">
+    <div class="pc-glow" id="pcGlow"></div>
+    <div class="pc-body">
+      <div class="pc-icon" id="pcIcon"></div>
+      <div class="pc-title" id="pcTitle"></div>
+      <div class="pc-msg" id="pcMsg"></div>
+      <div class="pc-note" id="pcNote" style="display:none"></div>
+    </div>
+    <div class="pc-foot">
+      <button type="button" class="pc-btn" id="pcCancel">Cancel</button>
+      <button type="button" class="pc-btn go" id="pcOk">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Status-action confirms. The PO number is read from dataset rather than being
+   baked into an inline handler, so no page data is ever parsed as JavaScript.
+   Also single-flight: receiving stock mutates inventory, and a double-submit
+   must not reach the server twice. */
+const pcBack = document.getElementById('pcBack');
+
+function poConfirm(opts) {
+    return new Promise(resolve => {
+        const ok     = document.getElementById('pcOk');
+        const cancel = document.getElementById('pcCancel');
+        const icon   = document.getElementById('pcIcon');
+        const note   = document.getElementById('pcNote');
+
+        document.getElementById('pcTitle').textContent = opts.title;
+        // textContent, not innerHTML — the PO number is page data.
+        document.getElementById('pcMsg').textContent   = opts.message;
+        icon.innerHTML          = '<i class="fa-solid ' + opts.icon + '"></i>';
+        icon.style.background   = opts.color + '24';
+        icon.style.border       = '1px solid ' + opts.color + '59';
+        icon.style.color        = opts.color;
+        document.getElementById('pcGlow').style.background = opts.color;
+        ok.style.background     = opts.color;
+        ok.textContent          = opts.confirmText;
+
+        if (opts.note) { note.textContent = opts.note; note.style.display = ''; }
+        else           { note.style.display = 'none'; }
+
+        pcBack.classList.add('open');
+        setTimeout(() => ok.focus(), 60);
+
+        function done(val) {
+            pcBack.classList.remove('open');
+            ok.removeEventListener('click', onOk);
+            cancel.removeEventListener('click', onCancel);
+            pcBack.removeEventListener('click', onBack);
+            document.removeEventListener('keydown', onKey);
+            resolve(val);
+        }
+        function onOk()     { done(true); }
+        function onCancel() { done(false); }
+        function onBack(ev) { if (ev.target === pcBack) done(false); }
+        function onKey(ev)  { if (ev.key === 'Escape') done(false); }
+
+        ok.addEventListener('click', onOk);
+        cancel.addEventListener('click', onCancel);
+        pcBack.addEventListener('click', onBack);
+        document.addEventListener('keydown', onKey);
+    });
+}
+
+document.addEventListener('submit', async function (e) {
+    const form = e.target.closest('form.po-action');
+    if (!form) return;
+
+    // Always stop the native submit: the dialog is async, so the form is
+    // re-submitted from code once the manager confirms.
+    e.preventDefault();
+    if (form.dataset.sent) return;
+
+    const po       = form.dataset.po || 'this order';
+    const receive  = form.dataset.confirm === 'receive';
+
+    const okd = await poConfirm(receive ? {
+        title:       'Receive this delivery?',
+        message:     'Mark ' + po + ' as received.',
+        note:        'Every ordered quantity is added to inventory. This cannot be undone.',
+        confirmText: 'Receive Stock',
+        icon:        'fa-box-open',
+        color:       '#55e087',
+    } : {
+        title:       'Send this order?',
+        message:     'Mark ' + po + ' as ordered.',
+        note:        'Records that the order has been placed with the supplier. Stock is unchanged until it arrives.',
+        confirmText: 'Mark Ordered',
+        icon:        'fa-paper-plane',
+        color:       '#3498db',
+    });
+    if (!okd) return;
+
+    form.dataset.sent = '1';
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Working…'; }
+    form.submit();
+});
+</script>
 </body>
 </html>
