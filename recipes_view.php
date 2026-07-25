@@ -152,6 +152,11 @@ $avgIngredients   = $totalRecipes > 0
     ? round(array_sum(array_map(fn($r) => count($r['items']), $recipes)) / $totalRecipes, 1)
     : 0;
 $lowStockRecipes  = count(array_filter($recipes, fn($r) => $r['has_low_stock']));
+/* Every product is either counted in $totalRecipes or in $totalNoRecipe — never both,
+   so the two always add up to the catalogue size. Shown as denominators on the stat
+   cards so the numbers can be reconciled at a glance. */
+$totalProducts    = $totalRecipes + $totalNoRecipe;
+$okStockRecipes   = $totalRecipes - $lowStockRecipes;
 
 /* ── Category counts ── */
 $categoryCounts = [];
@@ -286,6 +291,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 .stat-icon.yellow { background:rgba(241,196,15,.12);  color:var(--warning); }
 .stat-label { font-size:11px; color:var(--text-muted); font-weight:500; }
 .stat-value { font-size:20px; font-weight:800; color:var(--text-light); line-height:1.1; }
+.stat-sub   { font-size:10px; color:var(--text-muted); font-weight:500; margin-top:2px; opacity:.75; }
 
 /* ── CATEGORY PILLS ── */
 .cat-bar {
@@ -569,7 +575,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         <h1>
             <i class="fa-solid fa-utensils"></i>
             Drink Recipes
-            <span class="count" id="countLabel">(<?= $totalRecipes ?> drinks)</span>
+            <span class="count" id="countLabel">(<?= $totalRecipes ?> recipes)</span>
         </h1>
     </div>
 
@@ -599,8 +605,9 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     <div class="stat-item">
         <div class="stat-icon orange"><i class="fa-solid fa-utensils"></i></div>
         <div>
-            <div class="stat-label">Recipes</div>
+            <div class="stat-label">Recipes Configured</div>
             <div class="stat-value"><?= $totalRecipes ?></div>
+            <div class="stat-sub">of <?= $totalProducts ?> products</div>
         </div>
     </div>
     <div class="stat-item">
@@ -608,6 +615,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         <div>
             <div class="stat-label">Avg Ingredients</div>
             <div class="stat-value"><?= $avgIngredients ?></div>
+            <div class="stat-sub">per recipe</div>
         </div>
     </div>
     <div class="stat-item">
@@ -617,6 +625,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         <div>
             <div class="stat-label">Low-Stock Recipes</div>
             <div class="stat-value"><?= $lowStockRecipes ?></div>
+            <div class="stat-sub">of <?= $totalRecipes ?> · <?= $okStockRecipes ?> fully stocked</div>
         </div>
     </div>
     <div class="stat-item">
@@ -626,6 +635,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         <div>
             <div class="stat-label">No Recipe</div>
             <div class="stat-value"><?= $totalNoRecipe ?></div>
+            <div class="stat-sub">of <?= $totalProducts ?> products</div>
         </div>
     </div>
 </div>
@@ -1012,7 +1022,7 @@ function applyFilters() {
     cards.forEach(card => card.classList.add('hidden'));
     matched.slice(start, end).forEach(card => card.classList.remove('hidden'));
 
-    countLabel.textContent = `(${total} drink${total !== 1 ? 's' : ''})`;
+    countLabel.textContent = `(${total} recipe${total !== 1 ? 's' : ''})`;
     if (emptySearch) emptySearch.style.display = total === 0 ? 'block' : 'none';
 
     renderPagerRV(total, totalPages);
