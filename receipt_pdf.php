@@ -72,6 +72,16 @@ while ($item = $items->fetch_assoc()) {
     }
 }
 
+// Merge identical drink lines into one ×N for a cleaner receipt (made-state doesn't matter to
+// the customer; totals are unchanged since amount = price × summed quantity).
+$__merged = [];
+foreach ($drinks as $__d) {
+    $__k = $__d['product_name'].'|'.($__d['size_label'] ?? '').'|'.($__d['sweetness'] ?? '').'|'.($__d['ice'] ?? '').'|'.($__d['milk'] ?? '').'|'.($__d['addons_snapshot'] ?? '').'|'.$__d['price'].'|'.($__d['promo_percent'] ?? 0);
+    if (isset($__merged[$__k])) $__merged[$__k]['quantity'] += $__d['quantity'];
+    else $__merged[$__k] = $__d;
+}
+$drinks = array_values($__merged);
+
 $discount = (float)($order['promotion_discount'] ?? 0);
 $manual_discount_receipt = (float)($order['manual_discount'] ?? 0);
 $manual_reason_receipt   = trim($order['manual_discount_reason'] ?? '');

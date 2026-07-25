@@ -190,6 +190,19 @@ if ($existing_order_id > 0) {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
+        // Merge-on-add: if this exact drink (same product + all options) is already on the order
+        // as an UNMADE line, bump its quantity instead of inserting a duplicate row. Made lines are
+        // locked (made_qty >= quantity) so they never merge — a repeat of a made drink starts a new
+        // unmade line, and only that new one flows to the barista.
+        $stmt_match = $conn->prepare("
+            SELECT item_id FROM order_items
+            WHERE order_id = ? AND product_id = ? AND price = ? AND sweetness = ? AND ice = ? AND milk = ?
+              AND size_code = ? AND size_label = ? AND addons_snapshot = ? AND promo_percent = ? AND earns_points = ?
+              AND made_qty < quantity
+            LIMIT 1
+        ");
+        $stmt_bump = $conn->prepare("UPDATE order_items SET quantity = quantity + ? WHERE item_id = ?");
+
         $stock_warnings = [];
         foreach ($_SESSION['cart'] as $item) {
             $qty        = max(1, (int)($item['qty'] ?? 1));
@@ -207,8 +220,16 @@ if ($existing_order_id > 0) {
             $earns_pts  = (int)($item['earns_points'] ?? 1);
             $addons_json = json_encode($item['addons'] ?? []);
 
-            $stmt_item->bind_param("iisdissssssidi", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price, $earns_pts);
-            $stmt_item->execute();
+            $stmt_match->bind_param("iidssssssii", $existing_order_id, $product_id, $price, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $earns_pts);
+            $stmt_match->execute();
+            $match = $stmt_match->get_result()->fetch_assoc();
+            if ($match) {
+                $stmt_bump->bind_param("ii", $qty, $match['item_id']);
+                $stmt_bump->execute();
+            } else {
+                $stmt_item->bind_param("iisdissssssidi", $existing_order_id, $product_id, $pname, $price, $qty, $sweet, $ice, $milk, $scode, $slabel, $addons_json, $promo_pct, $orig_price, $earns_pts);
+                $stmt_item->execute();
+            }
 
             // ── STOCK: deduct at order creation time ──
             if ($product_id > 0) {
