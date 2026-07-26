@@ -219,8 +219,6 @@ if ($is_edit) {
     background: rgba(0,0,0,0.03);
 }
 
-/* ── Light mode: scrollbar ── */
-[data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg); }
 
 /* ── RESET: Remove all scrollbars ── */
 * { 
@@ -276,14 +274,11 @@ body::after {
     z-index: 0;
 }
 
-/* ── Custom Scrollbar ── */
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb {
-    background: var(--accent);
-    border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover { background: var(--accent-dark); }
+/* ── Scrollbars: invisible, still fully scrollable ──
+   Needs all three: Firefox reads scrollbar-width, old Edge reads -ms-overflow-style,
+   Chrome/Safari need the pseudo-element. Miss one and the bar comes back there. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 /* ── Back Button ── */
 .back-btn {
@@ -320,14 +315,8 @@ body::after {
     padding: 4px;
 }
 
-/* ── Hide scrollbar for card wrapper ── */
-.card-wrapper::-webkit-scrollbar {
-    width: 4px;
-}
-.card-wrapper::-webkit-scrollbar-thumb {
-    background: var(--accent);
-    border-radius: 4px;
-}
+/* ── Card wrapper scrolls with no visible bar ── */
+.card-wrapper::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 .card {
     width: 100%;
@@ -410,6 +399,25 @@ body::after {
 .success i {
     font-size: 20px;
 }
+
+/* ── Post-create handoff note (arrives from add_product.php) ── */
+.created-note {
+    background: rgba(209, 144, 75, 0.09);
+    border: 1px solid rgba(209, 144, 75, 0.28);
+    color: var(--text);
+    padding: 14px 18px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    animation: fadeIn 0.5s ease;
+}
+.created-note i { color: var(--accent); font-size: 18px; margin-top: 2px; }
+.created-note a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.created-note a:hover { text-decoration: underline; }
 
 /* ── Form ── */
 form {
@@ -699,6 +707,21 @@ input:disabled {
         <div class="success">
             <i class="fa-solid fa-circle-check"></i>
             Recipe saved successfully
+        </div>
+        <?php endif; ?>
+
+        <?php if (isset($_GET['created']) && $edit_id > 0):
+            $__nm = $conn->prepare("SELECT name FROM products WHERE product_id = ?");
+            $__nm->bind_param("i", $edit_id); $__nm->execute();
+            $__new_name = ($__nm->get_result()->fetch_assoc())['name'] ?? 'Product';
+        ?>
+        <div class="created-note">
+            <i class="fa-solid fa-circle-check"></i>
+            <div>
+                <strong><?= htmlspecialchars($__new_name) ?></strong> was created.
+                Set its recipe now so stock deducts automatically on every sale.
+                <a href="products.php">Skip for now →</a>
+            </div>
         </div>
         <?php endif; ?>
 

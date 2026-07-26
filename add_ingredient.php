@@ -10,6 +10,20 @@ $supplierList = [];
 $sr = $conn->query("SELECT supplier_id, name FROM suppliers ORDER BY name ASC");
 if ($sr) while ($row = $sr->fetch_assoc()) $supplierList[] = $row;
 
+// This page doubles as a restock form (see the header subtitle). Ship the current
+// ingredients to the client so typing a known name can say what it will do to that
+// row — stock on hand and the unit cost this purchase gets averaged into.
+$existingIngredients = [];
+$er = $conn->query("SELECT ingredient_name, unit, stock_quantity, cost_per_unit FROM ingredients");
+if ($er) while ($row = $er->fetch_assoc()) {
+    $existingIngredients[mb_strtolower($row['ingredient_name'])] = [
+        'name'  => $row['ingredient_name'],
+        'unit'  => $row['unit'],
+        'stock' => (float)$row['stock_quantity'],
+        'cpu'   => (float)$row['cost_per_unit'],
+    ];
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $name        = trim($_POST['ingredient_name'] ?? '');
@@ -187,14 +201,11 @@ body::after {
     z-index: 0;
 }
 
-/* ── Custom Scrollbar ── */
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb {
-    background: var(--accent);
-    border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover { background: var(--accent-dark); }
+/* ── Scrollbars: invisible, still fully scrollable ──
+   Needs all three: Firefox reads scrollbar-width, old Edge reads -ms-overflow-style,
+   Chrome/Safari need the pseudo-element. Miss one and the bar comes back there. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 /* ── Back Button ── */
 .back-btn {
@@ -239,14 +250,8 @@ body::after {
     padding: 4px;
 }
 
-/* ── Hide scrollbar for card wrapper ── */
-.card-wrapper::-webkit-scrollbar {
-    width: 4px;
-}
-.card-wrapper::-webkit-scrollbar-thumb {
-    background: var(--accent);
-    border-radius: 4px;
-}
+/* ── Card wrapper scrolls with no visible bar ── */
+.card-wrapper::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 /* ── Card ── */
 .card {
@@ -419,6 +424,39 @@ label i {
     color: var(--accent);
 }
 
+/* ── Derived cost-per-unit preview ── */
+.cpu-preview {
+    margin-top: 8px;
+    padding: 9px 13px;
+    border-radius: 10px;
+    background: rgba(209, 144, 75, 0.07);
+    border: 1px solid rgba(209, 144, 75, 0.22);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12.5px;
+}
+/* display:flex above beats the UA stylesheet's [hidden]{display:none} */
+.cpu-preview[hidden] { display: none; }
+.cpu-label { color: var(--text-muted); }
+.cpu-value { color: var(--accent); font-weight: 700; font-size: 14px; }
+.cpu-preview.warn { background: rgba(255,123,123,.07); border-color: rgba(255,123,123,.3); }
+.cpu-preview.warn .cpu-value { color: var(--danger); }
+
+/* ── "this ingredient already exists" note ── */
+.existing-note {
+    margin-top: 8px;
+    padding: 9px 13px;
+    border-radius: 10px;
+    background: rgba(91, 192, 222, 0.07);
+    border: 1px solid rgba(91, 192, 222, 0.22);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.55;
+}
+.existing-note strong { color: var(--text-light); font-weight: 600; }
+
 /* ── Submit Button (FIXED GLOW) ── */
 .btn-submit {
     margin-top: 24px;
@@ -577,8 +615,9 @@ label i {
                     <i class="fa-solid fa-tag"></i> Ingredient Name
                 </label>
                 <div class="input-wrapper">
-                    <input name="ingredient_name" required placeholder="e.g. Coffee Bean">
+                    <input name="ingredient_name" id="f_name" autocomplete="off" required placeholder="e.g. Coffee Bean">
                 </div>
+                <div class="existing-note" id="existingNote" hidden></div>
             </div>
 
             <!-- Unit -->
@@ -587,17 +626,22 @@ label i {
                     <i class="fa-solid fa-weight-scale"></i> Unit
                 </label>
                 <div class="input-wrapper">
-                    <input name="unit" required placeholder="e.g. g, ml, kg, oz">
+                    <input name="unit" id="f_unit" required placeholder="e.g. g, ml, kg, oz">
                 </div>
             </div>
 
-            <!-- Cost Price -->
+            <!-- Total Purchase Cost — named to match edit_ingredient.php. This is the
+                 whole batch price; the per-unit figure is derived, never typed. -->
             <div class="form-group">
                 <label>
-                    <i class="fa-solid fa-dollar-sign"></i> Cost Price ($)
+                    <i class="fa-solid fa-dollar-sign"></i> Total Purchase Cost ($)
                 </label>
                 <div class="input-wrapper">
-                    <input type="number" step="0.01" name="cost_price" required placeholder="e.g. 120.00">
+                    <input type="number" step="0.01" min="0" name="cost_price" id="f_cost" required placeholder="e.g. 120.00">
+                </div>
+                <div class="help">
+                    <i class="fa-solid fa-lightbulb"></i>
+                    Total paid for this whole purchase — not the price of one unit.
                 </div>
             </div>
 
@@ -607,11 +651,17 @@ label i {
                     <i class="fa-solid fa-cubes"></i> Purchase Quantity
                 </label>
                 <div class="input-wrapper">
-                    <input type="number" step="0.01" name="purchase_qty" required placeholder="e.g. 1000">
+                    <input type="number" step="0.01" min="0" name="purchase_qty" id="f_qty" required placeholder="e.g. 1000">
                 </div>
                 <div class="help">
                     <i class="fa-solid fa-lightbulb"></i>
-                    This is how much stock you bought this time.
+                    How much stock you bought this time, in the unit above.
+                </div>
+                <!-- Shows the derived cost_per_unit as it is typed. Without this the
+                     figure that drives every recipe's COGS is invisible until it is wrong. -->
+                <div class="cpu-preview" id="cpuPreview" hidden>
+                    <span class="cpu-label">Works out to</span>
+                    <span class="cpu-value" id="cpuValue">—</span>
                 </div>
             </div>
 
@@ -637,7 +687,7 @@ label i {
                 </label>
                 <div class="input-wrapper">
                     <select name="supplier_id">
-                        <option value="0">— None —</option>
+                        <option value="0">— No preferred supplier —</option>
                         <?php foreach ($supplierList as $sup): ?>
                         <option value="<?= $sup['supplier_id'] ?>"><?= htmlspecialchars($sup['name']) ?></option>
                         <?php endforeach; ?>
@@ -655,6 +705,78 @@ label i {
 </div>
 
 <script>
+const EXISTING = <?= json_encode($existingIngredients, JSON_UNESCAPED_UNICODE) ?>;
+
+const fName = document.getElementById('f_name');
+const fUnit = document.getElementById('f_unit');
+const fCost = document.getElementById('f_cost');
+const fQty  = document.getElementById('f_qty');
+const note  = document.getElementById('existingNote');
+const prev  = document.getElementById('cpuPreview');
+const pVal  = document.getElementById('cpuValue');
+
+function money(n, dp) {
+    return '$' + n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+}
+
+function matchedIngredient() {
+    return EXISTING[fName.value.trim().toLowerCase()] || null;
+}
+
+// Restock preview: name a known ingredient and say what this purchase does to it.
+function renderExisting() {
+    const hit = matchedIngredient();
+    if (!hit) { note.hidden = true; return; }
+
+    // Built with DOM nodes, not an HTML string: name and unit are free-text columns
+    // written by this same form and are only SQL-escaped on the way in, so
+    // concatenating them into innerHTML would execute an ingredient named like a tag.
+    const strong = document.createElement('strong');
+    strong.textContent = hit.name;
+    note.textContent = '';
+    note.append(
+        strong,
+        document.createTextNode(
+            ' already exists — ' + hit.stock.toLocaleString() + ' ' + hit.unit
+            + ' on hand at ' + money(hit.cpu, 4) + ' per ' + hit.unit + '.'
+        ),
+        document.createElement('br'),
+        document.createTextNode('This purchase is added to that stock and the unit cost re-averaged.')
+    );
+    note.hidden = false;
+    if (!fUnit.value.trim()) fUnit.value = hit.unit; // unit is fixed by the existing row
+    renderCpu();
+}
+
+// The whole point: cost_per_unit drives every recipe's COGS, and it is derived
+// (cost / qty), never typed. Show it while it can still be corrected.
+function renderCpu() {
+    const cost = parseFloat(fCost.value);
+    const qty  = parseFloat(fQty.value);
+    if (!(cost >= 0) || !(qty > 0)) { prev.hidden = true; return; }
+
+    const hit  = matchedIngredient();
+    const unit = (fUnit.value.trim() || (hit && hit.unit) || 'unit');
+    const cpu  = cost / qty;
+
+    let text = money(cpu, 4) + ' per ' + unit;
+    let offBy = false;
+    if (hit && hit.cpu > 0) {
+        const blended = ((hit.stock * hit.cpu) + cost) / (hit.stock + qty);
+        text += ' · new average ' + money(blended, 4);
+        // Only flag against what this ingredient has actually cost before. An order-of-
+        // magnitude jump is the signature of a case price typed against a bottle's
+        // quantity — the mistake that makes a drink cost more to make than it sells for.
+        offBy = cpu > hit.cpu * 10 || cpu < hit.cpu / 10;
+    }
+    pVal.textContent = text;
+    prev.classList.toggle('warn', offBy);
+    prev.hidden = false;
+}
+
+fName.addEventListener('input', renderExisting);
+[fCost, fQty, fUnit].forEach(el => el.addEventListener('input', renderCpu));
+
 // follows shared theme key (toggled elsewhere)
 window.addEventListener('storage', function (e) {
     if (e.key === 'theme') {

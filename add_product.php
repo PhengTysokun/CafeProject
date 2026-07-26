@@ -82,7 +82,14 @@ if (isset($_POST['add_product'])) {
             }
         }
 
-        header("Location: products.php");
+        // A product with no recipe sells without deducting any stock, and nothing
+        // on this form says so. Hand straight off to the recipe builder with the
+        // new product pre-selected; the banner there offers a skip.
+        if (can('manage_recipes')) {
+            header("Location: manage_recipe.php?product_id=" . (int)$product_id . "&created=1");
+        } else {
+            header("Location: products.php");
+        }
         exit;
     }
 }
@@ -467,8 +474,10 @@ body {
 
             <div class="input-group">
                 <i class="fa-solid fa-percent"></i>
-                <input type="number" name="promo_percent" id="promoPercent" min="0" max="100" step="1" value="0"
-                       placeholder="Promo % off this product (0 = none)">
+                <!-- No value="0": a pre-filled zero hides the placeholder, leaving a
+                     bare "0" with a % icon and no clue what the field means. -->
+                <input type="number" name="promo_percent" id="promoPercent" min="0" max="100" step="1"
+                       placeholder="Discount % off this product (leave blank for none)">
             </div>
             <div class="input-group">
                 <i class="fa-solid fa-certificate"></i>

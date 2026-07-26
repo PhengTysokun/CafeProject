@@ -3,6 +3,8 @@ require 'auth.php';
 require 'config.php';
 if (!can('announcements')) { header("Location: dashboard.php?denied=1"); exit; }
 
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
 $conn->query("CREATE TABLE IF NOT EXISTS announcements (
     id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
@@ -27,6 +29,12 @@ $toast_type = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        $action     = '';
+        $toast      = "Security check failed. Please reload the page and try again.";
+        $toast_type = 'error';
+    }
 
     if ($action === 'create') {
         $title   = trim($_POST['title'] ?? '');
@@ -70,15 +78,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$per_page    = 10;
-$page        = max(1, (int)($_GET['page'] ?? 1));
-$total_count = (int)$conn->query("SELECT COUNT(*) FROM announcements")->fetch_row()[0];
-$active_count = (int)$conn->query("SELECT COUNT(*) FROM announcements WHERE is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) AND (starts_at IS NULL OR starts_at <= CURDATE())")->fetch_row()[0];
-$total_pages = $total_count > 0 ? (int)ceil($total_count / $per_page) : 1;
-$page        = min($page, $total_pages);
-$offset      = ($page - 1) * $per_page;
-$pg_base     = 'announcements.php?page=';
-$stmt = $conn->prepare("SELECT * FROM announcements ORDER BY created_at DESC LIMIT ? OFFSET ?");
+/* Lifecycle states. Mutually exclusive and exhaustive, so the tab counts always
+   sum to All. Each clause mirrors the badge logic further down the page — a row
+   badged "Scheduled" must be reachable under the Scheduled tab. */
+$state_sql = [
+    'all'       => '1',
+    'active'    => "is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) AND (starts_at IS NULL OR starts_at <= CURDATE())",
+    'scheduled' => "is_active = 1 AND (expires_at IS NULL OR expires_at >= CURDATE()) AND starts_at IS NOT NULL AND starts_at > CURDATE()",
+    'expired'   => "expires_at IS NOT NULL AND expires_at < CURDATE()",
+    'hidden'    => "is_active = 0 AND (expires_at IS NULL OR expires_at >= CURDATE())",
+];
+$state_meta = [
+    'all'       => ['All',       'layer-group'],
+    'active'    => ['Active',    'circle-dot'],
+    'scheduled' => ['Scheduled', 'clock'],
+    'expired'   => ['Expired',   'calendar-xmark'],
+    'hidden'    => ['Hidden',    'eye-slash'],
+];
+$filter = $_GET['filter'] ?? 'all';
+if (!isset($state_sql[$filter])) $filter = 'all';
+
+$cnt_sql = "SELECT COUNT(*) AS c_all";
+foreach ($state_sql as $k => $w) {
+    if ($k === 'all') continue;
+    $cnt_sql .= ", SUM($w) AS c_$k";
+}
+$counts = $conn->query($cnt_sql . " FROM announcements")->fetch_assoc();
+
+$per_page     = 10;
+$page         = max(1, (int)($_GET['page'] ?? 1));
+$total_count  = (int)$counts['c_all'];
+$filter_count = (int)$counts['c_' . $filter];
+$total_pages  = $filter_count > 0 ? (int)ceil($filter_count / $per_page) : 1;
+$page         = min($page, $total_pages);
+$offset       = ($page - 1) * $per_page;
+$pg_base      = 'announcements.php?filter=' . urlencode($filter) . '&page=';
+$stmt = $conn->prepare("SELECT * FROM announcements WHERE {$state_sql[$filter]} ORDER BY created_at DESC LIMIT ? OFFSET ?");
 $stmt->bind_param("ii", $per_page, $offset);
 $stmt->execute();
 $announcements = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -169,13 +204,30 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 .badge-active  { background:rgba(85,224,135,.12);  color:var(--success); border:1px solid rgba(85,224,135,.25); }
 .badge-off     { background:rgba(255,255,255,.05); color:var(--text-muted); border:1px solid var(--border); }
 
-/* Count chip */
-.count-chip {
-    display:inline-flex; align-items:center; justify-content:center;
-    min-width:22px; height:22px; padding:0 7px;
-    background:rgba(209,144,75,.15); color:var(--accent);
-    border-radius:20px; font-size:11px; font-weight:700;
+/* Filter tabs */
+.filter-bar {
+    display:flex; gap:8px; flex-wrap:wrap;
+    padding:14px 20px; border-bottom:1px solid var(--border);
 }
+.filter-pill {
+    display:inline-flex; align-items:center; gap:7px;
+    padding:6px 12px; border-radius:20px;
+    border:1px solid var(--border); background:rgba(255,255,255,.03);
+    color:var(--text-muted); text-decoration:none;
+    font-size:12px; font-weight:600; white-space:nowrap;
+    transition:all .18s ease;
+}
+.filter-pill:hover { color:var(--text); border-color:rgba(255,255,255,.16); }
+.filter-pill.on {
+    background:rgba(209,144,75,.12); border-color:rgba(209,144,75,.45); color:var(--accent);
+}
+.filter-count {
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:20px; height:18px; padding:0 6px; border-radius:20px;
+    background:rgba(255,255,255,.06); color:inherit;
+    font-size:10.5px; font-weight:700;
+}
+.filter-pill.on .filter-count { background:rgba(209,144,75,.22); }
 
 /* Form fields */
 .fl-label {
@@ -325,6 +377,9 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
 /* Light theme (follows shared localStorage theme) */
 [data-theme="light"]{--bg:#ECEEF2;--card:#FFFFFF;--card2:#F5F7FA;--border:#E2E5EA;--text:#111827;--text-muted:#5A6373;}
 [data-theme="light"] .topbar{background:rgba(255,255,255,.92);}
+[data-theme="light"] .filter-pill{background:#F5F7FA;}
+[data-theme="light"] .filter-pill:hover{border-color:#C7CCD4;}
+[data-theme="light"] .filter-count{background:rgba(0,0,0,.06);}
 </style>
 </head>
 <body>
@@ -333,10 +388,6 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
     <div class="topbar-left">
         <a href="dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
         <span class="page-title">Staff <span>Announcements</span></span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted)">
-        <span class="count-chip"><?= $active_count ?></span>
-        active now
     </div>
 </div>
 
@@ -350,15 +401,33 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
             <div class="card-header-left">
                 <div class="card-icon"><i class="fa-solid fa-bullhorn"></i></div>
                 <div>
-                    <div class="card-title">All Announcements</div>
-                    <div class="card-subtitle"><?= number_format($total_count) ?> total</div>
+                    <div class="card-title"><?= $state_meta[$filter][0] ?> Announcements</div>
+                    <div class="card-subtitle">
+                        <?php if ($filter === 'all'): ?>
+                        <?= number_format($total_count) ?> total
+                        <?php else: ?>
+                        <?= number_format($filter_count) ?> of <?= number_format($total_count) ?> total
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
+        </div>
+        <div class="filter-bar">
+            <?php foreach ($state_meta as $key => [$label, $icon]): ?>
+            <a href="announcements.php?filter=<?= $key ?>" class="filter-pill<?= $filter === $key ? ' on' : '' ?>">
+                <i class="fa-solid fa-<?= $icon ?>"></i> <?= $label ?>
+                <span class="filter-count"><?= (int)$counts['c_' . $key] ?></span>
+            </a>
+            <?php endforeach; ?>
         </div>
         <?php if (empty($announcements)): ?>
         <div class="empty-state">
             <i class="fa-solid fa-bullhorn"></i>
+            <?php if ($total_count === 0): ?>
             <p>No announcements yet.<br>Post one using the form.</p>
+            <?php else: ?>
+            <p>No <?= strtolower($state_meta[$filter][0]) ?> announcements.<br><a href="announcements.php?filter=all" style="color:var(--accent)">View all <?= number_format($total_count) ?></a></p>
+            <?php endif; ?>
         </div>
         <?php else: ?>
         <?php foreach ($announcements as $a):
@@ -376,6 +445,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                 </div>
                 <div class="ann-actions">
                     <form method="POST" style="display:inline">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                         <input type="hidden" name="action" value="toggle">
                         <input type="hidden" name="id" value="<?= $a['id'] ?>">
                         <button type="submit" class="btn-icon" title="<?= $a['is_active'] ? 'Hide' : 'Show' ?>">
@@ -383,6 +453,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
                         </button>
                     </form>
                     <form method="POST" style="display:inline" onsubmit="return confirm('Delete this announcement?')">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="id" value="<?= $a['id'] ?>">
                         <button type="submit" class="btn-icon del" title="Delete">
@@ -471,6 +542,7 @@ body { font-family:'Poppins',sans-serif; background:var(--bg); color:var(--text)
         </div>
         <div class="card-body">
             <form method="POST" id="createForm">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <input type="hidden" name="action" value="create">
 
                 <div class="field-group">
