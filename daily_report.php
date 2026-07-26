@@ -166,21 +166,42 @@ $avgCups = $paidOrderCount > 0 ? $cogs['items'] / $paidOrderCount : null;
  * For pay-later, Completed means the drinks were made and the customer still
  * owes — is_open is the only trustworthy signal. Getting this wrong has caused
  * three money bugs in this codebase.
+ *
+ * Non-payment outranks method: an order that fails the same collected test
+ * paid_orders_where() uses reads "not paid yet" regardless of what method it
+ * carries — a Preparing/is_open=1 cash row has not been paid any more than an
+ * open pay-later tab has. Only once collected do we name the method, and
+ * anything outside cash/bakong/paylater (legacy payment_method='0'/'riel'
+ * rows) reads "other way", matching tab 1's "other ways" card instead of
+ * being folded silently into "cash".
+ *
+ * Returns [label, state, bucket]. bucket is the payment-method category
+ * (cash/bakong/paylater/other) and drives the filter pills; state is
+ * 'open'/'ok' and drives the amber tint. The two are independent — a
+ * paylater row keeps bucket=paylater whether or not it is state=open.
  */
 function dr_pay_label(array $o): array {
     $m = strtolower((string)$o['payment_method']);
-    if ($m === 'paylater') {
-        return ((int)$o['is_open'] === 0 && $o['status'] === 'Paid')
-            ? ['pay later — paid', 'ok']
-            : ['not paid yet', 'open'];
+    $bucket = in_array($m, ['cash', 'bakong', 'paylater'], true) ? $m : 'other';
+
+    $collected = ((int)$o['is_open'] === 0)
+        && !in_array($o['status'], ['PendingPayment', 'Cancelled', 'Refunded', 'Void'], true);
+    if (!$collected) {
+        return ['not paid yet', 'open', $bucket];
     }
-    return [$m === 'bakong' ? 'bakong' : 'cash', 'ok'];
+
+    $label = match ($bucket) {
+        'paylater' => 'pay later — paid',
+        'other'    => 'other way',
+        default    => $bucket, // cash, bakong
+    };
+    return [$label, 'ok', $bucket];
 }
 
 // ── Tab 2: Orders (Task 6) — the day's orders and how each was paid ──
 function dr_fragment_orders(mysqli $conn, string $date): void {
     $stmt = $conn->prepare("
-        SELECT daily_order_no, customer_name, total, payment_method, status, is_open,
+        SELECT order_id, daily_order_no, customer_name, total, payment_method, status, is_open,
                order_date, order_type
         FROM orders
         WHERE business_date = ? AND status NOT IN ('Cancelled','Void')
@@ -201,19 +222,62 @@ function dr_fragment_orders(mysqli $conn, string $date): void {
     $stmt->execute();
     $remadeCount = (int)$stmt->get_result()->fetch_row()[0];
 
-    // Cups for the footer — every non-cancelled/void order this day, matching
-    // the same row set as the table (not the paid-only definition from tab 1).
+    // Cups per order, for the per-row data attribute the footer's JS sums
+    // over the currently-filtered rows.
+    $cupsByOrder = [];
     $stmt = $conn->prepare("
-        SELECT COALESCE(SUM(oi.quantity),0)
+        SELECT oi.order_id, COALESCE(SUM(oi.quantity),0) AS cups
         FROM order_items oi
         JOIN orders o ON o.order_id = oi.order_id
         WHERE o.business_date = ? AND o.status NOT IN ('Cancelled','Void')
+        GROUP BY oi.order_id
     ");
     $stmt->bind_param("s", $date);
     $stmt->execute();
-    $cupsToday = (int)$stmt->get_result()->fetch_row()[0];
+    $res = $stmt->get_result();
+    while ($r = $res->fetch_assoc()) { $cupsByOrder[(int)$r['order_id']] = (int)$r['cups']; }
+    $cupsToday = array_sum($cupsByOrder);
 
-    $dayTotal = array_sum(array_map(fn($o) => (float)$o['total'], $rows));
+    // Money collected vs. still owed — the same collected test tab 1 uses
+    // (paid_orders_where()), never a hand-rolled status check. This is the
+    // figure that belongs in a "total" slot; folding in open pay-later tabs
+    // here is exactly the confusion that has cost this codebase three money
+    // bugs already.
+    $stmt = $conn->prepare("SELECT COALESCE(SUM(total),0), COUNT(*) FROM orders WHERE business_date = ? AND " . paid_orders_where());
+    $stmt->bind_param("s", $date);
+    $stmt->execute();
+    [$collectedTotal, $collectedCount] = $stmt->get_result()->fetch_row();
+    $collectedTotal = (float)$collectedTotal;
+
+    $stmt = $conn->prepare("
+        SELECT COALESCE(SUM(total),0), COUNT(*)
+        FROM orders
+        WHERE business_date = ? AND status NOT IN ('Cancelled','Void') AND NOT (" . paid_orders_where() . ")
+    ");
+    $stmt->bind_param("s", $date);
+    $stmt->execute();
+    [$notPaidTotal, $notPaidCount] = $stmt->get_result()->fetch_row();
+    $notPaidTotal = (float)$notPaidTotal;
+
+    // Pre-derive each row's label/state/bucket once — the table and the
+    // "Other" pill's visibility both need it, and deriving it twice is
+    // exactly the desync risk the bucket used to have.
+    $rowData = [];
+    $hasOther = false;
+    foreach ($rows as $o) {
+        [$label, $state, $bucket] = dr_pay_label($o);
+        if ($bucket === 'other') { $hasOther = true; }
+        $rowData[] = [
+            'label'  => $label,
+            'state'  => $state,
+            'bucket' => $bucket,
+            'time'   => date('H:i', strtotime($o['order_date'])),
+            'no'     => '#' . str_pad((string)(int)$o['daily_order_no'], 4, '0', STR_PAD_LEFT),
+            'cust'   => (($name = trim((string)$o['customer_name'])) === '' || $name === 'Guest') ? '—' : $name,
+            'total'  => (float)$o['total'],
+            'cups'   => $cupsByOrder[(int)$o['order_id']] ?? 0,
+        ];
+    }
     ?>
     <div class="dr-card dr-wide" style="margin-top:0">
       <p class="dr-note" style="margin-bottom:14px">money given back: <?= (int)$givenBackCount ?> &middot; drinks made again: <?= (int)$remadeCount ?></p>
@@ -223,6 +287,9 @@ function dr_fragment_orders(mysqli $conn, string $date): void {
         <button type="button" class="dr-pill" data-filter="cash">Cash</button>
         <button type="button" class="dr-pill" data-filter="bakong">Bakong</button>
         <button type="button" class="dr-pill" data-filter="paylater">Pay later</button>
+        <?php if ($hasOther): ?>
+        <button type="button" class="dr-pill" data-filter="other">Other</button>
+        <?php endif; ?>
       </div>
 
       <div class="dr-table-wrap">
@@ -231,32 +298,28 @@ function dr_fragment_orders(mysqli $conn, string $date): void {
             <tr><th>Time</th><th>Order</th><th>Customer</th><th>Total</th><th>Paid</th></tr>
           </thead>
           <tbody>
-            <?php if (!$rows): ?>
+            <?php if (!$rowData): ?>
             <tr><td colspan="5" class="dr-note" style="padding:20px 0;text-align:center">no orders this day</td></tr>
             <?php endif; ?>
-            <?php foreach ($rows as $o):
-                [$label, $state] = dr_pay_label($o);
-                $m = strtolower((string)$o['payment_method']);
-                $bucket = $m === 'paylater' ? 'paylater' : ($m === 'bakong' ? 'bakong' : 'cash');
-                $time   = date('H:i', strtotime($o['order_date']));
-                $no     = '#' . str_pad((string)(int)$o['daily_order_no'], 4, '0', STR_PAD_LEFT);
-                $name   = trim((string)$o['customer_name']);
-                $cust   = ($name === '' || $name === 'Guest') ? '—' : $name;
-            ?>
-            <tr class="<?= $state === 'open' ? 'is-open' : '' ?>" data-method="<?= htmlspecialchars($bucket) ?>">
-              <td><?= htmlspecialchars($time) ?></td>
-              <td><?= htmlspecialchars($no) ?></td>
-              <td><?= htmlspecialchars($cust) ?></td>
-              <td>$<?= htmlspecialchars(number_format((float)$o['total'], 2)) ?></td>
-              <td><?= htmlspecialchars($label) ?></td>
+            <?php foreach ($rowData as $rd): ?>
+            <tr class="<?= $rd['state'] === 'open' ? 'is-open' : '' ?>"
+                data-method="<?= htmlspecialchars($rd['bucket']) ?>"
+                data-state="<?= htmlspecialchars($rd['state']) ?>"
+                data-total="<?= htmlspecialchars((string)$rd['total']) ?>"
+                data-cups="<?= (int)$rd['cups'] ?>">
+              <td><?= htmlspecialchars($rd['time']) ?></td>
+              <td><?= htmlspecialchars($rd['no']) ?></td>
+              <td><?= htmlspecialchars($rd['cust']) ?></td>
+              <td>$<?= htmlspecialchars(number_format($rd['total'], 2)) ?></td>
+              <td><?= htmlspecialchars($rd['label']) ?></td>
             </tr>
             <?php endforeach; ?>
           </tbody>
         </table>
       </div>
 
-      <div class="dr-table-foot">
-        <span><?= (int)count($rows) ?> orders</span> &middot; <span><?= (int)$cupsToday ?> cups</span> &middot; <span>$<?= htmlspecialchars(number_format($dayTotal, 2)) ?> total</span>
+      <div class="dr-table-foot" id="ordersFoot">
+        <span><?= (int)count($rowData) ?> orders</span> &middot; <span><?= (int)$cupsToday ?> cups</span> &middot; <span>$<?= htmlspecialchars(number_format($collectedTotal, 2)) ?> collected</span><?php if ($notPaidCount > 0): ?> &middot; <span>$<?= htmlspecialchars(number_format($notPaidTotal, 2)) ?> not paid yet</span><?php endif; ?>
       </div>
 
       <div class="dr-pagination" id="ordersPagination"></div>
@@ -606,6 +669,7 @@ function drInit_orders() {
     const pageSize = 25;
     const allRows  = Array.from(table.querySelectorAll('tbody tr[data-method]'));
     const pager    = panel.querySelector('#ordersPagination');
+    const foot     = panel.querySelector('#ordersFoot');
     let filtered = allRows.slice();
     let page = 1;
 
@@ -614,6 +678,27 @@ function drInit_orders() {
         const start = (page - 1) * pageSize;
         filtered.slice(start, start + pageSize).forEach(r => { r.style.display = ''; });
         renderPager();
+        renderFoot();
+    }
+
+    // Describes the currently-filtered set (all matching rows, not just the
+    // page on screen) — clicking a pill must change what the footer says, or
+    // it silently contradicts the table exactly like the "$X total" bug did.
+    function renderFoot() {
+        if (!foot) return;
+        let cups = 0, collected = 0, notPaid = 0, notPaidCount = 0;
+        filtered.forEach(r => {
+            cups += parseInt(r.dataset.cups || '0', 10);
+            const total = parseFloat(r.dataset.total || '0');
+            if (r.dataset.state === 'open') { notPaid += total; notPaidCount++; }
+            else { collected += total; }
+        });
+        let html = '<span>' + filtered.length + ' orders</span> · <span>' + cups + ' cups</span> · '
+                 + '<span>$' + collected.toFixed(2) + ' collected</span>';
+        if (notPaidCount > 0) {
+            html += ' · <span>$' + notPaid.toFixed(2) + ' not paid yet</span>';
+        }
+        foot.innerHTML = html;
     }
 
     function renderPager() {
