@@ -353,6 +353,57 @@ if (!function_exists('order_cogs')) {
     }
 }
 
+/**
+ * What a normal <weekday> takes, for judging today against.
+ *
+ * A cafe's trade is weekly-seasonal, so Saturday is only fair against other
+ * Saturdays. Averages the last $want same-weekday business dates that
+ * actually traded. Some weekdays are thin, so this degrades: fewer than two
+ * such days falls back to yesterday, and no yesterday returns no basis at
+ * all rather than comparing today against a day that never happened.
+ */
+if (!function_exists('weekday_baseline')) {
+    function weekday_baseline(mysqli $conn, string $date, int $want = 4): array {
+        $none = ['value' => null, 'basis' => 'none', 'label' => '', 'days' => 0, 'dates' => []];
+
+        $stmt = $conn->prepare("
+            SELECT business_date, SUM(total) AS takings
+            FROM orders
+            WHERE business_date < ?
+              AND DAYOFWEEK(business_date) = DAYOFWEEK(?)
+              AND " . paid_orders_where() . "
+            GROUP BY business_date
+            HAVING takings > 0
+            ORDER BY business_date DESC
+            LIMIT ?
+        ");
+        $stmt->bind_param("ssi", $date, $date, $want);
+        $stmt->execute();
+        $days = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        if (count($days) >= 2) {
+            $sum = 0.0;
+            foreach ($days as $d) { $sum += (float)$d['takings']; }
+            return [
+                'value' => $sum / count($days),
+                'basis' => 'weekday',
+                'label' => 'a normal ' . date('l', strtotime($date)),
+                'days'  => count($days),
+                'dates' => array_column($days, 'business_date'),
+            ];
+        }
+
+        $yesterday = date('Y-m-d', strtotime($date . ' -1 day'));
+        $stmt = $conn->prepare("SELECT SUM(total) FROM orders WHERE business_date = ? AND " . paid_orders_where());
+        $stmt->bind_param("s", $yesterday);
+        $stmt->execute();
+        $y = $stmt->get_result()->fetch_row()[0];
+
+        if ($y === null || (float)$y <= 0) { return $none; }
+        return ['value' => (float)$y, 'basis' => 'yesterday', 'label' => 'yesterday', 'days' => 1, 'dates' => [$yesterday]];
+    }
+}
+
 // ── Add-ons (toppings) library + per-product mapping ──
 $conn->query("CREATE TABLE IF NOT EXISTS addons (
     id INT AUTO_INCREMENT PRIMARY KEY,

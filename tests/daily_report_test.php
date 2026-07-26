@@ -37,5 +37,21 @@ check('a real day has items',           $cogs['items'] > 0,                   tr
 check('a real day costs something',     $cogs['total'] > 0,                   true);
 check('cost never exceeds takings',     $cogs['total'] < 40.09,               true);
 
+echo "weekday_baseline\n";
+// Sundays before 2026-07-26 with paid orders: 07-12 14.74, 06-14 85.75,
+// 06-07 19.83, 05-31 78.99  ->  mean 49.8275.
+$b = weekday_baseline($conn, '2026-07-26');
+check('uses the same weekday',   $b['basis'], 'weekday');
+check('averages the last four',  round($b['value'], 4), 49.8275);
+check('reads as a normal Sunday',$b['label'], 'a normal Sunday');
+check('counts the days used',    $b['days'],  4);
+check('names the days averaged', $b['dates'], ['2026-07-12','2026-06-14','2026-06-07','2026-05-31']);
+check('every day is a Sunday',   count(array_unique(array_map(fn($d) => date('N', strtotime($d)), $b['dates']))), 1);
+
+// A date with no prior same-weekday trading must not invent a comparison.
+$early = weekday_baseline($conn, '2026-05-25');
+check('degrades rather than lying', in_array($early['basis'], ['yesterday','none'], true), true);
+check('never labels an empty basis', $early['basis'] === 'none' ? $early['label'] : 'a normal Sunday', $early['basis'] === 'none' ? '' : 'a normal Sunday');
+
 echo ($failures === 0) ? "\nALL PASS\n" : "\n$failures FAILURE(S)\n";
 exit($failures === 0 ? 0 : 1);
