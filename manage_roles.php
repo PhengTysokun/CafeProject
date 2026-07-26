@@ -14,6 +14,16 @@ function csrf_ok(): bool {
     return hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '');
 }
 
+/* Colour and icon end up inside style="" and class="" on the client. The picker UI
+   constrains them, but that is client-side only — a hand-rolled POST walks past it.
+   Pin both to their real shape here, at the one place they enter the database. */
+function safe_role_color(string $c): string {
+    return preg_match('/^#[0-9a-fA-F]{6}$/', $c) ? $c : '#888888';
+}
+function safe_role_icon(string $i): string {
+    return preg_match('/^fa-[a-z0-9-]{1,40}$/i', $i) ? $i : 'fa-user';
+}
+
 function audit_log(mysqli $db, string $action, string $role_slug, string $detail = ''): void {
     if (session_status() === PHP_SESSION_NONE) session_start();
     $by = $_SESSION['username'] ?? (isset($_SESSION['user_id']) ? 'user#'.$_SESSION['user_id'] : 'unknown');
@@ -29,6 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
     $icon = trim($_POST['role_icon'] ?? 'fa-user');
     $color= trim($_POST['role_color'] ?? '#888888');
     $desc = trim($_POST['role_desc'] ?? '');
+    $icon = safe_role_icon($icon);
+    $color= safe_role_color($color);
     $slug = trim(strtolower(preg_replace('/[^a-z0-9]+/i', '_', $name)), '_');
     if ($name !== '' && $slug !== '') {
         $s = $conn->prepare("INSERT IGNORE INTO roles (slug, name, icon, color, description, is_system) VALUES (?,?,?,?,?,0)");
@@ -86,6 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $icon = trim($_POST['role_icon'] ?? 'fa-user');
     $color= trim($_POST['role_color'] ?? '#888888');
     $desc = trim($_POST['role_desc'] ?? '');
+    $icon = safe_role_icon($icon);
+    $color= safe_role_color($color);
     if ($slug !== '' && $name !== '') {
         $s = $conn->prepare("UPDATE roles SET name=?, icon=?, color=?, description=? WHERE slug=? AND slug != 'admin'");
         $s->bind_param("sssss", $name, $icon, $color, $desc, $slug);
@@ -1071,6 +1085,12 @@ const ROLE_IDS   = <?= json_encode(array_map(fn($ids) => array_keys($ids), $role
 const TOTAL      = <?= $total_perm_count ?>;
 const MOD_META   = <?= json_encode($module_meta, JSON_UNESCAPED_UNICODE) ?>;
 const ROLES_INFO = <?= json_encode($roles_js, JSON_UNESCAPED_UNICODE) ?>;
+/* Role names, descriptions and employee names are free text. Anything from those
+   columns must go through this before it touches innerHTML. */
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+));
+
 let currentRole      = null;
 let currentRoleColor = '#888888';
 let currentRoleCls   = 'for-role';
@@ -1127,7 +1147,7 @@ function openModal(role) {
     currentRoleColor = info.color;
     currentRoleCls   = info.cls;
     document.getElementById('modalTitle').innerHTML =
-        `<i class="fa-solid ${info.icon}" style="color:${info.color}"></i> Edit Permissions — ${info.label}`;
+        `<i class="fa-solid ${esc(info.icon)}" style="color:${esc(info.color)}"></i> Edit Permissions — ${esc(info.label)}`;
     document.getElementById('modalAccent').style.background = info.accent;
     selected = new Set((ROLE_IDS[role] || []).map(Number));
     renderModal();
@@ -1309,6 +1329,32 @@ function closeEditMeta() {
     document.getElementById('editRoleMetaModal').classList.remove('open');
 }
 
+/* One role-picker row, built as DOM nodes with a real event listener.
+   The previous version interpolated the slug and colour into an onclick="" attribute.
+   Escaping cannot secure that: the HTML parser decodes entities when it builds the
+   attribute, and only then does the JS parser see the result — so a quote comes back
+   to life and breaks out. Removing the inline handler removes the sink. */
+function buildRoleOption(slug, info, hiddenInputId, containerSel) {
+    const label = document.createElement('label');
+    label.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 13px;'
+        + 'border-radius:9px;border:1.5px solid var(--border);background:var(--bg);'
+        + 'cursor:pointer;transition:all .2s;font-size:13px;font-weight:500';
+
+    const icon = document.createElement('i');
+    icon.className     = 'fa-solid ' + info.icon;
+    icon.style.color   = info.color;   // CSSOM drops an invalid value instead of parsing it
+    icon.style.width   = '16px';
+    icon.style.textAlign = 'center';
+
+    label.append(icon, document.createTextNode(' ' + info.label));
+    label.addEventListener('click', () => {
+        document.getElementById(hiddenInputId).value = slug;
+        document.querySelectorAll(containerSel + ' label').forEach(l => l.style.borderColor = '');
+        label.style.borderColor = info.color;
+    });
+    return label;
+}
+
 /* ── DELETE ROLE MODAL ── */
 async function openDeleteModal(slug, label, empCount) {
     document.getElementById('dr-slug').value = slug;
@@ -1320,7 +1366,7 @@ async function openDeleteModal(slug, label, empCount) {
     const namesList = document.getElementById('dr-names-list');
 
     if (empCount > 0) {
-        msg.innerHTML = `<strong style="color:var(--text)">${empCount} employee${empCount !== 1 ? 's' : ''}</strong> currently have the <strong style="color:var(--text)">${label}</strong> role. Choose a role to reassign them to before deleting.`;
+        msg.innerHTML = `<strong style="color:var(--text)">${empCount} employee${empCount !== 1 ? 's' : ''}</strong> currently have the <strong style="color:var(--text)">${esc(label)}</strong> role. Choose a role to reassign them to before deleting.`;
         wrap.style.display = 'block';
 
         // Fetch employee names async
@@ -1330,7 +1376,7 @@ async function openDeleteModal(slug, label, empCount) {
                 const r = await fetch(`manage_roles.php?action=role_employees&slug=${encodeURIComponent(slug)}`);
                 const d = await r.json();
                 if (d.names && d.names.length) {
-                    namesList.innerHTML = d.names.map(n => `<span style="display:inline-block;background:rgba(255,255,255,.07);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;margin:2px">${n}</span>`).join('');
+                    namesList.innerHTML = d.names.map(n => `<span style="display:inline-block;background:rgba(255,255,255,.07);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;margin:2px">${esc(n)}</span>`).join('');
                     if (empCount > d.names.length) namesList.innerHTML += `<span style="font-size:11px;color:var(--text-muted)"> +${empCount - d.names.length} more</span>`;
                 } else { namesList.textContent = ''; }
             } catch(_) { namesList.textContent = ''; }
@@ -1342,12 +1388,7 @@ async function openDeleteModal(slug, label, empCount) {
         for (const [rs, ri] of Object.entries(ROLES_INFO)) {
             if (rs === slug || rs === 'admin') continue;
             if (first) { document.getElementById('dr-reassign').value = rs; first = false; }
-            opts.innerHTML += `
-                <label style="display:flex;align-items:center;gap:10px;padding:9px 13px;border-radius:9px;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;transition:all .2s;font-size:13px;font-weight:500"
-                    onclick="document.getElementById('dr-reassign').value='${rs}';document.querySelectorAll('#dr-role-options label').forEach(l=>l.style.borderColor='');this.style.borderColor='${ri.color}'">
-                    <i class="fa-solid ${ri.icon}" style="color:${ri.color};width:16px;text-align:center"></i>
-                    ${ri.label}
-                </label>`;
+            opts.append(buildRoleOption(rs, ri, 'dr-reassign', '#dr-role-options'));
         }
         document.getElementById('dr-confirm-btn').innerHTML = '<i class="fa-solid fa-trash-can"></i> Reassign & Delete';
 
@@ -1355,7 +1396,7 @@ async function openDeleteModal(slug, label, empCount) {
         const firstSlug  = Object.keys(ROLES_INFO).find(rs => rs !== slug && rs !== 'admin');
         if (firstLabel && firstSlug) firstLabel.style.borderColor = ROLES_INFO[firstSlug].color;
     } else {
-        msg.innerHTML = `Are you sure you want to delete the <strong style="color:var(--text)">${label}</strong> role? This cannot be undone.`;
+        msg.innerHTML = `Are you sure you want to delete the <strong style="color:var(--text)">${esc(label)}</strong> role? This cannot be undone.`;
         wrap.style.display = 'none';
         if (namesList) namesList.textContent = '';
         document.getElementById('dr-reassign').value = '';
@@ -1373,7 +1414,7 @@ function openBulkReassignModal(slug, label, empCount) {
     document.getElementById('br-from').value = slug;
     document.getElementById('br-to').value   = '';
     document.getElementById('br-msg').innerHTML =
-        `Move all <strong style="color:var(--text)">${empCount} employee${empCount !== 1 ? 's' : ''}</strong> currently assigned to <strong style="color:var(--text)">${label}</strong> to a different role.`;
+        `Move all <strong style="color:var(--text)">${empCount} employee${empCount !== 1 ? 's' : ''}</strong> currently assigned to <strong style="color:var(--text)">${esc(label)}</strong> to a different role.`;
 
     const opts = document.getElementById('br-role-options');
     opts.innerHTML = '';
@@ -1381,12 +1422,7 @@ function openBulkReassignModal(slug, label, empCount) {
     for (const [rs, ri] of Object.entries(ROLES_INFO)) {
         if (rs === slug || rs === 'admin') continue;
         if (first) { document.getElementById('br-to').value = rs; first = false; }
-        opts.innerHTML += `
-            <label style="display:flex;align-items:center;gap:10px;padding:9px 13px;border-radius:9px;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;transition:all .2s;font-size:13px;font-weight:500"
-                onclick="document.getElementById('br-to').value='${rs}';document.querySelectorAll('#br-role-options label').forEach(l=>l.style.borderColor='');this.style.borderColor='${ri.color}'">
-                <i class="fa-solid ${ri.icon}" style="color:${ri.color};width:16px;text-align:center"></i>
-                ${ri.label}
-            </label>`;
+        opts.append(buildRoleOption(rs, ri, 'br-to', '#br-role-options'));
     }
     const firstLabel = opts.querySelector('label');
     const firstSlug  = Object.keys(ROLES_INFO).find(rs => rs !== slug && rs !== 'admin');
