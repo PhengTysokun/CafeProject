@@ -255,8 +255,10 @@ The comparison that drives the verdict colours. Trade is weekly-seasonal, so tod
 **Interfaces:**
 - Consumes: `paid_orders_where()`, `business_date_today()`.
 - Produces: `weekday_baseline(mysqli $conn, string $date, int $want = 4): array` returning
-  `['value'=>float|null, 'basis'=>'weekday'|'yesterday'|'none', 'label'=>string, 'days'=>int]`.
+  `['value'=>float|null, 'basis'=>'weekday'|'yesterday'|'none', 'label'=>string, 'days'=>int, 'dates'=>string[]]`.
   `label` is ready to print: `'a normal Sunday'`, `'yesterday'`, or `''`.
+  `dates` lists the business dates that were averaged (empty when basis is `none`) — Task 4
+  costs those same days to build the money-kept baseline, so both boxes judge the same days.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -271,6 +273,8 @@ check('uses the same weekday',   $b['basis'], 'weekday');
 check('averages the last four',  round($b['value'], 4), 49.8275);
 check('reads as a normal Sunday',$b['label'], 'a normal Sunday');
 check('counts the days used',    $b['days'],  4);
+check('names the days averaged', $b['dates'], ['2026-07-12','2026-06-14','2026-06-07','2026-05-31']);
+check('every day is a Sunday',   count(array_unique(array_map(fn($d) => date('N', strtotime($d)), $b['dates']))), 1);
 
 // A date with no prior same-weekday trading must not invent a comparison.
 $early = weekday_baseline($conn, '2026-05-25');
@@ -299,7 +303,7 @@ Append to `config.php`:
  */
 if (!function_exists('weekday_baseline')) {
     function weekday_baseline(mysqli $conn, string $date, int $want = 4): array {
-        $none = ['value' => null, 'basis' => 'none', 'label' => '', 'days' => 0];
+        $none = ['value' => null, 'basis' => 'none', 'label' => '', 'days' => 0, 'dates' => []];
 
         $stmt = $conn->prepare("
             SELECT business_date, SUM(total) AS takings
@@ -324,6 +328,7 @@ if (!function_exists('weekday_baseline')) {
                 'basis' => 'weekday',
                 'label' => 'a normal ' . date('l', strtotime($date)),
                 'days'  => count($days),
+                'dates' => array_column($days, 'business_date'),
             ];
         }
 
@@ -334,7 +339,7 @@ if (!function_exists('weekday_baseline')) {
         $y = $stmt->get_result()->fetch_row()[0];
 
         if ($y === null || (float)$y <= 0) { return $none; }
-        return ['value' => (float)$y, 'basis' => 'yesterday', 'label' => 'yesterday', 'days' => 1];
+        return ['value' => (float)$y, 'basis' => 'yesterday', 'label' => 'yesterday', 'days' => 1, 'dates' => [$yesterday]];
     }
 }
 ```
@@ -547,10 +552,45 @@ function dr_verdict(float $now, ?float $baseline, string $label): array {
     ];
 }
 
-$vGot  = dr_verdict($gotToday,  $baseGot['value'], $baseGot['label']);
-// The same baseline day-set judges what we kept, so both boxes answer the
-// same question about the same days.
-$vKept = dr_verdict($keptToday, $baseGot['value'] !== null ? $baseGot['value'] * ($gotToday > 0 ? $keptToday / $gotToday : 0) : null, $baseGot['label']);
+$vGot  = dr_verdict($gotToday, $baseGot['value'], $baseGot['label']);
+
+/**
+ * What we kept on the baseline days, costed the same way today is.
+ *
+ * Scaling the takings baseline by today's keep-rate would be cheaper, but it
+ * reduces to the takings difference times a constant — box 2 would always
+ * agree with box 1 and never tell the manager anything new. A day can take
+ * less and keep more (cheap drinks sold instead of dear ones), and that is
+ * exactly the day this box exists to catch. So cost the baseline days for real.
+ */
+$keptBaseline = null;
+if ($baseGot['basis'] !== 'none') {
+    $stmt = $conn->prepare("
+        SELECT business_date, order_id
+        FROM orders
+        WHERE business_date IN (" . implode(',', array_fill(0, count($baseGot['dates']), '?')) . ")
+          AND " . paid_orders_where()
+    );
+    $stmt->bind_param(str_repeat('s', count($baseGot['dates'])), ...$baseGot['dates']);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $byDay = [];
+    while ($r = $res->fetch_assoc()) { $byDay[$r['business_date']][] = (int)$r['order_id']; }
+
+    $keptSum = 0.0;
+    foreach ($baseGot['dates'] as $d) {
+        $dayIds  = $byDay[$d] ?? [];
+        $dayGot  = 0.0;
+        if ($dayIds) {
+            $in = implode(',', $dayIds);
+            $dayGot = (float)$conn->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE order_id IN ($in)")->fetch_row()[0];
+        }
+        $keptSum += $dayGot - order_cogs($conn, $dayIds, $costMap)['total'];
+    }
+    $keptBaseline = $keptSum / count($baseGot['dates']);
+}
+
+$vKept = dr_verdict($keptToday, $keptBaseline, $baseGot['label']);
 ```
 
 - [ ] **Step 3: Work out the stock verdict**
