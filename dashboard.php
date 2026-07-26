@@ -1316,6 +1316,10 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
                 <i class="fa-solid fa-clipboard-list"></i>
                 <span class="nav-label">Stock Count</span>
             </a>
+            <a class="nav-item<?= basename($_SERVER['PHP_SELF']) === 'inventory_count.php' ? ' active' : '' ?>" href="inventory_count.php">
+                <i class="fa-solid fa-boxes-stacked"></i>
+                <span class="nav-label">Inventory Count</span>
+            </a>
             <?php endif; ?>
         </div>
         <?php endif; ?>

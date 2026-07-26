@@ -74,36 +74,8 @@ $is_ajax  = !empty($_GET['ajax']);
 $cashiers = [];
 $cr = $conn->query("SELECT DISTINCT user_id, username FROM cash_counts ORDER BY username ASC");
 
-// ── STOCK COUNT SESSIONS in date range (only if tables exist) ──
-$sc_rows = [];
-$_sc_tables = $conn->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('stock_counts','stock_count_items')")->fetch_row()[0];
-if ((int)$_sc_tables === 2) {
-    $sc_stmt = $conn->prepare("
-        SELECT
-            sc.count_id,
-            sc.business_date,
-            sc.status,
-            sc.submitted_by,
-            sc.submitted_at,
-            sc.reconciled_at,
-            sc.reconciled_by,
-            sc.notes,
-            COUNT(sci.item_id)                                             AS total_items,
-            SUM(sci.actual_qty IS NOT NULL)                                AS counted_items,
-            SUM(sci.variance < -0.01)                                      AS shortage_items,
-            SUM(sci.variance >  0.01)                                      AS overage_items,
-            SUM(CASE WHEN sci.variance < -0.01 THEN sci.variance ELSE 0 END) AS total_shortage,
-            SUM(CASE WHEN sci.variance >  0.01 THEN sci.variance ELSE 0 END) AS total_overage
-        FROM stock_counts sc
-        LEFT JOIN stock_count_items sci ON sci.count_id = sc.count_id
-        WHERE sc.business_date BETWEEN ? AND ?
-        GROUP BY sc.count_id
-        ORDER BY sc.business_date DESC
-    ");
-    $sc_stmt->bind_param("ss", $filter_from, $filter_to);
-    $sc_stmt->execute();
-    $sc_rows = $sc_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-}
+// Stock count sessions moved to inventory_count.php — this page is Cash Count only.
+
 while ($row = $cr->fetch_assoc()) $cashiers[] = $row;
 
 // ── WHERE CLAUSE ──
@@ -551,6 +523,15 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
   color:var(--muted2);text-decoration:none;transition:all .2s;white-space:nowrap;
 }
 .inv-view-btn:hover{color:var(--text);background:rgba(255,255,255,.09);}
+/* Signpost to where the stock counts went */
+.inv-jump{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  margin-top:20px;padding:16px 20px;border-radius:var(--radius);
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--muted2);font-size:13px;text-decoration:none;transition:all .2s;
+}
+.inv-jump:hover{border-color:var(--amber-border);background:var(--amber-dim);color:var(--text)}
+.inv-jump-go{display:inline-flex;align-items:center;gap:7px;color:var(--amber);font-weight:600}
 /* Light theme (follows shared localStorage theme) */
 /* ── Follow-up strip ── */
 .followup{
@@ -735,156 +716,11 @@ tr.row-match td:first-child{border-left:3px solid var(--green)}
     </div>
     <?php endif; ?>
 
-    <!-- ── INVENTORY STOCK COUNTS ── -->
-    <div class="inv-section">
-        <div class="inv-header">
-            <div class="inv-title">
-                <i class="fa-solid fa-clipboard-list" style="color:var(--amber)"></i>
-                Inventory Stock Counts
-            </div>
-            <a href="stock_count.php" class="inv-new-btn">
-                <i class="fa-solid fa-plus"></i> New Count
-            </a>
-        </div>
-
-        <?php if (empty($sc_rows)): ?>
-        <div class="empty" style="padding:40px 20px">
-            <i class="fa-solid fa-clipboard-list"></i>
-            <h3>No stock counts in this period</h3>
-            <p>Stock counts submitted via the Stock Count page will appear here.</p>
-        </div>
-        <?php else: ?>
-        <table>
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th style="text-align:right">Items Counted</th>
-                    <th style="text-align:right;color:#f87171">Shortages</th>
-                    <th style="text-align:right;color:#fbbf24">Overages</th>
-                    <th>Submitted By</th>
-                    <th>Reconciled</th>
-                    <th>Notes</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody id="scBody">
-            <?php foreach ($sc_rows as $scr):
-                $shortage = (int)$scr['shortage_items'];
-                $overage  = (int)$scr['overage_items'];
-                $counted  = (int)$scr['counted_items'];
-                $total_i  = (int)$scr['total_items'];
-                $row_class = $shortage > 0 ? 'row-short' : ($overage > 0 ? 'row-over' : ($counted > 0 ? 'row-match' : ''));
-            ?>
-            <tr class="<?= $row_class ?>">
-                <td>
-                    <strong><?= date('d M Y', strtotime($scr['business_date'])) ?></strong>
-                    <?php if ($scr['business_date'] === date('Y-m-d')): ?>
-                    <span class="badge match" style="font-size:10px;padding:2px 7px;margin-left:6px">Today</span>
-                    <?php endif; ?>
-                </td>
-                <td>
-                    <?php if ($scr['status'] === 'submitted'): ?>
-                    <span class="badge match"><i class="fa-solid fa-lock"></i> Submitted</span>
-                    <?php else: ?>
-                    <span class="badge" style="background:rgba(255,255,255,.06);color:#888;border:1px solid rgba(255,255,255,.1)">
-                        <i class="fa-solid fa-pencil"></i> Draft
-                    </span>
-                    <?php endif; ?>
-                </td>
-                <td style="text-align:right;color:var(--muted2)"><?= $counted ?> / <?= $total_i ?></td>
-                <td style="text-align:right">
-                    <?php if ($shortage > 0): ?>
-                    <span class="badge short"><?= $shortage ?> item<?= $shortage !== 1 ? 's' : '' ?></span>
-                    <?php else: ?>
-                    <span style="color:var(--muted)">—</span>
-                    <?php endif; ?>
-                </td>
-                <td style="text-align:right">
-                    <?php if ($overage > 0): ?>
-                    <span class="badge over"><?= $overage ?> item<?= $overage !== 1 ? 's' : '' ?></span>
-                    <?php else: ?>
-                    <span style="color:var(--muted)">—</span>
-                    <?php endif; ?>
-                </td>
-                <td style="color:var(--muted2)"><?= htmlspecialchars($scr['submitted_by'] ?? '—') ?></td>
-                <td>
-                    <?php if ($scr['status'] !== 'submitted'): ?>
-                        <span style="color:var(--muted2)">—</span>
-                    <?php elseif (!empty($scr['reconciled_at'])): ?>
-                        <span class="badge match" title="<?= date('d M Y, g:i A', strtotime($scr['reconciled_at'])) ?>">
-                            <i class="fa-solid fa-clipboard-check"></i> <?= htmlspecialchars($scr['reconciled_by'] ?? '', ENT_QUOTES) ?>
-                        </span>
-                    <?php else: ?>
-                        <span class="badge" style="background:var(--amber-dim,rgba(209,144,75,.12));color:#fbbf24;border:1px solid rgba(209,144,75,.25)">
-                            <i class="fa-solid fa-hourglass-half"></i> Pending
-                        </span>
-                    <?php endif; ?>
-                </td>
-                <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                    <?= htmlspecialchars($scr['notes'] ?? '') ?>
-                </td>
-                <td>
-                    <a href="stock_count.php?date=<?= $scr['business_date'] ?>" class="inv-view-btn">
-                        View <i class="fa-solid fa-arrow-right" style="font-size:10px"></i>
-                    </a>
-                </td>
-            </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-        <style>
-        .sc-pg{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:14px 18px;border-top:1px solid var(--border)}
-        .sc-pg .info{font-size:12px;color:var(--muted2)}
-        .sc-pg nav{display:flex;gap:4px;flex-wrap:wrap}
-        .sc-pgb{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:32px;padding:0 6px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted2);font-size:13px;font-weight:600;text-decoration:none;cursor:pointer}
-        .sc-pgb:hover{border-color:var(--amber);color:var(--amber)}
-        .sc-pgb.act{background:var(--amber);border-color:var(--amber);color:#000;font-weight:700}
-        .sc-pgb.dis{opacity:.35;cursor:default}
-        .sc-pge{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;color:var(--muted2);font-size:13px}
-        </style>
-        <div class="sc-pg" id="scPg" style="display:none">
-            <span class="info" id="scPgInfo"></span>
-            <nav id="scPgNav"></nav>
-        </div>
-        <script>
-        (function(){
-            var PER = 10;
-            var body = document.getElementById('scBody');
-            if (!body) return;
-            var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
-            if (rows.length <= PER) return; // pager not needed
-            var pg = document.getElementById('scPg'), info = document.getElementById('scPgInfo'), nav = document.getElementById('scPgNav');
-            var page = 1, totalPages = Math.ceil(rows.length / PER);
-            pg.style.display = 'flex';
-            function render(){
-                page = Math.max(1, Math.min(page, totalPages));
-                var start = (page - 1) * PER, end = start + PER;
-                rows.forEach(function(r, i){ r.style.display = (i >= start && i < end) ? '' : 'none'; });
-                info.textContent = 'Page ' + page + ' of ' + totalPages + ' · ' + rows.length + ' sessions';
-                var html = page > 1
-                    ? '<a href="#" class="sc-pgb" data-p="1">«</a><a href="#" class="sc-pgb" data-p="' + (page - 1) + '">‹</a>'
-                    : '<span class="sc-pgb dis">«</span><span class="sc-pgb dis">‹</span>';
-                var ws = Math.max(1, page - 2), we = Math.min(totalPages, page + 2);
-                if (ws > 1) html += '<span class="sc-pge">…</span>';
-                for (var i = ws; i <= we; i++){
-                    html += i === page ? '<span class="sc-pgb act">' + i + '</span>'
-                                       : '<a href="#" class="sc-pgb" data-p="' + i + '">' + i + '</a>';
-                }
-                if (we < totalPages) html += '<span class="sc-pge">…</span>';
-                html += page < totalPages
-                    ? '<a href="#" class="sc-pgb" data-p="' + (page + 1) + '">›</a><a href="#" class="sc-pgb" data-p="' + totalPages + '">»</a>'
-                    : '<span class="sc-pgb dis">›</span><span class="sc-pgb dis">»</span>';
-                nav.innerHTML = html;
-                nav.querySelectorAll('a.sc-pgb').forEach(function(a){
-                    a.addEventListener('click', function(e){ e.preventDefault(); page = parseInt(a.getAttribute('data-p'), 10); render(); });
-                });
-            }
-            render();
-        })();
-        </script>
-        <?php endif; ?>
-    </div>
+    <!-- Stock counts moved to their own page; this report is cash only. -->
+    <a href="inventory_count.php" class="inv-jump">
+        <span><i class="fa-solid fa-clipboard-list" style="color:var(--amber);margin-right:8px"></i>Looking for inventory stock counts?</span>
+        <span class="inv-jump-go">Inventory Count <i class="fa-solid fa-arrow-right" style="font-size:10px"></i></span>
+    </a>
 
 </div>
 
