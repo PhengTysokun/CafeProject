@@ -452,6 +452,18 @@ _migrate($conn, 'attendance_manager_adjust_v1', function($db) {
         ADD COLUMN IF NOT EXISTS adjusted_by VARCHAR(100) NULL,
         ADD COLUMN IF NOT EXISTS adjusted_at DATETIME NULL");
 });
+_migrate($conn, 'orders_report_indexes_v1', function($db) {
+    /* orders carried indexes only on its foreign keys, so every dashboard and report
+       query — all of which filter on business_date and status — was a full table scan.
+       Fine at a few hundred rows, linear decay after that.
+       (business_date, status) is composite because they are almost always filtered
+       together; its leftmost prefix still serves business_date alone, so no separate
+       single-column index is needed. */
+    $db->query("CREATE INDEX idx_orders_bdate_status ON orders (business_date, status)");
+    $db->query("CREATE INDEX idx_orders_status ON orders (status)");
+    // Top Sellers and the report join order_items back to products on this column.
+    $db->query("CREATE INDEX idx_order_items_product ON order_items (product_id)");
+});
 _migrate($conn, 'loyalty_card_holder_v1', function($db) {
     // A card carried no owner at all, so staff could only find one by the number the
     // customer was already holding — which is why the same person could collect several
