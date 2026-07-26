@@ -1583,21 +1583,10 @@ body.select-mode .product-card .image-wrapper .overlay { display: none; }
                     <?php $__badge = product_badge_label($row); if ($__badge !== ''): ?>
                     <span class="product-badge"><?= htmlspecialchars($__badge) ?></span>
                     <?php endif; ?>
-                    <?php if ($_can_manage_products): ?>
-                    <div class="overlay">
-                        <a href="edit_product.php?id=<?= $row['product_id'] ?>" class="overlay-btn edit-btn">
-                            <i class="fa-solid fa-pen-to-square"></i> Edit
-                        </a>
-                        <button class="overlay-btn dup-btn"
-                                onclick="duplicateProduct(<?= $row['product_id'] ?>, '<?= htmlspecialchars(addslashes($row['name'])) ?>')">
-                            <i class="fa-solid fa-copy"></i>
-                        </button>
-                        <button class="overlay-btn delete-btn"
-                                onclick="confirmDelete(<?= $row['product_id'] ?>, '<?= htmlspecialchars(addslashes($row['name'])) ?>')">
-                            <i class="fa-solid fa-trash-can"></i>
-                        </button>
-                    </div>
-                    <?php endif; ?>
+                    <?php /* The hover overlay used to repeat Edit / Duplicate / Delete on the
+                             image. Every one of those already sits in the actions row below,
+                             which also carries the On/Off toggle and — unlike a hover overlay —
+                             works on a touchscreen till. Removed as pure duplication. */ ?>
                 </div>
 
                 <div class="content">
@@ -1979,16 +1968,9 @@ function bulkToggle() {
 
             // Update ::before via data attr — we use the class
             const btn = card.querySelector('.btn-action.avail-on, .btn-action.avail-off');
-            const icon = btn ? btn.querySelector('i') : null;
             const badge = card.querySelector('.sold-out-badge');
 
-            if (btn) {
-                btn.className = btn.className.replace(/avail-(on|off)/, isAvail ? 'avail-on' : 'avail-off');
-                btn.title = isAvail ? 'Mark as sold out' : 'Mark as available';
-                if (icon) icon.className = 'fa-solid ' + (isAvail ? 'fa-eye' : 'fa-eye-slash');
-                const textNode = btn.lastChild;
-                if (textNode) textNode.textContent = isAvail ? ' On' : ' Off';
-            }
+            paintAvailBtn(btn, isAvail);
             if (isAvail && badge) badge.remove();
             if (!isAvail && !badge) {
                 const b = document.createElement('div');
@@ -2144,6 +2126,21 @@ document.querySelectorAll('.price').forEach(span => {
 // ─────────────────────────────────────────────
 // AVAILABILITY TOGGLE
 // ─────────────────────────────────────────────
+/* Repaint the On/Off button from scratch.
+   The old code indexed into btn.childNodes to find the label, but childNodes[1] is the
+   <i> element — the label is the trailing text node — so it wrote " Off" INSIDE the icon
+   and left the real label reading "On", producing "Off On". Rebuilding the contents is
+   immune to how the server happened to indent the markup. */
+function paintAvailBtn(btn, isAvail) {
+    if (!btn) return;
+    btn.className = btn.className.replace(/avail-(on|off)/, isAvail ? 'avail-on' : 'avail-off');
+    btn.title     = isAvail ? 'Mark as sold out' : 'Mark as available';
+    btn.textContent = '';
+    const icon = document.createElement('i');
+    icon.className = 'fa-solid ' + (isAvail ? 'fa-eye' : 'fa-eye-slash');
+    btn.append(icon, document.createTextNode(' ' + (isAvail ? 'On' : 'Off')));
+}
+
 function toggleAvailability(id, btn) {
     btn.disabled = true;
     fetch('toggle_product.php', {
@@ -2156,23 +2153,15 @@ function toggleAvailability(id, btn) {
         if (!data.ok) { btn.disabled = false; return; }
         const avail = data.available;
         const card  = btn.closest('.product-card');
-        const icon  = btn.querySelector('i');
         const badge = card.querySelector('.sold-out-badge');
 
         card.dataset.avail = avail;
+        paintAvailBtn(btn, avail);
         if (avail) {
-            btn.className = btn.className.replace('avail-off', 'avail-on');
-            icon.className = 'fa-solid fa-eye';
-            btn.childNodes[1].textContent = ' On';
-            btn.title = 'Mark as sold out';
             card.classList.remove('unavailable');
             if (badge) badge.remove();
             showToast('Marked as available');
         } else {
-            btn.className = btn.className.replace('avail-on', 'avail-off');
-            icon.className = 'fa-solid fa-eye-slash';
-            btn.childNodes[1].textContent = ' Off';
-            btn.title = 'Mark as available';
             card.classList.add('unavailable');
             if (!badge) {
                 const b = document.createElement('div');

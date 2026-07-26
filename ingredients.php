@@ -565,7 +565,9 @@ tfoot td { padding:10px 14px; font-size:11px; font-weight:700; border-top:2px so
         <a href="ingredient_history.php" class="btn-nav" title="View stock movement history"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
         <a href="ingredient_report.php" class="btn-nav" title="Consumption summary report"><i class="fa-solid fa-chart-bar"></i> Report</a>
         <button class="btn-nav" onclick="window.open('ingredients_pdf.php','_blank')" title="Export stock report as PDF"><i class="fa-solid fa-file-pdf"></i> Export PDF</button>
-        <button class="btn-nav" onclick="generateStockAlert()" title="Send low-stock alert"><i class="fa-solid fa-bell"></i> Alert</button>
+        <?php /* "Alert" removed: it called send_report.php?type=stock, which only wrote a
+                 PDF into stock_alerts/ — no mail, no notification, despite the label. Real
+                 low-stock alerting is cron_stock_alert.php, which actually sends mail(). */ ?>
         <a href="add_ingredient.php" class="btn-nav primary" title="Add new ingredient (N)"><i class="fa-solid fa-plus"></i> Add</a>
         <button class="btn-nav icon-only" onclick="toggleTheme()" id="themeBtn" title="Toggle theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
     </div>
@@ -1283,14 +1285,6 @@ function exportCSV() {
 }
 
 /* ── STOCK ALERT ── */
-async function generateStockAlert() {
-    try {
-        const res  = await fetch('send_report.php?type=stock');
-        const data = await res.json();
-        showToast(data.message || (data.success ? 'Alert sent' : 'Failed'), data.success ? 'success' : 'error');
-    } catch { showToast('Failed to send alert', 'error'); }
-}
-
 /* ── TOAST ── */
 function showToast(msg, type = 'success') {
     const c = document.getElementById('toast-cnt');
