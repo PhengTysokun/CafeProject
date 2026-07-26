@@ -12,14 +12,6 @@ function businessRangeFromDate(string $dateYmd): array {
     return [$start, $end];
 }
 
-function getBusinessDateToday(): string {
-    $now = new DateTime();
-    if ((int)$now->format("H") < 6) {
-        $now->modify("-1 day");
-    }
-    return $now->format("Y-m-d");
-}
-
 function fmtQty($n): string {
     return rtrim(rtrim(number_format((float)$n, 2, '.', ''), '0'), '.');
 }
@@ -56,8 +48,8 @@ if ($mode === 'monthly') {
     $label = $start->format("F Y");
 
 } elseif ($mode === 'range') {
-    $fromDate = $_GET['from_date'] ?? getBusinessDateToday();
-    $toDate   = $_GET['to_date'] ?? getBusinessDateToday();
+    $fromDate = $_GET['from_date'] ?? business_date_today();
+    $toDate   = $_GET['to_date'] ?? business_date_today();
 
     $start = new DateTime($fromDate . " 06:00:00");
     $end   = new DateTime($toDate . " 06:00:00");
@@ -68,7 +60,7 @@ if ($mode === 'monthly') {
              (new DateTime($toDate))->format("d M Y");
 
 } else {
-    $date = $_GET['date'] ?? getBusinessDateToday();
+    $date = $_GET['date'] ?? business_date_today();
 
     [$start, $end] = businessRangeFromDate($date);
 
@@ -79,7 +71,7 @@ if ($mode === 'monthly') {
 $dailyTarget = DAILY_SALES_TARGET;
 
 // ── Is this period "live" (includes today)? ──
-$_today = getBusinessDateToday();
+$_today = business_date_today();
 $isLive = match($mode) {
     'monthly' => isset($month)    && $month    === (new DateTime())->format("Y-m"),
     'range'   => isset($toDate)   && $toDate   >= $_today,
@@ -90,35 +82,7 @@ unset($_today);
 /* =========================
    LOAD INGREDIENT COST MAP
 ========================= */
-$ingredients = [];
-
-$qIng = mysqli_query($conn, "
-    SELECT ingredient_id, ingredient_name, cost_price, purchase_qty, cost_per_unit
-    FROM ingredients
-");
-
-while ($r = mysqli_fetch_assoc($qIng)) {
-    $purchase_qty  = (float)$r['purchase_qty'];
-    $cost_price    = (float)$r['cost_price'];
-    $cost_per_unit = (float)$r['cost_per_unit'];
-
-    if ($cost_per_unit > 0) {
-        $unit_cost = $cost_per_unit;
-    } else {
-        $unit_cost = ($purchase_qty > 0) ? ($cost_price / $purchase_qty) : 0;
-    }
-
-    $ingredients[(int)$r['ingredient_id']] = [
-        "name" => $r['ingredient_name'],
-        "unit_cost" => $unit_cost
-    ];
-
-    $ingredients[strtolower(trim($r['ingredient_name']))] = [
-        "id" => (int)$r['ingredient_id'],
-        "name" => $r['ingredient_name'],
-        "unit_cost" => $unit_cost
-    ];
-}
+$ingredients = ingredient_cost_map($conn);
 
 /* =========================
    GET COMPLETED ORDERS
@@ -1394,7 +1358,7 @@ select option {
         <?php if ($mode === 'daily'): ?>
             <div>
                 <label>Business Date</label>
-                <input type="date" name="date" value="<?= htmlspecialchars($_GET['date'] ?? getBusinessDateToday()) ?>">
+                <input type="date" name="date" value="<?= htmlspecialchars($_GET['date'] ?? business_date_today()) ?>">
             </div>
         <?php elseif ($mode === 'monthly'): ?>
             <div>
@@ -1404,11 +1368,11 @@ select option {
         <?php elseif ($mode === 'range'): ?>
             <div>
                 <label>From Date</label>
-                <input type="date" name="from_date" value="<?= htmlspecialchars($_GET['from_date'] ?? getBusinessDateToday()) ?>">
+                <input type="date" name="from_date" value="<?= htmlspecialchars($_GET['from_date'] ?? business_date_today()) ?>">
             </div>
             <div>
                 <label>To Date</label>
-                <input type="date" name="to_date" value="<?= htmlspecialchars($_GET['to_date'] ?? getBusinessDateToday()) ?>">
+                <input type="date" name="to_date" value="<?= htmlspecialchars($_GET['to_date'] ?? business_date_today()) ?>">
             </div>
         <?php endif; ?>
 

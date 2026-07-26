@@ -246,6 +246,113 @@ if (!function_exists('paid_orders_where')) {
     }
 }
 
+/**
+ * The business day a moment belongs to. Trade before 06:00 belongs to the
+ * previous calendar day, matching orders.business_date.
+ */
+if (!function_exists('business_date_today')) {
+    function business_date_today(): string {
+        $now = new DateTime();
+        if ((int)$now->format('H') < 6) { $now->modify('-1 day'); }
+        return $now->format('Y-m-d');
+    }
+}
+
+/**
+ * Cost per unit for every ingredient, keyed by id AND by lowercased name.
+ * The name key exists because recipes name their milk by type at order time.
+ * cost_per_unit is derived (cost_price / purchase_qty) and is authoritative;
+ * dividing is only a fallback for rows that predate it being populated.
+ */
+if (!function_exists('ingredient_cost_map')) {
+    function ingredient_cost_map(mysqli $conn): array {
+        $map = [];
+        $q = $conn->query("SELECT ingredient_id, ingredient_name, cost_price, purchase_qty, cost_per_unit FROM ingredients");
+        while ($r = $q->fetch_assoc()) {
+            $cpu  = (float)$r['cost_per_unit'];
+            $pq   = (float)$r['purchase_qty'];
+            $cost = $cpu > 0 ? $cpu : ($pq > 0 ? (float)$r['cost_price'] / $pq : 0.0);
+            $entry = ['name' => $r['ingredient_name'], 'unit_cost' => $cost];
+            $map[(int)$r['ingredient_id']] = $entry;
+            $map[strtolower(trim($r['ingredient_name']))] = $entry + ['id' => (int)$r['ingredient_id']];
+        }
+        return $map;
+    }
+}
+
+/**
+ * What the drinks in these orders cost us in ingredients.
+ * Ingredients whose name contains "milk" are resolved through the milk the
+ * customer actually chose on the line, not the recipe's default.
+ */
+if (!function_exists('order_cogs')) {
+    function order_cogs(mysqli $conn, array $orderIds, array $costMap): array {
+        $out = ['total' => 0.0, 'items' => 0, 'by_product' => []];
+        $ids = array_values(array_filter(array_map('intval', $orderIds)));
+        if (!$ids) { return $out; }
+        $in = implode(',', $ids);
+
+        $items = [];
+        $productIds = [];
+        $q = $conn->query("
+            SELECT oi.product_id, oi.product_name, oi.milk, oi.quantity, oi.price
+            FROM order_items oi
+            WHERE oi.order_id IN ($in) AND oi.price > 0
+        ");
+        while ($it = $q->fetch_assoc()) {
+            $items[] = $it;
+            if ((int)$it['product_id'] > 0) { $productIds[(int)$it['product_id']] = true; }
+        }
+
+        $recipes = [];
+        if ($productIds) {
+            $pin = implode(',', array_keys($productIds));
+            $qr = $conn->query("
+                SELECT pi.product_id, pi.ingredient_id, pi.amount_used, i.ingredient_name
+                FROM product_ingredients pi
+                JOIN ingredients i ON i.ingredient_id = pi.ingredient_id
+                WHERE pi.product_id IN ($pin)
+            ");
+            while ($r = $qr->fetch_assoc()) {
+                $recipes[(int)$r['product_id']][] = [
+                    'ingredient_id'   => (int)$r['ingredient_id'],
+                    'ingredient_name' => $r['ingredient_name'],
+                    'amount_used'     => (float)$r['amount_used'],
+                ];
+            }
+        }
+
+        foreach ($items as $it) {
+            $pid  = (int)$it['product_id'];
+            $qty  = max(1, (int)$it['quantity']);
+            $milk = trim((string)$it['milk']);
+            $name = (string)$it['product_name'];
+
+            $cost = 0.0;
+            foreach ($recipes[$pid] ?? [] as $rc) {
+                $amount = $rc['amount_used'] * $qty;
+                if ($amount <= 0) { continue; }
+                if (strpos(strtolower(trim($rc['ingredient_name'])), 'milk') !== false) {
+                    $key = strtolower(trim($milk !== '' ? $milk : 'Fresh Milk'));
+                    if (isset($costMap[$key])) { $cost += $amount * (float)$costMap[$key]['unit_cost']; }
+                } else {
+                    $cost += $amount * (float)($costMap[$rc['ingredient_id']]['unit_cost'] ?? 0);
+                }
+            }
+
+            $out['total'] += $cost;
+            $out['items'] += $qty;
+            if (!isset($out['by_product'][$name])) {
+                $out['by_product'][$name] = ['qty' => 0, 'cost' => 0.0, 'revenue' => 0.0];
+            }
+            $out['by_product'][$name]['qty']     += $qty;
+            $out['by_product'][$name]['cost']    += $cost;
+            $out['by_product'][$name]['revenue'] += (float)($it['price'] ?? 0) * $qty;
+        }
+        return $out;
+    }
+}
+
 // ── Add-ons (toppings) library + per-product mapping ──
 $conn->query("CREATE TABLE IF NOT EXISTS addons (
     id INT AUTO_INCREMENT PRIMARY KEY,
