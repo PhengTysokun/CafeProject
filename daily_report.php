@@ -125,6 +125,39 @@ $stmt->bind_param("ss", $date, $date);
 $stmt->execute();
 $usedValue = (float)$stmt->get_result()->fetch_row()[0];
 
+// ── Tab 1: the neutral row (Task 5) — how the money came in, facts only ──
+// How the collected money arrived. Pay-later only counts once settled.
+$stmt = $conn->prepare("
+    SELECT payment_method, COALESCE(SUM(total),0) AS amount
+    FROM orders WHERE business_date = ? AND " . paid_orders_where() . "
+    GROUP BY payment_method
+");
+$stmt->bind_param("s", $date);
+$stmt->execute();
+$byMethod = [];
+$res = $stmt->get_result();
+while ($r = $res->fetch_assoc()) { $byMethod[strtolower((string)$r['payment_method'])] = (float)$r['amount']; }
+
+$gotCash   = $byMethod['cash'] ?? 0.0;
+$gotBakong = $byMethod['bakong'] ?? 0.0;
+$gotLater  = $byMethod['paylater'] ?? 0.0;
+
+// Tabs still open: made, maybe served, definitely not paid for.
+$stmt = $conn->prepare("SELECT COALESCE(SUM(total),0), COUNT(*) FROM orders WHERE business_date = ? AND payment_method='paylater' AND is_open = 1 AND status NOT IN ('Cancelled','Void')");
+$stmt->bind_param("s", $date);
+$stmt->execute();
+[$notPaidYet, $notPaidCount] = $stmt->get_result()->fetch_row();
+$notPaidYet = (float)$notPaidYet;
+
+// Best seller: $cogs['by_product'] arrives unsorted (insertion order), so sort
+// by cups moved. uasort preserves the key, and the key IS the product name.
+$byProductSorted = $cogs['by_product'];
+uasort($byProductSorted, fn($a, $b) => $b['qty'] <=> $a['qty']);
+$bestSellerName = null;
+$bestSellerQty  = 0;
+foreach ($byProductSorted as $bpName => $bpRow) { $bestSellerName = $bpName; $bestSellerQty = (int)$bpRow['qty']; break; }
+$avgCups = $paidOrderCount > 0 ? $cogs['items'] / $paidOrderCount : null;
+
 // Tabs 2-4 ask for their own HTML. Each branch echoes a fragment and exits.
 // This MUST run before any HTML output — a fragment response is inlined into
 // a tab panel by JS, so it must never carry the page chrome.
@@ -253,6 +286,27 @@ body{
 .dr-line  { font-weight: 700; margin-top: 10px; }
 .dr-foot  { font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.7; }
 
+/* ── Tab 1: the neutral row — facts, no colour ── */
+.dr-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px; }
+@media (max-width: 900px) { .dr-facts { grid-template-columns: repeat(2, 1fr); } }
+.dr-k     { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.dr-k-km  { font-size: 12px; line-height: 1.8; color: var(--text-muted); margin-bottom: 6px; }
+.dr-v     { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.dr-note  { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.6; }
+.dr-wide  { margin-top: 16px; }
+
+.dr-bar   { display: flex; width: 100%; height: 14px; border-radius: 8px; overflow: hidden; background: var(--surface2); margin-top: 10px; }
+.seg      { display: block; height: 100%; }
+.seg-cash   { background: var(--amber); }
+.seg-bakong { background: #3b82f6; }
+.seg-later  { background: #9b87d9; }
+
+.dr-facts-inline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 12px; }
+@media (max-width: 900px) { .dr-facts-inline { grid-template-columns: repeat(2, 1fr); } }
+.dr-fact  { display: flex; flex-direction: column; }
+.dr-v-sm  { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.dr-v-text{ font-size: 16px; font-weight: 700; font-variant-numeric: initial; }
+
 @media print {
     .dr-tabs, .dr-head-actions, .sidebar, .dr-nav, .back-btn { display: none !important; }
     .dr-panel[hidden] { display: none !important; }
@@ -323,6 +377,44 @@ body{
               used today $<?= number_format($usedValue, 2) ?>
             </div>
           </div>
+        </div>
+
+        <div class="dr-facts">
+          <div class="dr-card"><div class="dr-k">cash</div><div class="dr-k-km">សាច់ប្រាក់</div><div class="dr-v">$<?= number_format($gotCash, 2) ?></div><div class="dr-note">in the register</div></div>
+          <div class="dr-card"><div class="dr-k">bakong</div><div class="dr-k-km">បាគង</div><div class="dr-v">$<?= number_format($gotBakong, 2) ?></div><div class="dr-note">by phone</div></div>
+          <div class="dr-card"><div class="dr-k">pay later — paid</div><div class="dr-k-km">បង់ក្រោយ — បង់រួច</div><div class="dr-v">$<?= number_format($gotLater, 2) ?></div><div class="dr-note">settled today</div></div>
+          <div class="dr-card"><div class="dr-k">not paid yet</div><div class="dr-k-km">មិនទាន់បង់</div><div class="dr-v">$<?= number_format($notPaidYet, 2) ?></div><div class="dr-note"><?= (int)$notPaidCount ?> open tab(s)</div></div>
+        </div>
+
+        <div class="dr-card dr-wide">
+          <div class="dr-k">how the money came in</div>
+          <?php if ($gotToday > 0): ?>
+            <div class="dr-bar">
+              <?php foreach ([['cash',$gotCash],['bakong',$gotBakong],['later',$gotLater]] as [$cls,$amt]):
+                  $pct = ($amt / $gotToday) * 100; ?>
+                  <span class="seg seg-<?= $cls ?>" style="width:<?= round($pct, 2) ?>%"></span>
+              <?php endforeach; ?>
+            </div>
+          <?php else: ?>
+            <p class="dr-note">no sales yet today</p>
+          <?php endif; ?>
+          <?php if ($notPaidYet > 0): ?>
+            <p class="dr-note">$<?= number_format($notPaidYet, 2) ?> not paid yet. We count it only when the customer pays.</p>
+          <?php endif; ?>
+        </div>
+
+        <div class="dr-card dr-wide">
+          <div class="dr-k">what sold</div>
+          <?php if ($paidOrderCount > 0 && $cogs['items'] > 0): ?>
+            <div class="dr-facts-inline">
+              <div class="dr-fact"><div class="dr-v-sm"><?= (int)$paidOrderCount ?></div><div class="dr-note">orders</div></div>
+              <div class="dr-fact"><div class="dr-v-sm"><?= (int)$cogs['items'] ?></div><div class="dr-note">cups sold</div></div>
+              <div class="dr-fact"><div class="dr-v-sm"><?= $avgCups !== null ? number_format($avgCups, 1) : '—' ?></div><div class="dr-note">cups per order</div></div>
+              <div class="dr-fact"><div class="dr-v-sm dr-v-text"><?= htmlspecialchars($bestSellerName ?? '—') ?></div><div class="dr-note">best seller<?= $bestSellerQty ? ' · ' . (int)$bestSellerQty . ' sold' : '' ?></div></div>
+            </div>
+          <?php else: ?>
+            <p class="dr-note">no sales yet today</p>
+          <?php endif; ?>
         </div>
     </div>
     <div class="dr-panel" id="panel-orders" hidden></div>
