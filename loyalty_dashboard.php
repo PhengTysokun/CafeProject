@@ -2,6 +2,7 @@
 require 'auth.php';
 require_once 'config.php';
 if (!can('loyalty')) { header("Location: dashboard.php?denied=1"); exit; }
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
 // ── DEACTIVATE CARD AJAX HANDLER ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'deactivate') {
@@ -493,6 +494,23 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
         .points-next {
             font-size: 10px;
             color: var(--text-muted);
+        }
+
+        /* ── Card holder ── */
+        .holder-cell { display: flex; flex-direction: column; gap: 2px; }
+        .holder-name { font-size: 13px; font-weight: 600; }
+        .holder-phone { font-size: 11px; color: var(--text-muted); }
+        .holder-phone i { font-size: 9px; margin-right: 3px; }
+        .holder-anon { font-size: 12px; color: var(--text-muted); font-style: italic; opacity: .7; }
+        .lbl-opt { font-weight: 400; font-size: 11px; color: var(--text-muted); }
+
+        /* ── Merge ── */
+        .btn-merge { color: #3498db; }
+        .merge-intro { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px; }
+        .merge-intro strong { color: var(--accent); }
+        .merge-preview {
+            font-size: 12.5px; font-weight: 600; color: var(--accent);
+            min-height: 18px; margin: 4px 0 14px;
         }
 
         .row-actions {
@@ -1334,7 +1352,7 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
             <div class="panel-toolbar">
                 <div class="search-wrap">
                     <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" id="cardSearch" placeholder="Search card ID...">
+                    <input type="text" id="cardSearch" placeholder="Search card ID, name or phone...">
                 </div>
                 <select id="tierFilter" class="tier-select">
                     <option value="">All Tiers</option>
@@ -1353,6 +1371,7 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
                     <tr>
                         <th>Tier</th>
                         <th>Card ID</th>
+                        <th>Holder</th>
                         <th>Points</th>
                         <th>Orders</th>
                         <th>Drinks</th>
@@ -1373,7 +1392,9 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
                         data-orders="<?= (int)$c['total_orders'] ?>"
                         data-drinks="<?= (int)$c['total_drinks'] ?>"
                         data-created="<?= htmlspecialchars($c['created_at'] ?? '', ENT_QUOTES) ?>"
-                        data-last-used="<?= htmlspecialchars($c['last_used'] ?? '', ENT_QUOTES) ?>">
+                        data-last-used="<?= htmlspecialchars($c['last_used'] ?? '', ENT_QUOTES) ?>"
+                        data-holder="<?= htmlspecialchars($c['holder_name'] ?? '', ENT_QUOTES) ?>"
+                        data-phone="<?= htmlspecialchars($c['holder_phone'] ?? '', ENT_QUOTES) ?>">
 
                         <td>
                             <div class="tier-badge" style="color:<?= $tier['color'] ?>">
@@ -1386,6 +1407,21 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
                             <button class="card-id-btn" onclick="openCardDetail(<?= (int)$c['card_id'] ?>)">
                                 <?= htmlspecialchars($c['loyalty_id']) ?>
                             </button>
+                        </td>
+
+                        <td>
+                            <?php if (!empty($c['holder_name']) || !empty($c['holder_phone'])): ?>
+                            <div class="holder-cell">
+                                <?php if (!empty($c['holder_name'])): ?>
+                                <span class="holder-name"><?= htmlspecialchars($c['holder_name']) ?></span>
+                                <?php endif; ?>
+                                <?php if (!empty($c['holder_phone'])): ?>
+                                <span class="holder-phone"><i class="fa-solid fa-phone"></i> <?= htmlspecialchars($c['holder_phone']) ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <?php else: ?>
+                            <span class="holder-anon">Unnamed</span>
+                            <?php endif; ?>
                         </td>
 
                         <td>
@@ -1418,6 +1454,13 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
                                     title="Redeem reward (spend points)">
                                     <i class="fa-solid fa-gift"></i>
                                 </button>
+                                <?php if (in_array($_SESSION['role'] ?? '', ['admin','manager'], true)): ?>
+                                <button class="btn-icon btn-merge"
+                                    onclick="openMerge(<?= (int)$c['card_id'] ?>, <?= $__lid_js ?>, <?= (int)$c['points'] ?>)"
+                                    title="Merge this card into another">
+                                    <i class="fa-solid fa-code-merge"></i>
+                                </button>
+                                <?php endif; ?>
                                 <a href="loyalty_history.php?id=<?= urlencode($c['loyalty_id']) ?>"
                                    class="btn-icon" title="View history">
                                     <i class="fa-solid fa-clock-rotate-left"></i>
@@ -1614,6 +1657,14 @@ var REWARDS = <?= json_encode(array_map(fn($r) => ['id'=>(int)$r['reward_id'],'n
                     </div>
                 </div>
                 <div class="form-group">
+                    <label>Customer Name <span class="lbl-opt">(optional)</span></label>
+                    <input type="text" id="newHolder" placeholder="e.g. Sok Dara" maxlength="100">
+                </div>
+                <div class="form-group">
+                    <label>Phone <span class="lbl-opt">(optional — lets staff find this card again)</span></label>
+                    <input type="text" id="newPhone" placeholder="e.g. 012 345 678" maxlength="30">
+                </div>
+                <div class="form-group">
                     <label>Initial Points</label>
                     <input type="number" id="newPts" value="0" min="0">
                 </div>
@@ -1621,6 +1672,31 @@ var REWARDS = <?= json_encode(array_map(fn($r) => ['id'=>(int)$r['reward_id'],'n
                     <i class="fa-solid fa-plus"></i> Create Card
                 </button>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- MERGE CARDS MODAL -->
+<div id="mergeModal" class="modal-overlay" onclick="if(event.target===this)closeMerge()">
+    <div class="modal-card">
+        <button class="modal-close" onclick="closeMerge()"><i class="fa-solid fa-xmark"></i></button>
+        <div class="modal-header">
+            <i class="fa-solid fa-code-merge"></i>
+            <h3>Merge Loyalty Cards</h3>
+        </div>
+        <div class="modal-body">
+            <p class="merge-intro">
+                Points from <strong id="mergeSourceLabel">—</strong> move to the card you keep.
+                The merged card is deactivated, and its history follows the points.
+            </p>
+            <div class="form-group">
+                <label>Keep this card</label>
+                <select id="mergeTarget"></select>
+            </div>
+            <div class="merge-preview" id="mergePreview"></div>
+            <button type="button" class="btn-primary btn-full" id="mergeConfirmBtn" onclick="confirmMerge()">
+                <i class="fa-solid fa-code-merge"></i> Merge Cards
+            </button>
         </div>
     </div>
 </div>
@@ -1662,6 +1738,8 @@ window.addEventListener('storage', function (e) {
     }
 });
 
+const LC_CSRF = <?= json_encode($_SESSION['csrf_token']) ?>;
+
 // ═══════════════════════════════════════════════════
 // LIVE TABLE SEARCH & TIER FILTER  (JS pagination)
 // ═══════════════════════════════════════════════════
@@ -1675,7 +1753,15 @@ function applyFilters() {
     const allRows = [...document.querySelectorAll('#allCardsTbody .card-row')];
 
     lastFilteredLC = allRows.filter(function (row) {
-        const matchSearch = !query   || (row.dataset.loyaltyId || '').toLowerCase().includes(query);
+        // Search the holder and phone too — looking a card up by the number alone only
+        // works if the customer still has the card, which is the case that goes wrong.
+        const haystack = [
+            row.dataset.loyaltyId || '',
+            row.dataset.holder    || '',
+            (row.dataset.phone    || '').replace(/[\s-]/g, '')
+        ].join(' ').toLowerCase();
+        const needle      = query.replace(/[\s-]/g, '') === query ? query : query.replace(/[\s-]/g, '');
+        const matchSearch = !query || haystack.includes(query) || (needle && haystack.includes(needle));
         const matchTier   = !tierVal || (row.dataset.tier || '').toLowerCase() === tierVal;
         return matchSearch && matchTier;
     });
@@ -2042,6 +2128,8 @@ function updateCardRowPoints(cardId, newPts) {
 function openCreateModal() {
     genId();
     document.getElementById('newPts').value = '0';
+    document.getElementById('newHolder').value = '';
+    document.getElementById('newPhone').value = '';
     document.getElementById('createModal').classList.add('open');
     document.getElementById('newId').focus();
 }
@@ -2070,9 +2158,41 @@ document.getElementById('createForm').addEventListener('submit', async function 
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating...';
 
     try {
-        const body = new URLSearchParams({ loyalty_id: loyaltyId, initial_points: points });
-        const res = await fetch('create_loyalty_card_ajax.php', { method: 'POST', body: body });
-        const data = await res.json();
+        const holder = document.getElementById('newHolder').value.trim();
+        const phone  = document.getElementById('newPhone').value.trim();
+
+        const post = async (confirmDup) => {
+            const body = new URLSearchParams({
+                loyalty_id: loyaltyId, initial_points: points,
+                holder_name: holder, holder_phone: phone
+            });
+            if (confirmDup) body.append('confirm_duplicate', '1');
+            const res = await fetch('create_loyalty_card_ajax.php', { method: 'POST', body: body });
+            return res.json();
+        };
+
+        let data = await post(false);
+
+        /* This phone already holds a card. Not blocked — a household can share a number —
+           but the cashier has to choose knowingly rather than split someone's points. */
+        if (!data.success && data.duplicate) {
+            const ex = data.existing || {};
+            const go = confirm(
+                'This phone number already has an active card:\n\n' +
+                '  ' + (ex.loyalty_id || '') + (ex.name ? '  ·  ' + ex.name : '') +
+                '  ·  ' + (ex.points || 0) + ' pts\n\n' +
+                'Search that card ID to top it up instead.\n\n' +
+                'Create a second card anyway?'
+            );
+            if (!go) {
+                closeCreateModal();
+                document.getElementById('cardSearch').value = ex.loyalty_id || '';
+                applyFilters();
+                showToast('Showing the existing card for that number.', 'info');
+                return;
+            }
+            data = await post(true);
+        }
 
         if (data.success) {
             closeCreateModal();
@@ -2088,6 +2208,78 @@ document.getElementById('createForm').addEventListener('submit', async function 
         btn.innerHTML = '<i class="fa-solid fa-plus"></i> Create Card';
     }
 });
+
+// ═══════════════════════════════════════════════════
+// MERGE CARDS
+// ═══════════════════════════════════════════════════
+let mergeSourceId = 0, mergeSourcePts = 0;
+
+function openMerge(cardId, loyaltyId, points) {
+    mergeSourceId  = cardId;
+    mergeSourcePts = points;
+    document.getElementById('mergeSourceLabel').textContent = loyaltyId + ' (' + points + ' pts)';
+
+    // Every other active card is a candidate to keep.
+    const sel = document.getElementById('mergeTarget');
+    sel.innerHTML = '<option value="">— Choose the card to keep —</option>';
+    [...document.querySelectorAll('#allCardsTbody .card-row')].forEach(row => {
+        const id = Number(row.dataset.cardId);
+        if (id === cardId) return;
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.dataset.pts = row.dataset.points || '0';
+        const holder = row.dataset.holder ? ' · ' + row.dataset.holder : '';
+        opt.textContent = row.dataset.loyaltyId + holder + ' — ' + (row.dataset.points || 0) + ' pts';
+        sel.appendChild(opt);
+    });
+    sel.onchange = renderMergePreview;
+    renderMergePreview();
+    document.getElementById('mergeModal').classList.add('open');
+}
+
+function renderMergePreview() {
+    const sel  = document.getElementById('mergeTarget');
+    const box  = document.getElementById('mergePreview');
+    const opt  = sel.options[sel.selectedIndex];
+    if (!sel.value) { box.textContent = ''; return; }
+    const tgtPts = parseInt(opt.dataset.pts || '0', 10);
+    box.textContent = 'After merge: ' + (tgtPts + mergeSourcePts) + ' pts on the kept card.';
+}
+
+function closeMerge() {
+    document.getElementById('mergeModal').classList.remove('open');
+    mergeSourceId = 0;
+}
+
+async function confirmMerge() {
+    const targetId = document.getElementById('mergeTarget').value;
+    if (!targetId) { showToast('Choose which card to keep.', 'error'); return; }
+
+    const btn = document.getElementById('mergeConfirmBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Merging...';
+    try {
+        const body = new URLSearchParams({
+            source_card_id: mergeSourceId,
+            target_card_id: targetId,
+            csrf_token: LC_CSRF
+        });
+        const res  = await fetch('merge_loyalty_cards.php', { method: 'POST', body: body });
+        const data = await res.json();
+        if (data.success) {
+            closeMerge();
+            showToast(data.message, 'success');
+            setTimeout(() => window.location.reload(), 1500);
+        } else {
+            showToast(data.message || 'Merge failed.', 'error');
+        }
+    } catch (err) {
+        showToast('Network error. Please try again.', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-code-merge"></i> Merge Cards';
+    }
+}
 
 // ═══════════════════════════════════════════════════
 // DEACTIVATE CARD

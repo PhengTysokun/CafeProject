@@ -452,6 +452,20 @@ _migrate($conn, 'attendance_manager_adjust_v1', function($db) {
         ADD COLUMN IF NOT EXISTS adjusted_by VARCHAR(100) NULL,
         ADD COLUMN IF NOT EXISTS adjusted_at DATETIME NULL");
 });
+_migrate($conn, 'loyalty_card_holder_v1', function($db) {
+    // A card carried no owner at all, so staff could only find one by the number the
+    // customer was already holding — which is why the same person could collect several
+    // cards and split their points. Both fields stay optional: an anonymous card still
+    // works exactly as before, and merged/legacy cards keep NULL.
+    $db->query("ALTER TABLE loyalty_cards
+        ADD COLUMN IF NOT EXISTS holder_name  VARCHAR(100) NULL,
+        ADD COLUMN IF NOT EXISTS holder_phone VARCHAR(30)  NULL,
+        ADD COLUMN IF NOT EXISTS merged_into  INT NULL,
+        ADD COLUMN IF NOT EXISTS merged_at    DATETIME NULL");
+    // Deliberately NOT unique: a household can legitimately share one number, so the
+    // duplicate check is a warning at the till, not a database-level block.
+    $db->query("CREATE INDEX idx_loyalty_holder_phone ON loyalty_cards (holder_phone)");
+});
 _migrate($conn, 'cash_counts_resolution_v1', function($db) {
     // Manager follow-up on an Over/Short drawer. Deliberately does NOT touch
     // expected_cash/actual_cash/difference — the variance is a financial fact and
