@@ -162,6 +162,108 @@ $bestSellerQty  = 0;
 foreach ($byProductSorted as $bpName => $bpRow) { $bestSellerName = $bpName; $bestSellerQty = (int)$bpRow['qty']; break; }
 $avgCups = $paidOrderCount > 0 ? $cogs['items'] / $paidOrderCount : null;
 
+/**
+ * For pay-later, Completed means the drinks were made and the customer still
+ * owes — is_open is the only trustworthy signal. Getting this wrong has caused
+ * three money bugs in this codebase.
+ */
+function dr_pay_label(array $o): array {
+    $m = strtolower((string)$o['payment_method']);
+    if ($m === 'paylater') {
+        return ((int)$o['is_open'] === 0 && $o['status'] === 'Paid')
+            ? ['pay later — paid', 'ok']
+            : ['not paid yet', 'open'];
+    }
+    return [$m === 'bakong' ? 'bakong' : 'cash', 'ok'];
+}
+
+// ── Tab 2: Orders (Task 6) — the day's orders and how each was paid ──
+function dr_fragment_orders(mysqli $conn, string $date): void {
+    $stmt = $conn->prepare("
+        SELECT daily_order_no, customer_name, total, payment_method, status, is_open,
+               order_date, order_type
+        FROM orders
+        WHERE business_date = ? AND status NOT IN ('Cancelled','Void')
+        ORDER BY order_date ASC
+    ");
+    $stmt->bind_param("s", $date);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    // Neutral counts, never a red card — see banned-vocabulary note.
+    $stmt = $conn->prepare("SELECT COUNT(*) FROM order_refunds r JOIN orders o ON o.order_id = r.order_id WHERE o.business_date = ?");
+    $stmt->bind_param("s", $date);
+    $stmt->execute();
+    $givenBackCount = (int)$stmt->get_result()->fetch_row()[0];
+
+    $stmt = $conn->prepare("SELECT COUNT(*) FROM order_remakes r JOIN orders o ON o.order_id = r.order_id WHERE o.business_date = ?");
+    $stmt->bind_param("s", $date);
+    $stmt->execute();
+    $remadeCount = (int)$stmt->get_result()->fetch_row()[0];
+
+    // Cups for the footer — every non-cancelled/void order this day, matching
+    // the same row set as the table (not the paid-only definition from tab 1).
+    $stmt = $conn->prepare("
+        SELECT COALESCE(SUM(oi.quantity),0)
+        FROM order_items oi
+        JOIN orders o ON o.order_id = oi.order_id
+        WHERE o.business_date = ? AND o.status NOT IN ('Cancelled','Void')
+    ");
+    $stmt->bind_param("s", $date);
+    $stmt->execute();
+    $cupsToday = (int)$stmt->get_result()->fetch_row()[0];
+
+    $dayTotal = array_sum(array_map(fn($o) => (float)$o['total'], $rows));
+    ?>
+    <div class="dr-card dr-wide" style="margin-top:0">
+      <p class="dr-note" style="margin-bottom:14px">money given back: <?= (int)$givenBackCount ?> &middot; drinks made again: <?= (int)$remadeCount ?></p>
+
+      <div class="dr-pills" role="group" aria-label="Filter by how the order was paid">
+        <button type="button" class="dr-pill is-on" data-filter="all">All</button>
+        <button type="button" class="dr-pill" data-filter="cash">Cash</button>
+        <button type="button" class="dr-pill" data-filter="bakong">Bakong</button>
+        <button type="button" class="dr-pill" data-filter="paylater">Pay later</button>
+      </div>
+
+      <div class="dr-table-wrap">
+        <table class="dr-table" id="ordersTable">
+          <thead>
+            <tr><th>Time</th><th>Order</th><th>Customer</th><th>Total</th><th>Paid</th></tr>
+          </thead>
+          <tbody>
+            <?php if (!$rows): ?>
+            <tr><td colspan="5" class="dr-note" style="padding:20px 0;text-align:center">no orders this day</td></tr>
+            <?php endif; ?>
+            <?php foreach ($rows as $o):
+                [$label, $state] = dr_pay_label($o);
+                $m = strtolower((string)$o['payment_method']);
+                $bucket = $m === 'paylater' ? 'paylater' : ($m === 'bakong' ? 'bakong' : 'cash');
+                $time   = date('H:i', strtotime($o['order_date']));
+                $no     = '#' . str_pad((string)(int)$o['daily_order_no'], 4, '0', STR_PAD_LEFT);
+                $name   = trim((string)$o['customer_name']);
+                $cust   = ($name === '' || $name === 'Guest') ? '—' : $name;
+            ?>
+            <tr class="<?= $state === 'open' ? 'is-open' : '' ?>" data-method="<?= htmlspecialchars($bucket) ?>">
+              <td><?= htmlspecialchars($time) ?></td>
+              <td><?= htmlspecialchars($no) ?></td>
+              <td><?= htmlspecialchars($cust) ?></td>
+              <td>$<?= htmlspecialchars(number_format((float)$o['total'], 2)) ?></td>
+              <td><?= htmlspecialchars($label) ?></td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="dr-table-foot">
+        <span><?= (int)count($rows) ?> orders</span> &middot; <span><?= (int)$cupsToday ?> cups</span> &middot; <span>$<?= htmlspecialchars(number_format($dayTotal, 2)) ?> total</span>
+      </div>
+
+      <div class="dr-pagination" id="ordersPagination"></div>
+    </div>
+    <?php
+}
+
 // Tabs 2-4 ask for their own HTML. Each branch echoes a fragment and exits.
 // This MUST run before any HTML output — a fragment response is inlined into
 // a tab panel by JS, so it must never carry the page chrome.
@@ -169,7 +271,7 @@ $fragment = $_GET['fragment'] ?? '';
 if ($fragment !== '') {
     header('Content-Type: text/html; charset=utf-8');
     switch ($fragment) {
-        case 'orders': /* Task 6 */ break;
+        case 'orders': dr_fragment_orders($conn, $date); break;
         case 'stock':  /* Task 7 */ break;
         case 'staff':  /* Task 8 */ break;
         default: http_response_code(404); echo 'Unknown tab.';
@@ -315,6 +417,33 @@ body{
 .dr-v-sm  { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .dr-v-text{ font-size: 16px; font-weight: 700; font-variant-numeric: initial; }
 
+/* ── Tab 2: Orders ── */
+.dr-pills   { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.dr-pill    {
+  appearance: none; font-family: 'Poppins',sans-serif; cursor: pointer;
+  padding: 7px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 600;
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
+  transition: all .15s;
+}
+.dr-pill:hover  { color: var(--text); }
+.dr-pill.is-on  { background: var(--amber-dim); border-color: var(--amber-border); color: var(--amber); }
+
+.dr-table-wrap  { overflow-x: auto; }
+.dr-table       { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.dr-table th    {
+  text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border);
+}
+.dr-table td    { padding: 9px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.dr-table tbody tr:last-child td { border-bottom: none; }
+/* Amber = needs attention, not a verdict colour — reserved for tab 1. */
+.dr-table tr.is-open td { background: var(--amber-dim); }
+.dr-table tr.is-open td:first-child { border-left: 3px solid var(--amber); }
+
+.dr-table-foot  { display: flex; gap: 10px; margin-top: 12px; font-size: 12.5px; color: var(--text-muted); }
+.dr-pagination  { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
+.dr-pagination .dr-nav[disabled] { opacity: .35; pointer-events: none; }
+
 @media print {
     .dr-tabs, .dr-head-actions, .sidebar, .dr-nav, .back-btn { display: none !important; }
     .dr-panel[hidden] { display: none !important; }
@@ -456,11 +585,67 @@ async function loadFragment(tab) {
         if (!res.ok) throw new Error(res.status);
         panel.innerHTML = await res.text();
         drLoaded[tab] = true;
+        // Fragment HTML is set via innerHTML, so any <script> inside it is
+        // inert. Wire up per-tab behaviour here instead, keyed by tab name.
+        const initFn = window['drInit_' + tab];
+        if (typeof initFn === 'function') initFn();
     } catch (e) {
         // Never leave a blank panel — say what happened and offer the retry.
         panel.innerHTML = '<div class="dr-error">Could not load this tab. '
                         + '<button onclick="loadFragment(\'' + tab + '\')">Try again</button></div>';
     }
+}
+
+// ── Tab 2: Orders — filter pills + client-side pagination ──
+// Run once per fragment load (loadFragment calls this after innerHTML is set,
+// since <script> tags inside injected HTML never execute).
+function drInit_orders() {
+    const panel = document.getElementById('panel-orders');
+    const table = panel && panel.querySelector('#ordersTable');
+    if (!table) return;
+    const pageSize = 25;
+    const allRows  = Array.from(table.querySelectorAll('tbody tr[data-method]'));
+    const pager    = panel.querySelector('#ordersPagination');
+    let filtered = allRows.slice();
+    let page = 1;
+
+    function render() {
+        allRows.forEach(r => { r.style.display = 'none'; });
+        const start = (page - 1) * pageSize;
+        filtered.slice(start, start + pageSize).forEach(r => { r.style.display = ''; });
+        renderPager();
+    }
+
+    function renderPager() {
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (!pager) return;
+        if (totalPages <= 1) { pager.innerHTML = ''; return; }
+        pager.innerHTML =
+            '<button type="button" class="dr-nav" data-page="prev"' + (page <= 1 ? ' disabled' : '') + '>' +
+            '<i class="fa-solid fa-chevron-left"></i> Prev</button>' +
+            '<span class="dr-note">Page ' + page + ' of ' + totalPages + '</span>' +
+            '<button type="button" class="dr-nav" data-page="next"' + (page >= totalPages ? ' disabled' : '') + '>' +
+            'Next <i class="fa-solid fa-chevron-right"></i></button>';
+        pager.querySelectorAll('button[data-page]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (btn.dataset.page === 'prev' && page > 1) page--;
+                if (btn.dataset.page === 'next' && page < totalPages) page++;
+                render();
+            });
+        });
+    }
+
+    panel.querySelectorAll('.dr-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+            panel.querySelectorAll('.dr-pill').forEach(b => b.classList.toggle('is-on', b === btn));
+            const f = btn.dataset.filter;
+            filtered = (f === 'all') ? allRows.slice() : allRows.filter(r => r.dataset.method === f);
+            page = 1;
+            render();
+        });
+    });
+
+    render();
 }
 
 // follows shared theme key (toggled elsewhere)
