@@ -5,8 +5,10 @@ if (!can('report')) { header("Location: dashboard.php?denied=1"); exit; }
 
 // Which business day are we reading? Defaults to the one in progress.
 $today = business_date_today();
-$date  = trim($_GET['date'] ?? '');
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { $date = $today; }
+$date  = is_string($_GET['date'] ?? null) ? trim($_GET['date']) : '';
+if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) {
+    $date = $today;
+}
 if ($date > $today) { $date = $today; }
 $prevDate = date('Y-m-d', strtotime($date . ' -1 day'));
 $nextDate = date('Y-m-d', strtotime($date . ' +1 day'));
