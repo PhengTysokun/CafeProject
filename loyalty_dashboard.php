@@ -217,6 +217,16 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
             transform: translateY(-1px);
         }
 
+        .btn-primary:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-primary:disabled:hover {
+            opacity: 0.4;
+            transform: none;
+        }
+
         /* ── STATS ROW ── */
         .stats-row {
             display: grid;
@@ -512,6 +522,8 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
             font-size: 12.5px; font-weight: 600; color: var(--accent);
             min-height: 18px; margin: 4px 0 14px;
         }
+        /* No card picked yet — don't reserve a hole above the button. */
+        .merge-preview:empty { display: none; }
 
         .row-actions {
             display: flex;
@@ -781,6 +793,7 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
         .detail-modal  { max-width: 600px; }
         .adjust-modal  { max-width: 440px; }
         .create-modal  { max-width: 420px; }
+        .merge-modal   { max-width: 460px; }
 
         .modal-close {
             position: absolute;
@@ -841,7 +854,8 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
         }
 
         .form-group input,
-        .form-group textarea {
+        .form-group textarea,
+        .form-group select {
             width: 100%;
             padding: 10px 14px;
             border-radius: 10px;
@@ -854,8 +868,21 @@ $top_tier = $top_card ? getTier((int)$top_card['points']) : null;
             transition: var(--transition);
         }
 
+        /* Native select chrome ignores the theme, so draw our own chevron. */
+        .form-group select {
+            appearance: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+            padding-right: 38px;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%23888' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            background-size: 11px;
+        }
+
         .form-group input:focus,
-        .form-group textarea:focus {
+        .form-group textarea:focus,
+        .form-group select:focus {
             border-color: var(--accent);
         }
 
@@ -1678,7 +1705,7 @@ var REWARDS = <?= json_encode(array_map(fn($r) => ['id'=>(int)$r['reward_id'],'n
 
 <!-- MERGE CARDS MODAL -->
 <div id="mergeModal" class="modal-overlay" onclick="if(event.target===this)closeMerge()">
-    <div class="modal-card">
+    <div class="modal-card merge-modal">
         <button class="modal-close" onclick="closeMerge()"><i class="fa-solid fa-xmark"></i></button>
         <div class="modal-header">
             <i class="fa-solid fa-code-merge"></i>
@@ -2240,7 +2267,10 @@ function openMerge(cardId, loyaltyId, points) {
 function renderMergePreview() {
     const sel  = document.getElementById('mergeTarget');
     const box  = document.getElementById('mergePreview');
+    const btn  = document.getElementById('mergeConfirmBtn');
     const opt  = sel.options[sel.selectedIndex];
+    // Nothing to merge into until a card is picked — keep the button out of reach.
+    btn.disabled = !sel.value;
     if (!sel.value) { box.textContent = ''; return; }
     const tgtPts = parseInt(opt.dataset.pts || '0', 10);
     box.textContent = 'After merge: ' + (tgtPts + mergeSourcePts) + ' pts on the kept card.';
