@@ -22,7 +22,7 @@ if ($order_id <= 0) {
 }
 
 $stmt = $conn->prepare("
-    SELECT o.order_id, o.status, o.bakong_md5, o.payment_method, o.loyalty_card_id, o.points_earned,
+    SELECT o.order_id, o.status, o.is_open, o.bakong_md5, o.payment_method, o.loyalty_card_id, o.points_earned,
            op.payment_id, op.payment_status
     FROM orders o
     LEFT JOIN order_payments op ON o.order_id = op.order_id AND op.payment_method = 'bakong'
@@ -44,10 +44,21 @@ if ($order['payment_status'] === 'paid') {
     exit;
 }
 
-// If order is fully completed, return true
-// Note: 'Preparing' is intentionally excluded — paylater orders start in Preparing
-// and must go through actual payment confirmation before being marked paid.
-if ($order['status'] === 'Completed') {
+/* Short-circuit for an order that is genuinely settled already.
+   'Completed' means DIFFERENT things depending on how the order is paid:
+     - cash / bakong at checkout → Completed = done, money taken.
+     - pay-later               → Completed = drinks MADE and the customer still OWES
+                                 (is_open stays 1). Settlement sets 'Paid', is_open=0.
+   Treating Completed as paid for a pay-later tab reported "Payment Successful" for
+   money that was never collected, without ever asking Bakong — the cashier would let
+   the customer walk and the tab would silently stay open.
+   'Preparing' is excluded for the same reason: it is not a settled state. */
+$is_paylater = ($order['payment_method'] ?? '') === 'paylater';
+$already_settled = $is_paylater
+    ? ($order['status'] === 'Paid' && (int)$order['is_open'] === 0)
+    : ($order['status'] === 'Completed');
+
+if ($already_settled) {
     echo json_encode(['paid' => true]);
     exit;
 }
