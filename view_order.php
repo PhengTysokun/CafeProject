@@ -28,6 +28,35 @@ $_role_label = $_all_roles[$_vo_role]['name']  ?? ucfirst(str_replace('_', ' ', 
 $_role_color = $_all_roles[$_vo_role]['color'] ?? '#888888';
 $_date_str    = date('l, d F Y');
 
+/* ── MILK OPTIONS (admin-managed via manage_milk.php) ──
+   The remake modal used to hard-code this list, so anything added in Manage Milk was
+   invisible here and a retired option stayed selectable. Mirrors menu.php exactly. */
+$_remake_milk = [];
+$_mk = $conn->query("SELECT name FROM milk_options WHERE is_active = 1 ORDER BY display_order ASC, id ASC");
+if ($_mk) while ($_m = $_mk->fetch_assoc()) $_remake_milk[] = $_m['name'];
+
+/* Add-ons the barista can toggle on a remake, keyed by product. Mirrors the ordering
+   path's gate (add_to_cart.php): only add-ons assigned to that product, in a category
+   that offers add-ons. Offering the whole library here would let a remake put Extra Shot
+   on a juice that can't be ordered with one. */
+$_remake_addons = [];
+$_ad = $conn->query("
+    SELECT pa.product_id, a.id, a.name, a.price
+    FROM product_addons pa
+    JOIN addons a     ON a.id = pa.addon_id
+    JOIN products pr  ON pr.product_id = pa.product_id
+    JOIN categories c ON c.slug = pr.category
+    WHERE a.is_active = 1 AND c.offer_addons = 1
+    ORDER BY a.display_order ASC, a.id ASC
+");
+if ($_ad) while ($_a = $_ad->fetch_assoc()) {
+    $_remake_addons[(int)$_a['product_id']][] = [
+        'id'    => (int)$_a['id'],
+        'name'  => $_a['name'],
+        'price' => (float)$_a['price'],
+    ];
+}
+
 // Clock-in status
 $_is_clocked_in = false;
 $_clock_since   = null;
@@ -1631,7 +1660,7 @@ function showClockToast(msg, isErr) {
 <div class="search-bar" style="display:flex; justify-content:center; gap:12px; margin-bottom:20px; align-items:center; flex-wrap:wrap;">
     <input type="text" id="searchInput" placeholder="Search by customer name, order #, or status..."
            oninput="searchOrders()" onkeydown="if(event.key==='Escape')clearSearch()"
-           style="width:300px; padding:10px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.09); background:rgba(255,255,255,0.05); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); color:var(--text); font-family:'Poppins',sans-serif; font-size:14px; outline:none; transition:var(--transition); box-shadow:0 2px 8px rgba(0,0,0,0.3); inset 0 1px 0 rgba(255,255,255,0.06);">
+           style="width:300px; padding:10px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.09); background:rgba(255,255,255,0.05); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); color:var(--text); font-family:'Poppins',sans-serif; font-size:14px; outline:none; transition:var(--transition); box-shadow:0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06);">
     <button class="btn" onclick="searchOrders()" 
             style="padding:10px 20px; border-radius:10px; border:none; background:var(--accent); color:#000; font-weight:600; cursor:pointer; transition:var(--transition); font-family:'Poppins',sans-serif; font-size:14px; display:flex; align-items:center; gap:8px;">
         <i class="fa-solid fa-magnifying-glass"></i> Search
@@ -2142,8 +2171,11 @@ function getActionButtons(o) {
     }
     
     if (o.status === 'Completed') {
+        // An open pay-later tab has taken no money — 'Completed' there means made-but-owing.
+        // Refunding it would erase the debt and record cash that was never collected.
+        const unpaidTab = o.payment_method === 'paylater' && Number(o.is_open) === 1;
         // Refund only for admin/manager, and only if not already remade
-        if (canManageOrders && !o.is_remade) {
+        if (canManageOrders && !o.is_remade && !unpaidTab) {
             buttons += `
                 <button class="refund-btn" onclick="showRefundModal(${Number(o.order_id)}, ${Number(o.daily_order_no)}, ${parseFloat(o.total).toFixed(2)})" title="Refund order">
                     <i class="fa-solid fa-rotate-left"></i> Refund
@@ -2444,7 +2476,12 @@ function closeRefundModal() {
 // ── Remake Modal ──
 const SWEETNESS_OPTS = ['0%', '25%', '50%', '75%', '100%'];
 const ICE_OPTS       = ['No Ice', 'Less Ice', 'Normal Ice', 'More Ice'];
-const MILK_OPTS      = ['Fresh Milk', 'Almond Milk', 'Soy Milk', 'Oat Milk', 'No Milk'];
+// Sourced from milk_options / addons, not hard-coded — Manage Milk and the add-on
+// library are the single source of truth for what a drink can be remade with.
+const MILK_OPTS        = <?= json_encode($_remake_milk,   JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_TAG) ?>;
+// (object) on the outer map only — JSON_FORCE_OBJECT would recurse and turn each
+// product's add-on LIST into an object too, leaving it with no .length.
+const ADDONS_BY_PRODUCT = <?= json_encode((object)$_remake_addons, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_TAG) ?>;
 
 function buildPillGroup(type, options, current) {
     let html = `<div class="remake-adj-group"><div class="remake-adj-label">${type.toUpperCase()}</div><div class="pill-group">`;
@@ -2459,6 +2496,22 @@ function selectPill(btn) {
     btn.closest('.pill-group').querySelectorAll('.pill-opt').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
 }
+
+// Add-ons are multi-select, unlike the single-choice groups above. Options come from
+// what THIS product may be ordered with, not the whole library.
+function buildAddonGroup(productId, current) {
+    const opts = ADDONS_BY_PRODUCT[productId] || [];
+    if (!opts.length) return '';
+    const cur = new Set(current || []);
+    let html = '<div class="remake-adj-group"><div class="remake-adj-label">ADD-ONS</div><div class="pill-group">';
+    opts.forEach(a => {
+        const sel = cur.has(a.name) ? ' selected' : '';
+        html += `<button type="button" class="pill-opt${sel}" onclick="toggleAddonPill(this)" data-type="addon" data-name="${escapeHtml(a.name)}">${escapeHtml(a.name)}</button>`;
+    });
+    return html + '</div></div>';
+}
+
+function toggleAddonPill(btn) { btn.classList.toggle('selected'); }
 
 function showRemakeModal(id, orderNumber) {
     currentRemakeId = id;
@@ -2478,7 +2531,8 @@ function showRemakeModal(id, orderNumber) {
                 `<div class="remake-item-name"><i class="fa-solid fa-mug-hot" style="margin-right:5px"></i>${escapeHtml(item.product_name)}</div>` +
                 buildPillGroup('sweetness', SWEETNESS_OPTS, item.sweetness) +
                 buildPillGroup('ice',       ICE_OPTS,       item.ice) +
-                buildPillGroup('milk',      MILK_OPTS,      item.milk);
+                buildPillGroup('milk',      MILK_OPTS,      item.milk) +
+                buildAddonGroup(item.product_id, item.addons);
             adjDiv.appendChild(block);
         });
     }
@@ -2504,7 +2558,10 @@ async function confirmRemake() {
             item_id:   block.dataset.itemId,
             sweetness: block.querySelector('[data-type="sweetness"].selected')?.textContent || '',
             ice:       block.querySelector('[data-type="ice"].selected')?.textContent || '',
-            milk:      block.querySelector('[data-type="milk"].selected')?.textContent || ''
+            milk:      block.querySelector('[data-type="milk"].selected')?.textContent || '',
+            // Names only — the server re-looks-up prices so the client can't set them.
+            addons:    Array.from(block.querySelectorAll('[data-type="addon"].selected'))
+                            .map(b => b.dataset.name)
         });
     });
 
@@ -3006,6 +3063,8 @@ if ($action === "fetch") {
                 // Needed by getStatusBadge to tell a queued 'Paid' order (is_open=1) from a
                 // settled pay-later tab (is_open=0) — same status, opposite meanings.
                 "is_open" => (int)($r['is_open'] ?? 0),
+                // Needed to hide Refund on a pay-later tab that hasn't been settled yet.
+                "payment_method" => $r['payment_method'] ?? '',
                 // Genuinely re-opened tab = was completed once (completed_at stamped) and is
                 // Preparing again. NOT derived from made_qty — with per-drink marking a made
                 // row no longer implies a re-open (tapping one drink would false-positive).
@@ -3028,6 +3087,7 @@ if ($action === "fetch") {
             $is_made  = ($qty > 0 && $made_qty >= $qty) ? 1 : 0;   // row fully made — from the count, not made_at
             $item = [
                 "item_id"      => (int)$r["item_id"],
+                "product_id"   => (int)$r["product_id"],   // picks this drink's allowed add-ons on remake
                 "product_name" => $r["product_name"],
                 "size"         => $r["size_label"],
                 "sweetness"    => $r["sweetness"],

@@ -62,16 +62,60 @@ $adjustments_raw = trim($_POST['adjustments'] ?? '');
 if ($adjustments_raw) {
     $adjustments = json_decode($adjustments_raw, true);
     if (is_array($adjustments)) {
-        $stmt_adj = $conn->prepare("UPDATE order_items SET sweetness=?, ice=?, milk=? WHERE item_id=? AND order_id=?");
-        $adj_sw = $adj_ic = $adj_ml = '';
+        /* Allowed add-ons per product, with prices read from the server — a crafted POST
+           can neither invent a price nor attach an add-on this product can't be ordered
+           with. Same gate as add_to_cart.php: assigned to the product AND the category
+           offers add-ons. Keyed by product so each item is validated against its own drink. */
+        $allowed = [];
+        $ap = $conn->query("
+            SELECT pa.product_id, a.id, a.name, a.price
+            FROM product_addons pa
+            JOIN addons a     ON a.id = pa.addon_id
+            JOIN products pr  ON pr.product_id = pa.product_id
+            JOIN categories c ON c.slug = pr.category
+            WHERE a.is_active = 1 AND c.offer_addons = 1
+            ORDER BY a.display_order ASC, a.id ASC
+        ");
+        if ($ap) while ($apr = $ap->fetch_assoc()) {
+            $allowed[(int)$apr['product_id']][$apr['name']] =
+                ['id' => (int)$apr['id'], 'name' => $apr['name'], 'price' => (float)$apr['price']];
+        }
+
+        // product_id per item, so an adjustment can't be validated against another drink.
+        $item_product = [];
+        $ipq = $conn->prepare("SELECT item_id, product_id FROM order_items WHERE order_id = ?");
+        $ipq->bind_param("i", $order_id);
+        $ipq->execute();
+        $ipr = $ipq->get_result();
+        while ($row = $ipr->fetch_assoc()) $item_product[(int)$row['item_id']] = (int)$row['product_id'];
+
+        $stmt_adj = $conn->prepare(
+            "UPDATE order_items SET sweetness=?, ice=?, milk=?, addons_snapshot=? WHERE item_id=? AND order_id=?"
+        );
+        $adj_sw = $adj_ic = $adj_ml = $adj_snap = '';
         $adj_item_id = 0;
-        $stmt_adj->bind_param("sssii", $adj_sw, $adj_ic, $adj_ml, $adj_item_id, $order_id);
+        $stmt_adj->bind_param("ssssii", $adj_sw, $adj_ic, $adj_ml, $adj_snap, $adj_item_id, $order_id);
         foreach ($adjustments as $adj) {
             $adj_item_id = (int)($adj['item_id'] ?? 0);
             if ($adj_item_id <= 0) continue;
             $adj_sw = trim($adj['sweetness'] ?? '');
             $adj_ic = trim($adj['ice'] ?? '');
             $adj_ml = trim($adj['milk'] ?? '');
+
+            /* Same shape and ordering add_to_cart.php writes: [{id, name, price}, ...] in
+               display_order. Shape matters — confirm_order.php compares addons_snapshot as
+               a string when merging identical drinks, so a different key set would stop
+               a re-ordered drink from matching.
+               order_items.price is deliberately NOT recomputed: a remake is service
+               recovery, so the customer is never re-billed for an add-on change. */
+            $pid   = $item_product[$adj_item_id] ?? 0;
+            $pool  = $allowed[$pid] ?? [];
+            $want  = array_flip(array_map('strval', (array)($adj['addons'] ?? [])));
+            $snap  = [];
+            foreach ($pool as $name => $meta) {          // $pool is already in display_order
+                if (isset($want[$name])) $snap[] = $meta;
+            }
+            $adj_snap = json_encode($snap);
             $stmt_adj->execute();
         }
     }

@@ -22,7 +22,7 @@ if ($order_id <= 0) {
 
 $stmt = $conn->prepare("
     SELECT order_id, daily_order_no, customer_name, total, status,
-           loyalty_card_id, points_earned
+           loyalty_card_id, points_earned, payment_method, is_open
     FROM orders WHERE order_id = ?
 ");
 $stmt->bind_param("i", $order_id);
@@ -43,6 +43,18 @@ if ($order['status'] === 'Refunded') {
 $refundable_statuses = ['Completed', 'Preparing'];
 if (!in_array($order['status'], $refundable_statuses)) {
     echo json_encode(["ok" => 0, "error" => "Only paid or Completed orders can be refunded (current status: {$order['status']})"]);
+    exit;
+}
+
+/* An open pay-later tab has taken no money yet: 'Completed' there means the drinks were
+   made and the customer still OWES. Refunding it would write a refund record for cash
+   that was never collected and clear is_open, erasing the debt from Find Orders.
+   Settlement sets status='Paid', so an unsettled tab is never refundable. */
+if ($order['payment_method'] === 'paylater' && (int)$order['is_open'] === 1) {
+    echo json_encode([
+        "ok"    => 0,
+        "error" => "This pay-later order hasn't been paid yet — there is nothing to refund. Settle it first, or cancel the order."
+    ]);
     exit;
 }
 
