@@ -53,5 +53,11 @@ $early = weekday_baseline($conn, '2026-05-25');
 check('degrades rather than lying', in_array($early['basis'], ['yesterday','none'], true), true);
 check('never labels an empty basis', $early['basis'] === 'none' ? $early['label'] : 'a normal Sunday', $early['basis'] === 'none' ? '' : 'a normal Sunday');
 
+// A negative $want must clamp to 1, not be reinterpreted by MySQL as an
+// unsigned LIMIT that returns every matching day.
+$neg = weekday_baseline($conn, '2026-07-26', -1);
+$one = weekday_baseline($conn, '2026-07-26', 1);
+check('negative want clamps like 1', $neg['days'], $one['days']);
+
 echo ($failures === 0) ? "\nALL PASS\n" : "\n$failures FAILURE(S)\n";
 exit($failures === 0 ? 0 : 1);

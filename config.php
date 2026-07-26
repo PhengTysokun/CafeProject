@@ -364,6 +364,7 @@ if (!function_exists('order_cogs')) {
  */
 if (!function_exists('weekday_baseline')) {
     function weekday_baseline(mysqli $conn, string $date, int $want = 4): array {
+        $want = max(1, $want);
         $none = ['value' => null, 'basis' => 'none', 'label' => '', 'days' => 0, 'dates' => []];
 
         $stmt = $conn->prepare("
