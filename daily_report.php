@@ -141,6 +141,10 @@ while ($r = $res->fetch_assoc()) { $byMethod[strtolower((string)$r['payment_meth
 $gotCash   = $byMethod['cash'] ?? 0.0;
 $gotBakong = $byMethod['bakong'] ?? 0.0;
 $gotLater  = $byMethod['paylater'] ?? 0.0;
+// Remainder, not enumeration: legacy rows (payment_method='0', 'riel', ...)
+// predate the current three-method model. Deriving this from the total
+// keeps the cards honest even as old data carries values we don't name here.
+$gotOther  = $gotToday - ($gotCash + $gotBakong + $gotLater);
 
 // Tabs still open: made, maybe served, definitely not paid for.
 $stmt = $conn->prepare("SELECT COALESCE(SUM(total),0), COUNT(*) FROM orders WHERE business_date = ? AND payment_method='paylater' AND is_open = 1 AND status NOT IN ('Cancelled','Void')");
@@ -297,9 +301,13 @@ body{
 
 .dr-bar   { display: flex; width: 100%; height: 14px; border-radius: 8px; overflow: hidden; background: var(--surface2); margin-top: 10px; }
 .seg      { display: block; height: 100%; }
-.seg-cash   { background: var(--amber); }
-.seg-bakong { background: #3b82f6; }
-.seg-later  { background: #9b87d9; }
+/* One hue, descending strength — segments are labelled underneath, so they
+   don't need to be independently identifiable by colour. Never red/green:
+   colour on this page means "act on this", reserved for the verdict boxes. */
+.seg-cash   { background: rgba(209,144,75,1);    }
+.seg-bakong { background: rgba(209,144,75,.65);  }
+.seg-later  { background: rgba(209,144,75,.4);   }
+.seg-other  { background: rgba(209,144,75,.22);  }
 
 .dr-facts-inline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 12px; }
 @media (max-width: 900px) { .dr-facts-inline { grid-template-columns: repeat(2, 1fr); } }
@@ -384,13 +392,17 @@ body{
           <div class="dr-card"><div class="dr-k">bakong</div><div class="dr-k-km">បាគង</div><div class="dr-v">$<?= number_format($gotBakong, 2) ?></div><div class="dr-note">by phone</div></div>
           <div class="dr-card"><div class="dr-k">pay later — paid</div><div class="dr-k-km">បង់ក្រោយ — បង់រួច</div><div class="dr-v">$<?= number_format($gotLater, 2) ?></div><div class="dr-note">settled today</div></div>
           <div class="dr-card"><div class="dr-k">not paid yet</div><div class="dr-k-km">មិនទាន់បង់</div><div class="dr-v">$<?= number_format($notPaidYet, 2) ?></div><div class="dr-note"><?= (int)$notPaidCount ?> open tab(s)</div></div>
+          <?php if ($gotOther > 0.01): ?>
+          <div class="dr-card"><div class="dr-k">other ways</div><div class="dr-v">$<?= number_format($gotOther, 2) ?></div><div class="dr-note">older orders that did not record how they were paid</div></div>
+          <?php endif; ?>
         </div>
 
         <div class="dr-card dr-wide">
           <div class="dr-k">how the money came in</div>
           <?php if ($gotToday > 0): ?>
             <div class="dr-bar">
-              <?php foreach ([['cash',$gotCash],['bakong',$gotBakong],['later',$gotLater]] as [$cls,$amt]):
+              <?php foreach ([['cash',$gotCash],['bakong',$gotBakong],['later',$gotLater],['other',$gotOther]] as [$cls,$amt]):
+                  if ($amt <= 0) { continue; }
                   $pct = ($amt / $gotToday) * 100; ?>
                   <span class="seg seg-<?= $cls ?>" style="width:<?= round($pct, 2) ?>%"></span>
               <?php endforeach; ?>
