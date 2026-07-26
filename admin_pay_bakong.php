@@ -14,6 +14,8 @@ $config = require __DIR__ . '/bakong_config.php';
 
 $order_id = (int)($_GET['order_id'] ?? 0);
 $return_page = ($_GET['return'] ?? '') === 'dashboard' ? 'dashboard.php' : 'find_order.php?tab=pending';
+// Same origin, in the form payment_cash.php's success screen expects.
+$from_key    = ($_GET['return'] ?? '') === 'dashboard' ? 'dashboard' : 'pending';
 
 if ($order_id <= 0) {
     header("Location: $return_page");
@@ -794,12 +796,16 @@ document.addEventListener('DOMContentLoaded', function() {
             title: 'Leave this QR?',
             msg: 'The order will wait in Find Orders → Pending Payment. You can collect it there later by Cash or Bakong — nothing is lost.',
             okText: 'OK, leave',
-            onOk: () => window.location.href = 'menu.php'
+            // The dialog says the order waits in Find Orders → Pending Payment, so send
+            // the cashier there rather than to the menu it used to dump them at.
+            onOk: () => window.location.href = RETURN_PAGE
         });
     });
 });
 
 const orderId = <?php echo (int)$order_id; ?>;
+const PAY_FROM    = <?php echo json_encode($from_key); ?>;
+const RETURN_PAGE = <?php echo json_encode($return_page); ?>;
 let checkInterval = null;
 
 // ── Go to premium success page ──
@@ -811,7 +817,7 @@ function showPaymentSuccess() {
     indicator.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Payment confirmed! Loading...</span>';
 
     setTimeout(() => {
-        window.location.href = 'payment_cash.php?order_id=' + orderId;
+        window.location.href = 'payment_cash.php?order_id=' + orderId + '&from=' + PAY_FROM;
     }, 800);
 }
 

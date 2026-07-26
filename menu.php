@@ -84,6 +84,27 @@ if ($linked_loyalty_id_int > 0) {
 /* ── ADD TO EXISTING ORDER DETECTION ── */
 $add_to_order_mode = isset($_GET['add_to_order']) ? (int)$_GET['add_to_order'] : 0;
 
+/* When adding to an existing order, points are awarded against THAT order's card
+   (confirm_order.php reads $existing_order['loyalty_card_id']), never the session's.
+   So show the parent order's card read-only instead of a Link button that would
+   set a session value this flow ignores. */
+$parent_loyalty     = null;
+$parent_has_loyalty = false;
+if ($add_to_order_mode > 0) {
+    $pl = $conn->prepare("
+        SELECT lc.loyalty_id, lc.points
+        FROM orders o
+        JOIN loyalty_cards lc ON lc.card_id = o.loyalty_card_id
+        WHERE o.order_id = ?
+    ");
+    if ($pl) {
+        $pl->bind_param("i", $add_to_order_mode);
+        $pl->execute();
+        $parent_loyalty     = $pl->get_result()->fetch_assoc() ?: null;
+        $parent_has_loyalty = (bool)$parent_loyalty;
+    }
+}
+
 /* ── ACTIVE ORDERS COUNT ── */
 date_default_timezone_set('Asia/Phnom_Penh');
 $now_dt    = new DateTime();
@@ -473,6 +494,14 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
     .cp-change-calc label { font-size: 11px; color: var(--text-sec,#5a4a3a); font-weight: 600; display: block; margin-bottom: 3px; }
     .cp-change-calc input { width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(85,224,135,.35); background: var(--bg-card,#fff); color: var(--text,#1a1410); font-size: 14px; font-weight: 700; font-family: 'Poppins',sans-serif; outline: none; text-align: right; }
     .cp-change-calc input:focus { border-color: #55e087; }
+    /* Quick tender — the note the customer actually handed over, one tap */
+    .cp-tender-quick { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+    .cp-tender-btn { flex: 1 1 auto; min-width: 48px; padding: 6px 8px; border-radius: 7px; border: 1.5px solid rgba(85,224,135,.3); background: var(--bg,#f4efe9); color: var(--text-sec,#5a4a3a); font-family: 'Poppins',sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
+    .cp-tender-btn:hover { border-color: #55e087; color: #2e9c5a; }
+    .cp-tender-btn.active { background: rgba(85,224,135,.16); border-color: #55e087; color: #2e9c5a; box-shadow: 0 0 0 2px rgba(85,224,135,.15); }
+    [data-theme="dark"] .cp-tender-btn { background: #1a1a1a; border-color: #2d2d2d; color: #aaa; }
+    [data-theme="dark"] .cp-tender-btn.active { background: rgba(85,224,135,.14); border-color: #55e087; color: #55e087; }
+
     .cp-change-row { display: flex; justify-content: space-between; align-items: center; margin-top: 7px; padding-top: 5px; border-top: 1px solid rgba(85,224,135,.15); }
     .cp-change-row .change-label { font-size: 11px; font-weight: 600; color: var(--text-sec,#5a4a3a); }
     .cp-change-row .change-amount { font-size: 17px; font-weight: 800; color: #55e087; }
@@ -994,6 +1023,7 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
           <span id="cpTax">$<?= number_format($cp_tax, 2) ?></span>
         </div>
 
+        <?php if (!$add_to_order_mode): ?>
         <!-- Loyalty -->
         <div class="cp-loyalty cp-section">
           <div class="cp-loyalty-info">
@@ -1010,6 +1040,16 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
             <?= $linked_loyalty ? '<i class="fa-solid fa-circle-check"></i> Linked' : '<i class="fa-solid fa-credit-card"></i> Link' ?>
           </button>
         </div>
+        <?php elseif ($parent_has_loyalty): ?>
+        <!-- Read-only: the card belongs to the order being added to, not to this cart. -->
+        <div class="cp-loyalty cp-section">
+          <div class="cp-loyalty-info">
+            <i class="fa-solid fa-star" style="color:#d1904b;margin-right:3px;"></i>
+            <span class="linked"><?= e($parent_loyalty['loyalty_id']) ?> &mdash; <?= (int)$parent_loyalty['points'] ?> pts</span>
+            <span style="color:#888;"> &middot; points go to Order #<?= $add_to_order_mode ?></span>
+          </div>
+        </div>
+        <?php endif; ?>
 
         <?php if (!$add_to_order_mode): ?>
         <!-- Order type -->
@@ -1210,7 +1250,11 @@ if ($defaultMilk === '' && !empty($milkOptions)) $defaultMilk = $milkOptions[0];
 
       <div class="cp-change-calc" id="cpChangeCalc">
         <label><i class="fa-solid fa-money-bill-wave" style="color:#55e087;margin-right:4px;"></i> Amount Received</label>
-        <input type="number" id="cpCashReceived" step="0.01" min="0" placeholder="0.00" oninput="cpCalcChange()" onfocus="this.select()">
+        <!-- oninput only fires for real typing, never for a programmatic .value set,
+             so this flag reliably marks "the cashier has entered their own amount". -->
+        <input type="number" id="cpCashReceived" step="0.01" min="0" placeholder="0.00"
+               oninput="this.dataset.touched='1'; cpCalcChange(); cpMarkActiveTender(this.value)" onfocus="this.select()">
+        <div class="cp-tender-quick" id="cpTenderQuick"></div>
         <div class="cp-change-row">
           <span class="change-label">Change to give back</span>
           <span class="change-amount" id="cpChangeAmount">$0.00</span>
@@ -1294,6 +1338,13 @@ var CATEGORY_OPTS = <?= json_encode($categoryOpts, JSON_HEX_APOS|JSON_HEX_QUOT) 
 var MILK_DEFAULT = <?= json_encode($defaultMilk, JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
 var BUY_X_COUNT = <?= (int)BUY_X_COUNT ?>;
 var ADD_TO_ORDER_MODE = <?= (int)$add_to_order_mode ?>;
+// Card on the order being added to, so the cart re-render can show it read-only.
+// id is pre-escaped for HTML: it lands in an innerHTML string below, and JSON_HEX_TAG
+// only protects the JS source, not the sink.
+var PARENT_LOYALTY = <?= json_encode($parent_loyalty ? [
+    'id'  => htmlspecialchars($parent_loyalty['loyalty_id'], ENT_QUOTES, 'UTF-8'),
+    'pts' => (int)$parent_loyalty['points'],
+] : null, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_TAG) ?>;
 var CAFE_TABLES = [];
 var CP_STAND_MAX = <?= STAND_COUNT ?>;
 var CP_TAX_RATE  = <?= TAX_RATE ?>;
@@ -1564,14 +1615,26 @@ function renderCartPanel(data) {
 
   itemsHtml += '<div class="cp-sum-row"><span>Tax (' + CP_TAX_RATE + '%)</span><span id="cpTax">$' + data.tax + '</span></div>';
 
-  // Loyalty
-  var loyaltyStatus = document.getElementById('cpLoyaltyStatus');
-  var loyaltyLinked = loyaltyStatus && loyaltyStatus.classList.contains('linked');
-  itemsHtml += '<div class="cp-loyalty cp-section">' +
-    '<div class="cp-loyalty-info"><i class="fa-solid fa-star" style="color:#d1904b;margin-right:3px;"></i>' +
-    '<span id="cpLoyaltyStatus"' + (loyaltyLinked ? ' class="linked"' : '') + '>' + (loyaltyStatus ? loyaltyStatus.textContent : 'Loyalty card') + '</span></div>' +
-    '<button class="cp-loyalty-btn" onclick="openLoyaltyModal()" id="cpLoyaltyBtn">' + (loyaltyLinked ? '<i class="fa-solid fa-circle-check"></i> Linked' : '<i class="fa-solid fa-credit-card"></i> Link') + '</button>' +
-  '</div>';
+  // Loyalty — must mirror the server-rendered markup above. In add-to-order mode the
+  // card belongs to the parent order, so there is nothing to link from this cart;
+  // re-emitting the Link button here would put it straight back after every render.
+  if (ADD_TO_ORDER_MODE > 0) {
+    if (PARENT_LOYALTY) {
+      itemsHtml += '<div class="cp-loyalty cp-section">' +
+        '<div class="cp-loyalty-info"><i class="fa-solid fa-star" style="color:#d1904b;margin-right:3px;"></i>' +
+        '<span class="linked">' + PARENT_LOYALTY.id + ' &mdash; ' + PARENT_LOYALTY.pts + ' pts</span>' +
+        '<span style="color:#888;"> &middot; points go to Order #' + ADD_TO_ORDER_MODE + '</span>' +
+        '</div></div>';
+    }
+  } else {
+    var loyaltyStatus = document.getElementById('cpLoyaltyStatus');
+    var loyaltyLinked = loyaltyStatus && loyaltyStatus.classList.contains('linked');
+    itemsHtml += '<div class="cp-loyalty cp-section">' +
+      '<div class="cp-loyalty-info"><i class="fa-solid fa-star" style="color:#d1904b;margin-right:3px;"></i>' +
+      '<span id="cpLoyaltyStatus"' + (loyaltyLinked ? ' class="linked"' : '') + '>' + (loyaltyStatus ? loyaltyStatus.textContent : 'Loyalty card') + '</span></div>' +
+      '<button class="cp-loyalty-btn" onclick="openLoyaltyModal()" id="cpLoyaltyBtn">' + (loyaltyLinked ? '<i class="fa-solid fa-circle-check"></i> Linked' : '<i class="fa-solid fa-credit-card"></i> Link') + '</button>' +
+    '</div>';
+  }
 
   // Preserve state that lives inside cpBody across re-renders
   var prevDrinkType    = (document.getElementById('cpOrderTypeInput') || {}).value || 'drink_in';
@@ -1681,7 +1744,9 @@ function cpRefreshSummaryFromData(data) {
   if (mdr) mdr.style.display = parseFloat(data.manual_discount) > 0 ? '' : 'none';
   set('cpManualAmt', '-$' + (data.manual_discount || '0.00'));
 
-  cpCalcChange();
+  // Re-seed rather than just recalculating: if an item is added while the modal is
+  // open the total moves, and a stale prefill would quietly understate the tender.
+  cpPrefillCashReceived();
   cpUpdateSplitAmounts();
 }
 
@@ -1760,6 +1825,78 @@ function cpGetCartTotal() {
   return parseFloat(el.textContent.replace('$','').replace(/,/g,'')) || 0;
 }
 
+/* Seed "Amount Received" with what the customer actually owes in cash.
+   Left blank it was skipped on 93% of cash sales, so most receipts carried no tender
+   line and the cashier did the change in their head — which is how a drawer ends up
+   short. Exact cash is now one tap; a customer handing over a note just overtypes it.
+   Only ever prefills an untouched field, so a typed amount is never clobbered. */
+// In a split, the cash leg is its own amount, not the order total.
+function cpOwedInCash() {
+  var split = document.querySelector('.cp-split-amount[data-method="cash"]');
+  if (split) return parseFloat(split.value) || 0;
+  return cpGetCartTotal();
+}
+
+function cpPrefillCashReceived() {
+  var cr = document.getElementById('cpCashReceived');
+  if (!cr) return;
+  if (cr.dataset.touched !== '1') {
+    var owed = cpOwedInCash();
+    cr.value = owed > 0 ? owed.toFixed(2) : '';
+    cpCalcChange();
+  }
+  cpRenderTenderQuick();
+}
+
+/* One tap for the note the customer actually handed over.
+   The prefilled exact amount on its own was a trap: it LOOKS handled, so a rushed
+   cashier can leave "Change $0.00" showing while holding a $20 note. Putting the real
+   notes on screen makes picking the right one faster than ignoring it, and the active
+   highlight shows which tender was actually chosen. */
+function cpRenderTenderQuick() {
+  var wrap = document.getElementById('cpTenderQuick');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  var owed = cpOwedInCash();
+  if (owed <= 0) return;
+
+  var mk = function (label, val) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cp-tender-btn';
+    b.textContent = label;
+    b.dataset.tender = val.toFixed(2);
+    b.addEventListener('click', function () { cpSetTender(val); });
+    return b;
+  };
+
+  wrap.appendChild(mk('Exact', owed));
+  // Only notes that actually cover the bill — a $5 button on a $23 order just
+  // produces "Need $18 more".
+  [1, 5, 10, 20, 50, 100].filter(function (d) { return d > owed; })
+                         .slice(0, 4)
+                         .forEach(function (d) { wrap.appendChild(mk('$' + d, d)); });
+
+  cpMarkActiveTender(parseFloat(document.getElementById('cpCashReceived').value) || 0);
+}
+
+function cpSetTender(val) {
+  var cr = document.getElementById('cpCashReceived');
+  if (!cr) return;
+  cr.value = Number(val).toFixed(2);
+  cr.dataset.touched = '1';   // an explicit choice — never re-seed over it
+  cpCalcChange();
+  cpMarkActiveTender(val);
+}
+
+function cpMarkActiveTender(val) {
+  var v = Number(val).toFixed(2);
+  document.querySelectorAll('#cpTenderQuick .cp-tender-btn').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.tender === v);
+  });
+}
+
 function cpUpdateConfirmBtn(selected) {
   // Updates the MODAL's Confirm Payment button — never the footer Confirm Order
   // button, which must always stay "Confirm Order" (it just opens the modal).
@@ -1784,7 +1921,8 @@ function cpUpdateConfirmBtn(selected) {
     btn.classList.add('split');
     if (selected.includes('cash') && cc) {
       cc.classList.add('visible');
-      setTimeout(function() { var cr = document.getElementById('cpCashReceived'); if (cr) cr.focus(); }, 50);
+      cpPrefillCashReceived();
+      setTimeout(function() { var cr = document.getElementById('cpCashReceived'); if (cr) { cr.focus(); cr.select(); } }, 50);
     }
   } else if (selected.includes('riel')) {
     if (icon) icon.className = 'fa-solid fa-coins';
@@ -1803,7 +1941,8 @@ function cpUpdateConfirmBtn(selected) {
     if (text) text.textContent = 'Confirm Cash Payment';
     btn.classList.add('cash');
     if (cc) cc.classList.add('visible');
-    setTimeout(function() { var cr = document.getElementById('cpCashReceived'); if (cr) cr.focus(); }, 50);
+    cpPrefillCashReceived();
+    setTimeout(function() { var cr = document.getElementById('cpCashReceived'); if (cr) { cr.focus(); cr.select(); } }, 50);
   } else if (selected.includes('bakong')) {
     if (icon) icon.className = 'fa-solid fa-qrcode';
     if (text) text.textContent = 'Generate Bakong QR';
@@ -1950,7 +2089,8 @@ function cpClosePayModal() {
     c.checked = false;
     c.closest('.cp-pay-method').classList.remove('selected');
   });
-  var cr = document.getElementById('cpCashReceived'); if (cr) cr.value = '';
+  var cr = document.getElementById('cpCashReceived');
+  if (cr) { cr.value = ''; delete cr.dataset.touched; }   // next open prefills again
   var ri = document.getElementById('cpRielReceived'); if (ri) ri.value = '';
   cpUpdateConfirmBtn([]);
   cpUpdateSplitInputs();

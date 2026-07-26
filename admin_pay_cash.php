@@ -78,6 +78,8 @@ try {
     exit;
 }
 
-// Show the same success screen as the regular checkout (identical UI).
-header("Location: payment_cash.php?order_id=" . $order_id);
+// Show the same success screen as the regular checkout (identical UI). Carry where the
+// cashier came from so its back button returns to the queue instead of the menu.
+$from = ($_GET['return'] ?? '') === 'dashboard' ? 'dashboard' : 'pending';
+header("Location: payment_cash.php?order_id=" . $order_id . "&from=" . $from);
 exit;

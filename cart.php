@@ -1075,6 +1075,19 @@ body {
     outline: none; text-align: right;
 }
 .change-calc input:focus { border-color: #55e087; box-shadow: 0 0 0 3px rgba(85,224,135,0.1); }
+/* Quick tender — the note the customer actually handed over, one tap */
+.tender-quick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.tender-btn {
+    flex: 1 1 auto; min-width: 52px; padding: 7px 9px; border-radius: 8px;
+    border: 1.5px solid rgba(85,224,135,0.3); background: var(--bg-input, transparent);
+    color: var(--text-secondary); font-family: 'Poppins',sans-serif;
+    font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all .15s;
+}
+.tender-btn:hover { border-color: #55e087; color: #2e9c5a; }
+.tender-btn.active {
+    background: rgba(85,224,135,0.16); border-color: #55e087; color: #2e9c5a;
+    box-shadow: 0 0 0 2px rgba(85,224,135,0.15);
+}
 .change-row {
     display: flex; justify-content: space-between; align-items: center;
     margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(85,224,135,0.15);
@@ -1357,8 +1370,11 @@ body {
         <!-- Cash change calculator (shown when Cash is selected) -->
         <div class="change-calc" id="changeCalc">
             <label><i class="fa-solid fa-money-bill-wave" style="color:#55e087;margin-right:5px;"></i>Amount Received</label>
+            <!-- oninput never fires for a programmatic .value set, so this flag marks
+                 only a cashier-entered amount and stops the prefill overwriting it. -->
             <input type="number" id="cashReceived" step="0.01" min="0" placeholder="0.00"
-                   oninput="calcChange()" onfocus="this.select()">
+                   oninput="this.dataset.touched='1'; calcChange(); markActiveTender(this.value)" onfocus="this.select()">
+            <div class="tender-quick" id="tenderQuick"></div>
             <div class="change-row">
                 <span class="change-label">Change to give back</span>
                 <span class="change-amount" id="changeAmount">$0.00</span>
@@ -1652,6 +1668,67 @@ function clearPresetActive() {
     document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
 }
 
+/* Seed "Amount Received" with what is actually owed in cash — see menu.php for the
+   reasoning. Only fills an untouched field, so a typed amount is never overwritten. */
+function owedInCash() {
+    const split = document.querySelector('.split-amount[data-method="cash"]');
+    if (split) return parseFloat(split.value) || 0;
+    return getCartTotal();
+}
+
+function prefillCashReceived() {
+    const cr = document.getElementById('cashReceived');
+    if (!cr) return;
+    if (cr.dataset.touched !== '1') {
+        const owed = owedInCash();
+        cr.value = owed > 0 ? owed.toFixed(2) : '';
+        calcChange();
+    }
+    renderTenderQuick();
+}
+
+/* One tap for the note actually handed over — see menu.php for the reasoning. */
+function renderTenderQuick() {
+    const wrap = document.getElementById('tenderQuick');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+
+    const owed = owedInCash();
+    if (owed <= 0) return;
+
+    const mk = (label, val) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tender-btn';
+        b.textContent = label;
+        b.dataset.tender = val.toFixed(2);
+        b.addEventListener('click', () => setTender(val));
+        return b;
+    };
+
+    wrap.appendChild(mk('Exact', owed));
+    [1, 5, 10, 20, 50, 100].filter(d => d > owed).slice(0, 4)
+                           .forEach(d => wrap.appendChild(mk('$' + d, d)));
+
+    markActiveTender(parseFloat(document.getElementById('cashReceived').value) || 0);
+}
+
+function setTender(val) {
+    const cr = document.getElementById('cashReceived');
+    if (!cr) return;
+    cr.value = Number(val).toFixed(2);
+    cr.dataset.touched = '1';
+    calcChange();
+    markActiveTender(val);
+}
+
+function markActiveTender(val) {
+    const v = Number(val).toFixed(2);
+    document.querySelectorAll('#tenderQuick .tender-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tender === v);
+    });
+}
+
 // ── Cash change calculator ──
 function calcChange() {
     const received = parseFloat(document.getElementById('cashReceived')?.value) || 0;
@@ -1717,7 +1794,8 @@ function updateConfirmBtn(selected) {
         btn.classList.add('split-selected');
         if (selected.includes('cash') && calc) {
             calc.classList.add('visible');
-            setTimeout(() => document.getElementById('cashReceived')?.focus(), 50);
+            prefillCashReceived();
+            setTimeout(() => { const c = document.getElementById('cashReceived'); if (c) { c.focus(); c.select(); } }, 50);
         }
     } else if (selected.includes('riel')) {
         icon.className = 'fa-solid fa-coins';
@@ -1737,7 +1815,8 @@ function updateConfirmBtn(selected) {
         text.textContent = 'Confirm Cash Payment';
         btn.classList.add('cash-selected');
         if (calc) calc.classList.add('visible');
-        setTimeout(() => document.getElementById('cashReceived')?.focus(), 50);
+        prefillCashReceived();
+        setTimeout(() => { const c = document.getElementById('cashReceived'); if (c) { c.focus(); c.select(); } }, 50);
     } else if (selected.includes('bakong')) {
         icon.className = 'fa-solid fa-qrcode';
         text.textContent = 'Generate Bakong QR';

@@ -43,6 +43,19 @@ $payments = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 // Print Receipt + a Back-to-Pay-Later button (New Order / View All Orders are hidden,
 // since the cashier is working the queue). Regular cash orders keep all three actions.
 $is_paylater = ($order['payment_method'] ?? '') === 'paylater';
+
+/* Where the cashier came from decides where "back" goes. Settling a Pending Payment
+   order from Find Orders and then being dropped at the menu loses the queue they were
+   working; only a fresh menu checkout should offer New Order.
+     from=pending    → collected from Find Orders → Pending Payment (cash or Bakong)
+     from=dashboard  → collected via the dashboard shortcut
+     (absent)        → a fresh order taken at the menu */
+$from = $_GET['from'] ?? '';
+$back_targets = [
+    'pending'   => ['find_order.php?tab=pending', 'Back to Pending Payment', 'fa-arrow-left'],
+    'dashboard' => ['dashboard.php',              'Back to Dashboard',       'fa-arrow-left'],
+];
+$back_from = $back_targets[$from] ?? null;
 $total       = (float)$order['total'];
 $discount    = (float)$order['promotion_discount'];
 $manual_disc = (float)$order['manual_discount'];
@@ -622,6 +635,10 @@ body {
             <?php if ($is_paylater): ?>
             <a href="find_order.php?tab=paylater" class="btn btn-new">
                 <i class="fa-solid fa-arrow-left"></i> Back to Pay Later
+            </a>
+            <?php elseif ($back_from): ?>
+            <a href="<?= htmlspecialchars($back_from[0]) ?>" class="btn btn-new">
+                <i class="fa-solid <?= $back_from[2] ?>"></i> <?= htmlspecialchars($back_from[1]) ?>
             </a>
             <?php else: ?>
             <a href="menu.php" class="btn btn-new">
