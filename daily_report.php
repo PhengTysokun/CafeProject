@@ -68,8 +68,10 @@ $vGot  = dr_verdict($gotToday, $baseGot['value'], $baseGot['label']);
  */
 $keptBaseline = null;
 if ($baseGot['basis'] !== 'none') {
+    // Take the day's total from this same read — a second SUM(total) query per
+    // day would only re-fetch rows already in hand.
     $stmt = $conn->prepare("
-        SELECT business_date, order_id
+        SELECT business_date, order_id, total
         FROM orders
         WHERE business_date IN (" . implode(',', array_fill(0, count($baseGot['dates']), '?')) . ")
           AND " . paid_orders_where()
@@ -78,17 +80,16 @@ if ($baseGot['basis'] !== 'none') {
     $stmt->execute();
     $res = $stmt->get_result();
     $byDay = [];
-    while ($r = $res->fetch_assoc()) { $byDay[$r['business_date']][] = (int)$r['order_id']; }
+    $gotByDay = [];
+    while ($r = $res->fetch_assoc()) {
+        $byDay[$r['business_date']][] = (int)$r['order_id'];
+        $gotByDay[$r['business_date']] = ($gotByDay[$r['business_date']] ?? 0.0) + (float)$r['total'];
+    }
 
     $keptSum = 0.0;
     foreach ($baseGot['dates'] as $d) {
-        $dayIds  = $byDay[$d] ?? [];
-        $dayGot  = 0.0;
-        if ($dayIds) {
-            $in = implode(',', $dayIds);
-            $dayGot = (float)$conn->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE order_id IN ($in)")->fetch_row()[0];
-        }
-        $keptSum += $dayGot - order_cogs($conn, $dayIds, $costMap)['total'];
+        $dayIds = $byDay[$d] ?? [];
+        $keptSum += ($gotByDay[$d] ?? 0.0) - order_cogs($conn, $dayIds, $costMap)['total'];
     }
     $keptBaseline = $keptSum / count($baseGot['dates']);
 }
@@ -109,13 +110,18 @@ $lowExtra  = max(0, $lowItems - 3);
 
 $stockValue = (float)$conn->query("SELECT COALESCE(SUM(stock_quantity * cost_per_unit),0) FROM ingredients")->fetch_row()[0];
 
+// ingredient_history has no business_date column, so match the business day by
+// its 06:00-to-06:00 window. Joining through orders would look tidier but drops
+// the 33 order_deduct rows that carry a NULL order_id.
 $stmt = $conn->prepare("
     SELECT COALESCE(SUM(ABS(h.amount) * i.cost_per_unit),0)
     FROM ingredient_history h
     JOIN ingredients i ON i.ingredient_id = h.ingredient_id
-    WHERE h.change_type = 'order_deduct' AND DATE(h.created_at) = ?
+    WHERE h.change_type = 'order_deduct'
+      AND h.created_at >= CONCAT(?, ' 06:00:00')
+      AND h.created_at <  CONCAT(DATE_ADD(?, INTERVAL 1 DAY), ' 06:00:00')
 ");
-$stmt->bind_param("s", $date);
+$stmt->bind_param("ss", $date, $date);
 $stmt->execute();
 $usedValue = (float)$stmt->get_result()->fetch_row()[0];
 
