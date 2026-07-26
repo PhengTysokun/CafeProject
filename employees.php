@@ -243,13 +243,26 @@ $total_orders_all = (int)array_sum(array_column($employees, 'total_orders'));
 $total_revenue    = (float)array_sum(array_column($employees, 'total_revenue'));
 $total_this_month = (int)array_sum(array_column($employees, 'orders_this_month'));
 
+/* Who is eligible to be ranked.
+   - The owner account is excluded: a leaderboard compares staff performance, and the
+     admin isn't competing with the cashiers. Their orders still count toward the
+     Revenue Served / Orders This Month totals, which say "all staff".
+   - Zero-order employees are excluded: with most of the roster at 0, an unfiltered
+     top-3 puts people on a podium for having served nobody.
+   Matched on the role slug, not role_id — ids are not stable across installs. */
+$rankable = array_values(array_filter($employees, function ($e) {
+    return ($e['emp_role'] ?? '') !== 'admin' && (int)$e['total_orders'] > 0;
+}));
+
+// $employees is already ORDER BY total_orders DESC, so the filter preserves ranking.
+$leaderboard = array_slice($rankable, 0, 3);
+
 $top_month = null;
-foreach ($employees as $e) {
+foreach ($rankable as $e) {
+    if ((int)$e['orders_this_month'] <= 0) continue;   // "Top This Month: 0 orders" is not a fact
     if (!$top_month || (int)$e['orders_this_month'] > (int)$top_month['orders_this_month'])
         $top_month = $e;
 }
-
-$leaderboard = array_slice($employees, 0, 3);
 
 // Load roles from DB for dynamic filter pills
 $_roles_db = [];
