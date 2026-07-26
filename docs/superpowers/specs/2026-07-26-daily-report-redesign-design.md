@@ -281,21 +281,23 @@ A small Khmer line under the English on the three verdict boxes and the four mon
 about ten strings total. Nothing else on the page is translated. This is a fixed set of
 literals, not a translation system: no language column, no toggle, no locale files.
 
-Draft strings, **to be checked by the user before shipping** (a wrong translation in front
-of Khmer-speaking judges is worse than none):
+Strings, **reviewed and corrected by the user 2026-07-26** — use these exactly:
 
-| English | Khmer (draft) |
+| English | Khmer |
 |---|---|
-| Did we earn more? | យើងរកបានច្រើនជាងមុនទេ? |
-| Did we keep more? | យើងសល់ប្រាក់ច្រើនជាងមុនទេ? |
-| Can we open tomorrow? | ស្អែកយើងបើកបានទេ? |
-| money we got today | ប្រាក់ដែលទទួលបានថ្ងៃនេះ |
+| Did we earn more? | តើយើងរកចំណូលបានច្រើនជាងមុនទេ? |
+| Did we keep more? | តើយើងរកប្រាក់ចំណេញបានច្រើនជាងមុនទេ? |
+| Can we open tomorrow? | តើយើងអាចបើកហាងស្អែកបានទេ? |
+| money we got today | ប្រាក់ចំណូលថ្ងៃនេះ |
 | money we keep | ប្រាក់ចំណេញ |
 | cash | សាច់ប្រាក់ |
 | bakong | បាគង |
 | pay later — paid | បង់ក្រោយ — បង់រួច |
 | not paid yet | មិនទាន់បង់ |
-| stock we have | ស្តុកនៅសល់ |
+| stock we have | ស្តុកដែលមាន |
+
+The three verdict questions take the `តើ … ទេ?` interrogative frame. Without `តើ` they read as
+statements with a question mark attached, which is what the first draft got wrong.
 
 The page is already UTF-8MB4 throughout, so no encoding work is needed. Khmer text needs a
 slightly larger line-height than Latin to avoid clipped diacritics.
@@ -356,6 +358,18 @@ with previous features.
   between tab 4 and `employees.php`. Accepted: those pages are for managing, this one is for
   reading a day.
 
+## Answering a judge
+
+Two questions are likely, and both are answerable from this spec:
+
+**"How do you know what a normal Saturday is?"** — it is the average of the last four
+Saturdays that had sales. The page says which baseline it used, and falls back to yesterday
+when a weekday has too little history to average.
+
+**"Where do the profit numbers come from?"** — ingredient prices set per 1 kg / 1 L at
+market-typical Cambodian wholesale, with cost per unit derived from them. They are a
+directional guide, not audited accounting. Say this plainly rather than letting it be found.
+
 ## Open questions
 
-- Khmer strings need the user's review before shipping. Everything else is decided.
+None. Khmer strings were reviewed and corrected on 2026-07-26; the design is ready to plan.
