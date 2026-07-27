@@ -20,7 +20,18 @@ $isToday  = ($date === $today);
 // reload is even worth doing. Must exit before any HTML is output.
 if (isset($_GET['poll'])) {
     header('Content-Type: application/json');
-    $stmt = $conn->prepare("SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(MAX(order_date),'') FROM orders WHERE business_date = ?");
+    // COUNT/SUM(total)/MAX(order_date) alone are blind to a settlement or a
+    // cancellation: admin_pay_cash.php and cancel_order.php both flip
+    // is_open/status without touching total or order_date, but tab 1's
+    // collected figure (paid_orders_where()) moves the instant either
+    // happens. SUM(is_open) catches settlement; the cancelled/refunded/void
+    // count catches a status flip that leaves is_open alone.
+    $stmt = $conn->prepare("
+        SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(is_open),0),
+               COALESCE(SUM(CASE WHEN status IN ('Cancelled','Refunded','Void') THEN 1 ELSE 0 END),0),
+               COALESCE(MAX(order_date),'')
+        FROM orders WHERE business_date = ?
+    ");
     $stmt->bind_param("s", $date);
     $stmt->execute();
     $sig = implode('|', $stmt->get_result()->fetch_row());
@@ -931,8 +942,15 @@ document.querySelectorAll('.dr-tab').forEach(btn => {
 
 // A poll-triggered reload must not throw away where the manager was reading —
 // restore the tab they had open, and their scroll position, right after load.
+// Gated on a one-shot flag set only by the poll handler immediately before
+// its reload: an ordinary visit (nav click, typed URL, "Full analytics" back
+// button) must always land on Today, never on whatever tab was left open the
+// last time this date happened to be viewed.
 (function drRestoreAfterReload() {
     try {
+        const pendingKey = 'drPendingRestore:' + DR_DATE;
+        if (sessionStorage.getItem(pendingKey) !== '1') { return; }
+        sessionStorage.removeItem(pendingKey);
         const savedTab = sessionStorage.getItem('drActiveTab:' + DR_DATE);
         if (savedTab && savedTab !== 'today') { drShowTab(savedTab); }
         const savedY = sessionStorage.getItem('drScrollY:' + DR_DATE);
@@ -1079,8 +1097,13 @@ if (DR_IS_TODAY) {
             if (drSig !== null && sig !== drSig) {
                 // Reloading mid-read is hostile to a manager part-way down a
                 // table — stash where they were so drRestoreAfterReload can
-                // put them back once the new page settles.
-                try { sessionStorage.setItem('drScrollY:' + DR_DATE, String(window.scrollY)); } catch (e) {}
+                // put them back once the new page settles. The pending-restore
+                // flag is what tells that IIFE this reload was poll-triggered,
+                // as opposed to an ordinary nav click that should land on Today.
+                try {
+                    sessionStorage.setItem('drScrollY:' + DR_DATE, String(window.scrollY));
+                    sessionStorage.setItem('drPendingRestore:' + DR_DATE, '1');
+                } catch (e) {}
                 window.location.reload();
             }
             drSig = sig;
