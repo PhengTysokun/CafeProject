@@ -25,11 +25,17 @@ if (isset($_GET['poll'])) {
     // is_open/status without touching total or order_date, but tab 1's
     // collected figure (paid_orders_where()) moves the instant either
     // happens. SUM(is_open) catches settlement; the cancelled/refunded/void
-    // count catches a status flip that leaves is_open alone.
+    // count catches a status flip that leaves is_open alone. The two
+    // ingredients subqueries catch the case no order touches at all — a
+    // restock, a PO receipt, or a stock count — which still moves box 3, the
+    // stock lines, and the tab badge, and would otherwise sit stale on a
+    // 30s-old "YES" long after an item ran low.
     $stmt = $conn->prepare("
         SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(is_open),0),
                COALESCE(SUM(CASE WHEN status IN ('Cancelled','Refunded','Void') THEN 1 ELSE 0 END),0),
-               COALESCE(MAX(order_date),'')
+               COALESCE(MAX(order_date),''),
+               (SELECT COUNT(*) FROM ingredients WHERE stock_quantity <= minimum_stock),
+               (SELECT COALESCE(SUM(stock_quantity),0) FROM ingredients)
         FROM orders WHERE business_date = ?
     ");
     $stmt->bind_param("s", $date);
@@ -121,6 +127,31 @@ if ($baseGot['basis'] !== 'none') {
 
 $vKept = dr_verdict($keptToday, $keptBaseline, $baseGot['label']);
 
+// Zero sales (the common every-morning-before-the-first-order state) is not
+// a "LESS than a normal Saturday" verdict — that reads as an alarm before
+// the shop has even had a chance. Neutral and unmissable instead.
+if ($paidOrderCount === 0) {
+    $vGot  = ['tone' => 'flat', 'line' => 'no sales yet today', 'sub' => ''];
+    $vKept = ['tone' => 'flat', 'line' => 'no sales yet today', 'sub' => ''];
+}
+
+// Plain-words tooltip for box 1's baseline line — only meaningful when the
+// line actually states a weekday-average comparison (not the yesterday
+// fallback, the no-baseline state, or the zero-sales override above, which
+// replace the line with something that makes no baseline claim at all).
+$baselineTooltip = '';
+if ($paidOrderCount > 0 && $baseGot['basis'] === 'weekday') {
+    $baselineTooltip = 'average of your last ' . $baseGot['days'] . ' ' . date('l', strtotime($date)) . 's';
+}
+
+// Yesterday's figure stays visible regardless of which baseline drove the
+// colour above — a manager glancing at box 1 shouldn't have to open tab 2 to
+// see what yesterday did.
+$stmt = $conn->prepare("SELECT COALESCE(SUM(total),0) FROM orders WHERE business_date = ? AND " . paid_orders_where());
+$stmt->bind_param("s", $prevDate);
+$stmt->execute();
+$gotYesterday = (float)$stmt->get_result()->fetch_row()[0];
+
 // Stock going DOWN is not bad — it means drinks were sold. Red fires only
 // when something will actually stop service tomorrow.
 $low = $conn->query("
@@ -171,8 +202,16 @@ $gotLater  = $byMethod['paylater'] ?? 0.0;
 // keeps the cards honest even as old data carries values we don't name here.
 $gotOther  = $gotToday - ($gotCash + $gotBakong + $gotLater);
 
-// Tabs still open: made, maybe served, definitely not paid for.
-$stmt = $conn->prepare("SELECT COALESCE(SUM(total),0), COUNT(*) FROM orders WHERE business_date = ? AND payment_method='paylater' AND is_open = 1 AND status NOT IN ('Cancelled','Void')");
+// Money not (yet) collected — every order failing the same paid_orders_where()
+// test tab 2's footer uses, minus Cancelled/Void (never owed, never "not paid
+// yet"). This used to hand-roll payment_method='paylater' AND is_open=1,
+// which silently missed a Refunded or PendingPayment cash/bakong order and
+// made this card disagree with tab 2's footer on the same day.
+$stmt = $conn->prepare("
+    SELECT COALESCE(SUM(total),0), COUNT(*)
+    FROM orders
+    WHERE business_date = ? AND status NOT IN ('Cancelled','Void') AND NOT (" . paid_orders_where() . ")
+");
 $stmt->bind_param("s", $date);
 $stmt->execute();
 [$notPaidYet, $notPaidCount] = $stmt->get_result()->fetch_row();
@@ -202,12 +241,20 @@ $avgCups = $paidOrderCount > 0 ? $cogs['items'] / $paidOrderCount : null;
  *
  * Returns [label, state, bucket]. bucket is the payment-method category
  * (cash/bakong/paylater/other) and drives the filter pills; state is
- * 'open'/'ok' and drives the amber tint. The two are independent — a
- * paylater row keeps bucket=paylater whether or not it is state=open.
+ * 'open'/'ok'/'refunded' and drives the amber tint ('open' only). The two
+ * are independent — a paylater row keeps bucket=paylater whether or not it
+ * is state=open.
  */
 function dr_pay_label(array $o): array {
     $m = strtolower((string)$o['payment_method']);
     $bucket = in_array($m, ['cash', 'bakong', 'paylater'], true) ? $m : 'other';
+
+    // Checked before the collected test: money that WAS collected and then
+    // given back is not money that was never paid. Its own neutral state
+    // (not 'open') keeps it out of the amber "needs attention" styling too.
+    if ($o['status'] === 'Refunded') {
+        return ['money given back', 'refunded', $bucket];
+    }
 
     $collected = ((int)$o['is_open'] === 0)
         && !in_array($o['status'], ['PendingPayment', 'Cancelled', 'Refunded', 'Void'], true);
@@ -227,7 +274,7 @@ function dr_pay_label(array $o): array {
 function dr_fragment_orders(mysqli $conn, string $date): void {
     $stmt = $conn->prepare("
         SELECT order_id, daily_order_no, customer_name, total, payment_method, status, is_open,
-               order_date, order_type
+               order_date
         FROM orders
         WHERE business_date = ? AND status NOT IN ('Cancelled','Void')
         ORDER BY order_date ASC
@@ -254,7 +301,7 @@ function dr_fragment_orders(mysqli $conn, string $date): void {
         SELECT oi.order_id, COALESCE(SUM(oi.quantity),0) AS cups
         FROM order_items oi
         JOIN orders o ON o.order_id = oi.order_id
-        WHERE o.business_date = ? AND o.status NOT IN ('Cancelled','Void')
+        WHERE o.business_date = ? AND " . paid_orders_where('o') . "
         GROUP BY oi.order_id
     ");
     $stmt->bind_param("s", $date);
@@ -729,6 +776,7 @@ body{
 .dr-q     { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
 /* Khmer needs more leading than Latin or the diacritics clip. */
 .dr-q-km  { font-size: 12.5px; line-height: 1.9; color: var(--text-muted); margin-bottom: 10px; }
+.dr-sub   { font-size: 13px;   color: var(--text-muted); }
 .dr-sub-km{ font-size: 12px;   line-height: 1.9; color: var(--text-muted); }
 .dr-big   { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .dr-line  { font-weight: 700; margin-top: 10px; }
@@ -804,7 +852,7 @@ body{
 .dr-stock-fill.tone-normal { background: var(--muted2); }
 
 @media print {
-    .dr-tabs, .dr-head-actions, .sidebar, .dr-nav, .back-btn { display: none !important; }
+    .dr-tabs, .dr-head-actions, .dr-nav, .back-btn { display: none !important; }
     .dr-panel[hidden] { display: none !important; }
     body { background: #fff !important; color: #000 !important; }
     .dr-card { break-inside: avoid; border: 1px solid #ccc !important; }
@@ -844,7 +892,8 @@ body{
             <div class="dr-big">$<?= number_format($gotToday, 2) ?></div>
             <div class="dr-sub">money we got today</div>
             <div class="dr-sub-km">ប្រាក់ចំណូលថ្ងៃនេះ</div>
-            <div class="dr-line"><?= htmlspecialchars($vGot['line']) ?> <?= htmlspecialchars($vGot['sub']) ?></div>
+            <div class="dr-line"<?= $baselineTooltip !== '' ? ' title="' . htmlspecialchars($baselineTooltip) . '"' : '' ?>><?= htmlspecialchars($vGot['line']) ?> <?= htmlspecialchars($vGot['sub']) ?></div>
+            <div class="dr-foot">yesterday $<?= number_format($gotYesterday, 2) ?></div>
           </div>
 
           <div class="dr-verdict tone-<?= $vKept['tone'] ?>">
@@ -854,9 +903,12 @@ body{
             <div class="dr-sub">money we keep</div>
             <div class="dr-sub-km">ប្រាក់ចំណេញ</div>
             <div class="dr-line"><?= htmlspecialchars($vKept['line']) ?> <?= htmlspecialchars($vKept['sub']) ?></div>
+            <?php if ($keptToday > 0): ?>
             <div class="dr-foot">we keep <?= (int)$centsKept ?>¢ of each $1</div>
+            <?php endif; ?>
           </div>
 
+          <?php if ($isToday): ?>
           <div class="dr-verdict tone-<?= $lowItems ? 'bad' : 'good' ?>">
             <div class="dr-q">Can we open tomorrow?</div>
             <div class="dr-q-km">តើយើងអាចបើកហាងស្អែកបានទេ?</div>
@@ -873,6 +925,14 @@ body{
               used today $<?= number_format($usedValue, 2) ?>
             </div>
           </div>
+          <?php else: ?>
+          <div class="dr-verdict tone-flat">
+            <div class="dr-q">Can we open tomorrow?</div>
+            <div class="dr-q-km">តើយើងអាចបើកហាងស្អែកបានទេ?</div>
+            <div class="dr-sub">stock right now $<?= number_format($stockValue, 2) ?> · ស្តុកដែលមាន</div>
+            <div class="dr-foot">used that day $<?= number_format($usedValue, 2) ?></div>
+          </div>
+          <?php endif; ?>
         </div>
 
         <div class="dr-facts">
@@ -1011,7 +1071,11 @@ function drInit_orders() {
         filtered.forEach(r => {
             cups += parseInt(r.dataset.cups || '0', 10);
             const total = parseFloat(r.dataset.total || '0');
-            if (r.dataset.state === 'open') { notPaid += total; notPaidCount++; }
+            // 'refunded' rows read "money given back" in the Paid column, but
+            // this total must still agree with tab 1's card and the PHP-
+            // rendered footer below, both of which bucket Refunded under
+            // NOT (paid_orders_where()) — i.e. everything that isn't 'ok'.
+            if (r.dataset.state !== 'ok') { notPaid += total; notPaidCount++; }
             else { collected += total; }
         });
         let html = '<span>' + filtered.length + ' orders</span> · <span>' + cups + ' cups</span> · '

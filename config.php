@@ -284,6 +284,19 @@ if (!function_exists('ingredient_cost_map')) {
  * What the drinks in these orders cost us in ingredients.
  * Ingredients whose name contains "milk" are resolved through the milk the
  * customer actually chose on the line, not the recipe's default.
+ *
+ * Includes price = 0 lines (buy-X-get-1-free gift items): they are real
+ * drinks that were really made and really cost ingredients, even though the
+ * customer paid nothing for that line. Excluding them undercounts both cups
+ * sold and the cost of a promo day.
+ *
+ * DIVERGES FROM report.php's private copy of this loop (report.php:~135),
+ * which still filters `AND oi.price > 0` and therefore does NOT cost gift
+ * lines. That was a deliberate choice, not an oversight: report.php also
+ * needs per-category and per-order breakdowns this helper doesn't return,
+ * so its copy was kept rather than repointed at this helper (see the
+ * 2026-07-26 daily-report-redesign spec's "Shared code" section). Do not
+ * "fix" this by unifying them without re-checking both callers' figures.
  */
 if (!function_exists('order_cogs')) {
     function order_cogs(mysqli $conn, array $orderIds, array $costMap): array {
@@ -297,7 +310,7 @@ if (!function_exists('order_cogs')) {
         $q = $conn->query("
             SELECT oi.product_id, oi.product_name, oi.milk, oi.quantity, oi.price
             FROM order_items oi
-            WHERE oi.order_id IN ($in) AND oi.price > 0
+            WHERE oi.order_id IN ($in)
         ");
         while ($it = $q->fetch_assoc()) {
             $items[] = $it;
