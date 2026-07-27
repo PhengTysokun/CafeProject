@@ -406,7 +406,7 @@ function dr_fragment_orders(mysqli $conn, string $date): void {
         <span><?= (int)count($rowData) ?> orders</span> &middot; <span><?= (int)$cupsToday ?> cups</span> &middot; <span>$<?= htmlspecialchars(number_format($collectedTotal, 2)) ?> collected</span><?php if ($notPaidCount > 0): ?> &middot; <span>$<?= htmlspecialchars(number_format($notPaidTotal, 2)) ?> not paid yet</span><?php endif; ?>
       </div>
 
-      <div class="dr-pagination" id="ordersPagination"></div>
+      <div class="pg-wrap" id="ordersPagination" style="display:none"></div>
     </div>
     <?php
 }
@@ -531,7 +531,7 @@ function dr_fragment_stock(mysqli $conn, string $date): void {
         </table>
       </div>
       <div class="dr-table-foot" id="stockFoot"></div>
-      <div class="dr-pagination" id="stockPagination"></div>
+      <div class="pg-wrap" id="stockPagination" style="display:none"></div>
     </div>
     <?php
 }
@@ -852,8 +852,16 @@ body{
 .dr-table tr.is-open td:first-child { border-left: 3px solid var(--amber); }
 
 .dr-table-foot  { display: flex; gap: 10px; margin-top: 12px; font-size: 12.5px; color: var(--text-muted); }
-.dr-pagination  { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
-.dr-pagination .dr-nav[disabled] { opacity: .35; pointer-events: none; }
+/* Pagination — same component as ingredients.php so paging feels identical
+   wherever a table appears in this app. Kept selector-for-selector. */
+.pg-wrap { padding:14px 0 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.pg-nav { display:flex; gap:4px; flex-wrap:wrap; }
+.pg-btn { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; text-decoration:none; cursor:pointer; transition:.15s ease; }
+.pg-btn:hover { border-color:var(--amber); color:var(--amber); }
+.pg-active { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; background:var(--amber); border:1px solid var(--amber); color:#000; font-size:13px; font-weight:700; }
+.pg-disabled { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 6px; border-radius:8px; border:1px solid var(--border); color:var(--text-muted); font-size:13px; opacity:.35; cursor:default; }
+.pg-ellipsis { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; color:var(--text-muted); font-size:13px; }
+.pg-info { font-size:12px; color:var(--text-muted); }
 
 /* ── Tab 3: Stock ── */
 .dr-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 16px 0 14px; }
@@ -1065,6 +1073,45 @@ async function loadFragment(tab) {
     }
 }
 
+/**
+ * Shared pager for every table on this page — « ‹ 1 2 3 › », windowed two
+ * either side of the current page with ellipses beyond. One renderer rather
+ * than one per tab, so the two tables cannot drift apart.
+ *   wrap  — the .pg-wrap element (hidden when there is only one page)
+ *   info  — text for the left-hand side, e.g. "showing 1–10 of 49"
+ *   onGo  — called with the requested page number
+ */
+function drRenderPager(wrap, page, totalPages, info, onGo) {
+    if (!wrap) return;
+    if (totalPages <= 1) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+    wrap.style.display = 'flex';
+
+    const btn = (label, target, title) =>
+        `<a href="#" class="pg-btn" data-go="${target}" aria-label="${title}" title="${title}">${label}</a>`;
+    const off = label => `<span class="pg-disabled">${label}</span>`;
+
+    let nav = page > 1
+        ? btn('&laquo;', 1, 'First page') + btn('&lsaquo;', page - 1, 'Previous page')
+        : off('&laquo;') + off('&lsaquo;');
+
+    const from = Math.max(1, page - 2);
+    const to   = Math.min(totalPages, page + 2);
+    if (from > 1) nav += '<span class="pg-ellipsis">…</span>';
+    for (let i = from; i <= to; i++) {
+        nav += i === page ? `<span class="pg-active">${i}</span>` : btn(i, i, 'Page ' + i);
+    }
+    if (to < totalPages) nav += '<span class="pg-ellipsis">…</span>';
+
+    nav += page < totalPages
+        ? btn('&rsaquo;', page + 1, 'Next page') + btn('&raquo;', totalPages, 'Last page')
+        : off('&rsaquo;') + off('&raquo;');
+
+    wrap.innerHTML = `<span class="pg-info">${info}</span><nav class="pg-nav">${nav}</nav>`;
+    wrap.querySelectorAll('a[data-go]').forEach(a => {
+        a.addEventListener('click', e => { e.preventDefault(); onGo(parseInt(a.dataset.go, 10)); });
+    });
+}
+
 // ── Tab 2: Orders — filter pills + client-side pagination ──
 // Run once per fragment load (loadFragment calls this after innerHTML is set,
 // since <script> tags inside injected HTML never execute).
@@ -1072,7 +1119,7 @@ function drInit_orders() {
     const panel = document.getElementById('panel-orders');
     const table = panel && panel.querySelector('#ordersTable');
     if (!table) return;
-    const pageSize = 25;
+    const pageSize = 10;
     const allRows  = Array.from(table.querySelectorAll('tbody tr[data-method]'));
     const pager    = panel.querySelector('#ordersPagination');
     const foot     = panel.querySelector('#ordersFoot');
@@ -1113,21 +1160,11 @@ function drInit_orders() {
 
     function renderPager() {
         const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-        if (!pager) return;
-        if (totalPages <= 1) { pager.innerHTML = ''; return; }
-        pager.innerHTML =
-            '<button type="button" class="dr-nav" data-page="prev"' + (page <= 1 ? ' disabled' : '') + '>' +
-            '<i class="fa-solid fa-chevron-left"></i> Prev</button>' +
-            '<span class="dr-note">Page ' + page + ' of ' + totalPages + '</span>' +
-            '<button type="button" class="dr-nav" data-page="next"' + (page >= totalPages ? ' disabled' : '') + '>' +
-            'Next <i class="fa-solid fa-chevron-right"></i></button>';
-        pager.querySelectorAll('button[data-page]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (btn.dataset.page === 'prev' && page > 1) page--;
-                if (btn.dataset.page === 'next' && page < totalPages) page++;
-                render();
-            });
-        });
+        const start = (page - 1) * pageSize;
+        const end   = Math.min(start + pageSize, filtered.length);
+        drRenderPager(pager, page, totalPages,
+            'showing ' + (start + 1) + '–' + end + ' of ' + filtered.length,
+            p => { page = p; render(); });
     }
 
     panel.querySelectorAll('.dr-pill').forEach(btn => {
@@ -1148,7 +1185,7 @@ function drInit_stock() {
     const panel = document.getElementById('panel-stock');
     const table = panel && panel.querySelector('#stockTable');
     if (!table) return;
-    const pageSize = 25;
+    const pageSize = 10;
     const allRows = Array.from(table.querySelectorAll('tbody tr[data-bucket]'));
     const search  = panel.querySelector('#stockSearch');
     const pager   = panel.querySelector('#stockPagination');
@@ -1180,37 +1217,23 @@ function drInit_stock() {
         renderPager();
     }
 
-    // Says how much of the filtered set is on screen. The stat cards above the
-    // table already carry the catalogue counts (items tracked / to buy / out),
-    // so repeating them here would just be two numbers to keep in agreement.
+    // Only speaks when the pager is silent. Once there is more than one page the
+    // pager's own info line carries the count, and two of them would be two
+    // numbers to keep in agreement.
     function renderFoot() {
         if (!foot) return;
-        const start = (page - 1) * pageSize;
-        const end   = Math.min(start + pageSize, filtered.length);
-        foot.innerHTML = filtered.length === 0
-            ? '<span>nothing matches</span>'
-            : (filtered.length <= pageSize
-                ? '<span>' + filtered.length + ' item' + (filtered.length === 1 ? '' : 's') + '</span>'
-                : '<span>showing ' + (start + 1) + '–' + end + ' of ' + filtered.length + '</span>');
+        if (filtered.length === 0)      foot.innerHTML = '<span>nothing matches</span>';
+        else if (filtered.length <= pageSize) foot.innerHTML = '<span>' + filtered.length + ' item' + (filtered.length === 1 ? '' : 's') + '</span>';
+        else                            foot.innerHTML = '';
     }
 
     function renderPager() {
-        if (!pager) return;
         const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-        if (totalPages <= 1) { pager.innerHTML = ''; return; }
-        pager.innerHTML =
-            '<button type="button" class="dr-nav" data-page="prev"' + (page <= 1 ? ' disabled' : '') + '>' +
-            '<i class="fa-solid fa-chevron-left"></i> Prev</button>' +
-            '<span class="dr-note">Page ' + page + ' of ' + totalPages + '</span>' +
-            '<button type="button" class="dr-nav" data-page="next"' + (page >= totalPages ? ' disabled' : '') + '>' +
-            'Next <i class="fa-solid fa-chevron-right"></i></button>';
-        pager.querySelectorAll('button[data-page]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (btn.dataset.page === 'prev' && page > 1) page--;
-                if (btn.dataset.page === 'next' && page < totalPages) page++;
-                render();
-            });
-        });
+        const start = (page - 1) * pageSize;
+        const end   = Math.min(start + pageSize, filtered.length);
+        drRenderPager(pager, page, totalPages,
+            'showing ' + (start + 1) + '–' + end + ' of ' + filtered.length,
+            p => { page = p; render(); });
     }
 
     panel.querySelectorAll('.dr-pill').forEach(btn => {
