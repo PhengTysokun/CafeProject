@@ -391,11 +391,11 @@ function dr_fragment_orders(mysqli $conn, string $date): void {
                 data-state="<?= htmlspecialchars($rd['state']) ?>"
                 data-total="<?= htmlspecialchars((string)$rd['total']) ?>"
                 data-cups="<?= (int)$rd['cups'] ?>">
-              <td><?= htmlspecialchars($rd['time']) ?></td>
-              <td><?= htmlspecialchars($rd['no']) ?></td>
+              <td class="dr-mono-dim"><?= htmlspecialchars($rd['time']) ?></td>
+              <td class="dr-mono"><?= htmlspecialchars($rd['no']) ?></td>
               <td><?= htmlspecialchars($rd['cust']) ?></td>
-              <td>$<?= htmlspecialchars(number_format($rd['total'], 2)) ?></td>
-              <td><?= htmlspecialchars($rd['label']) ?></td>
+              <td class="dr-mono">$<?= htmlspecialchars(number_format($rd['total'], 2)) ?></td>
+              <td><span class="dr-status is-<?= htmlspecialchars($rd['state']) ?>"><?= htmlspecialchars($rd['label']) ?></span></td>
             </tr>
             <?php endforeach; ?>
           </tbody>
@@ -517,13 +517,13 @@ function dr_fragment_stock(mysqli $conn, string $date): void {
                 data-bucket="<?= htmlspecialchars($rd['bucket']) ?>"
                 data-name="<?= htmlspecialchars(mb_strtolower($rd['name'])) ?>">
               <td><?= htmlspecialchars($rd['name']) ?></td>
-              <td><?= htmlspecialchars(dr_qty($rd['stock'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
-              <td><?= htmlspecialchars(dr_qty($rd['min'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
-              <td><?= htmlspecialchars(dr_qty($rd['used'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
-              <td>$<?= htmlspecialchars(number_format($rd['cost'], 4)) ?> / <?= htmlspecialchars($rd['unit']) ?></td>
+              <td class="dr-mono"><?= htmlspecialchars(dr_qty($rd['stock'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
+              <td class="dr-mono-dim"><?= htmlspecialchars(dr_qty($rd['min'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
+              <td class="dr-mono-dim"><?= htmlspecialchars(dr_qty($rd['used'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
+              <td class="dr-mono-dim">$<?= htmlspecialchars(number_format($rd['cost'], 4)) ?> / <?= htmlspecialchars($rd['unit']) ?></td>
               <td>
                 <div class="dr-stock-bar"><span class="dr-stock-fill <?= $rd['needBuy'] ? 'tone-attn' : 'tone-normal' ?>" style="width:<?= round($rd['barPct'], 2) ?>%"></span></div>
-                <div class="dr-note" style="margin-top:4px"><?= htmlspecialchars($rd['label']) ?></div>
+                <div style="margin-top:5px"><span class="dr-status <?= $rd['needBuy'] ? 'is-open' : 'is-neutral' ?>"><?= htmlspecialchars($rd['label']) ?></span></div>
               </td>
             </tr>
             <?php endforeach; ?>
@@ -641,13 +641,24 @@ function dr_fragment_staff(mysqli $conn, string $date): void {
                     : ($r['hours_worked'] !== null ? fmt_hours((float)$r['hours_worked']) : '—');
                 if ($shiftCount > 1) { $hoursCell .= ' · ' . dr_shift_note($shiftCount); }
             ?>
+            <?php
+                // Initials for the avatar: first letter of the first two words,
+                // so "Sok Dara" reads SD and a single name reads one letter.
+                $parts = preg_split('/\s+/', trim((string)$r['full_name']));
+                $initials = mb_strtoupper(mb_substr($parts[0] ?? '?', 0, 1) . (isset($parts[1]) ? mb_substr($parts[1], 0, 1) : ''));
+            ?>
             <tr>
-              <td><?= htmlspecialchars((string)$r['full_name']) ?></td>
-              <td><?= htmlspecialchars(date('H:i', strtotime($r['clock_in']))) ?></td>
-              <td><?= $stillWorking ? 'still working' : htmlspecialchars(date('H:i', strtotime($r['clock_out']))) ?></td>
-              <td><?= htmlspecialchars($hoursCell) ?></td>
-              <td><?= $served ? (int)$orders : '—' ?></td>
-              <td><?= $served ? '$' . htmlspecialchars(number_format($money, 2)) : '—' ?></td>
+              <td>
+                <span class="dr-who">
+                  <span class="dr-av" aria-hidden="true"><?= htmlspecialchars($initials) ?></span>
+                  <?= htmlspecialchars((string)$r['full_name']) ?>
+                </span>
+              </td>
+              <td class="dr-mono-dim"><?= htmlspecialchars(date('H:i', strtotime($r['clock_in']))) ?></td>
+              <td class="dr-mono-dim"><?= $stillWorking ? '<span class="dr-status is-ok">still working</span>' : htmlspecialchars(date('H:i', strtotime($r['clock_out']))) ?></td>
+              <td class="dr-mono"><?= htmlspecialchars($hoursCell) ?></td>
+              <td class="dr-mono"><?= $served ? (int)$orders : '—' ?></td>
+              <td class="dr-mono"><?= $served ? '$' . htmlspecialchars(number_format($money, 2)) : '—' ?></td>
             </tr>
             <?php endforeach; ?>
           </tbody>
@@ -701,39 +712,71 @@ if ($fragment !== '') {
      stack above the character, and they smear into a dark card at #888. */
   --km:#b4b4b4;
   --bg-card:var(--surface);--text-muted:var(--muted2);
-  --radius:14px;
+  --radius:10px;
+  --bar:#16130f;              /* brand bar — near-black in both themes */
+  --bar-text:#f3f1ee;
+  --ok:#2f9e5f;--ok-bg:rgba(47,158,95,.14);
+  --warn:#c98a2e;--warn-bg:rgba(201,138,46,.14);
+  --stop:#d1544a;--stop-bg:rgba(209,84,74,.14);
+  /* Data — counts, ids, times, money in tables — is set in mono. Numbers line
+     up column to column and stop reading as prose. System stack: no web font
+     to load, so this costs nothing. */
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
 }
 [data-theme="light"]{
-  --bg:#F4F1EC;--surface:#FFFFFF;--surface2:#FAF8F5;--border:rgba(0,0,0,.09);
-  --text:#1a1410;--muted:#9a8f84;--muted2:#6b6259;
+  --bg:#f6f5f3;--surface:#FFFFFF;--surface2:#faf9f7;--border:#e6e3de;
+  --text:#141210;--muted:#9a8f84;--muted2:#6b6259;
   /* Light theme runs the other way: darker than muted, same reason. */
   --km:#4a433c;
   --bg-card:var(--surface);--text-muted:var(--muted2);
+  --ok:#1f7a45;--ok-bg:#e8f4ec;
+  --warn:#9a6410;--warn-bg:#fbf1de;
+  --stop:#b0342a;--stop-bg:#fbeae8;
 }
 body{
   font-family:'Poppins',sans-serif;
-  background:radial-gradient(ellipse 80% 40% at 50% 0%,rgba(209,144,75,.07) 0%,transparent 100%),var(--bg);
+  background:var(--bg);
   color:var(--text);min-height:100vh;
 }
-[data-theme="light"] body{background:var(--bg);}
 
-.wrap{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
+/* ── Brand bar ── the app's name and where you are, before anything else. */
+.dr-topbar{
+  background:var(--bar);color:var(--bar-text);
+  padding:0 20px;
+}
+.dr-topbar-in{
+  max-width:1180px;margin:0 auto;height:52px;
+  display:flex;align-items:center;gap:12px;
+}
+.dr-topbar-mark{
+  width:26px;height:26px;border-radius:7px;background:var(--amber);
+  display:inline-flex;align-items:center;justify-content:center;color:#1a1207;font-size:13px;
+}
+.dr-topbar-name{font-size:14px;font-weight:700;letter-spacing:.2px}
+.dr-topbar-sep{color:rgba(243,241,238,.28)}
+.dr-topbar-where{font-family:var(--mono);font-size:12px;color:rgba(243,241,238,.62)}
+.dr-topbar-right{margin-left:auto;font-family:var(--mono);font-size:12px;color:rgba(243,241,238,.62)}
+.dr-topbar-right a{color:inherit;text-decoration:none}
+.dr-topbar-right a:hover{color:var(--amber)}
+
+.wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}
 
 .back-btn{
-  display:inline-flex;align-items:center;gap:7px;text-decoration:none;color:var(--amber);
-  font-size:13px;font-weight:600;padding:7px 14px;border-radius:10px;
-  border:1px solid var(--amber-border);background:var(--amber-dim);transition:all .2s;
-  margin-bottom:18px;
+  display:inline-flex;align-items:center;gap:7px;text-decoration:none;color:var(--text-muted);
+  font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:8px;
+  border:1px solid var(--border);background:var(--surface);transition:all .2s;
+  margin-bottom:16px;
 }
-.back-btn:hover{background:rgba(209,144,75,.2)}
+.back-btn:hover{border-color:var(--amber);color:var(--amber)}
 
 /* ── Header ── */
 .dr-head{
   display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:14px;
-  margin-bottom:20px;
+  margin-bottom:18px;
 }
-.dr-eyebrow{font-size:11px;font-weight:600;color:var(--muted2);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px}
-.dr-head h1{font-size:24px;font-weight:700;color:var(--text)}
+.dr-eyebrow{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--muted2);text-transform:uppercase;letter-spacing:1.4px;margin-bottom:5px}
+.dr-head h1{font-size:26px;font-weight:700;color:var(--text);letter-spacing:-.4px}
+.dr-head-sub{font-family:var(--mono);font-size:12px;color:var(--muted2);margin-top:5px}
 .dr-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dr-nav{
   display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:9px;
@@ -746,21 +789,26 @@ body{
 
 /* ── Tabs ── */
 .dr-tabs{
-  display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px;
+  display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;
   overflow-x:auto;
+  /* Scrolls on a narrow screen without ever drawing a bar across the tabs. */
+  scrollbar-width:none;-ms-overflow-style:none;
 }
+.dr-tabs::-webkit-scrollbar{display:none}
 .dr-tab{
   appearance:none;background:none;border:none;border-bottom:2px solid transparent;
-  padding:11px 16px;font-size:13.5px;font-weight:600;color:var(--muted2);
+  padding:12px 16px;font-size:13.5px;font-weight:600;color:var(--muted2);
   font-family:'Poppins',sans-serif;cursor:pointer;white-space:nowrap;
-  display:inline-flex;align-items:center;gap:7px;
+  display:inline-flex;align-items:center;gap:8px;margin-bottom:-1px;
 }
+.dr-tab i{font-size:12px;opacity:.85}
 .dr-tab:hover{color:var(--text)}
-.dr-tab.is-on{color:var(--amber);border-bottom-color:var(--amber)}
+.dr-tab.is-on{color:var(--text);border-bottom-color:var(--amber)}
+.dr-tab.is-on i{color:var(--amber);opacity:1}
 .dr-badge{
-  display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;
-  padding:0 5px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);
-  color:var(--muted2);font-size:10px;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;
+  padding:0 6px;border-radius:20px;background:var(--amber);
+  color:#1a1207;font-family:var(--mono);font-size:10.5px;font-weight:700;
 }
 .dr-badge:empty{display:none}
 
@@ -784,15 +832,18 @@ body{
 .dr-verdicts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 @media (max-width: 900px) { .dr-verdicts { grid-template-columns: 1fr; } }
 
-.dr-verdict { border-radius: 18px; padding: 20px 22px; border: 1px solid var(--border); background: var(--bg-card); border-top-width: 4px; }
-.dr-verdict.tone-good { border-top-color: #2ecc71; }
-.dr-verdict.tone-bad  { border-top-color: #e74c3c; }
-.dr-verdict.tone-flat { border-top-color: var(--border); }
-.tone-good .dr-line { color: #2ecc71; }
-.tone-bad  .dr-line { color: #e74c3c; }
+/* The verdicts wear their state on a left rule, the way the reference marks its
+   lead stat card — but here the rule actually means something, so it is the one
+   place on the page that earns red or green. */
+.dr-verdict { border-radius: var(--radius); padding: 18px 20px; border: 1px solid var(--border); background: var(--bg-card); border-left-width: 3px; }
+.dr-verdict.tone-good { border-left-color: var(--ok); }
+.dr-verdict.tone-bad  { border-left-color: var(--stop); }
+.dr-verdict.tone-flat { border-left-color: var(--border); }
+.tone-good .dr-line { color: var(--ok); }
+.tone-bad  .dr-line { color: var(--stop); }
 .tone-flat .dr-line { color: var(--text-muted); }
 
-.dr-q     { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.dr-q     { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
 /* Khmer needs more leading than Latin or the diacritics clip. */
 .dr-q-km  { font-size: 12.5px; line-height: 1.9; color: var(--km); margin-bottom: 10px; }
 /* Khmer inlined into an English line (e.g. "stock we have $X · ស្តុកដែលមាន"). */
@@ -806,9 +857,15 @@ body{
 /* ── Tab 1: the neutral row — facts, no colour ── */
 .dr-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px; }
 @media (max-width: 900px) { .dr-facts { grid-template-columns: repeat(2, 1fr); } }
-.dr-k     { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.dr-k     { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
 .dr-k-km  { font-size: 12px; line-height: 1.8; color: var(--km); margin-bottom: 6px; }
 .dr-v     { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
+/* Facts sit in cards like the reference's stat row: hairline box, quiet label
+   above, figure below. The lead card takes a rule so the eye starts there. */
+.dr-facts > .dr-card, .dr-facts-inline > .dr-fact {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px;
+}
+.dr-facts > .dr-card:first-child { border-left: 3px solid var(--amber); }
 .dr-note  { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.6; }
 .dr-wide  { margin-top: 16px; }
 
@@ -842,11 +899,37 @@ body{
 .dr-table-wrap  { overflow-x: auto; }
 .dr-table       { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .dr-table th    {
-  text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border);
+  text-align: left; font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-muted); padding: 10px; border-bottom: 1px solid var(--border);
+  background: var(--surface2);
 }
-.dr-table td    { padding: 9px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.dr-table td    { padding: 11px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.dr-table tbody tr:hover td { background: var(--surface2); }
 .dr-table tbody tr:last-child td { border-bottom: none; }
+/* Data columns — ids, clock times, money — set in mono so they align down the
+   column and stop reading as prose. */
+.dr-mono { font-family: var(--mono); font-size: 12.5px; }
+.dr-mono-dim { font-family: var(--mono); font-size: 12.5px; color: var(--text-muted); }
+
+/* Status pills. These are row-level state, not verdicts: small, inside dense
+   text, describing one line. The big cards stay uncoloured. */
+.dr-status {
+  display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+}
+.dr-status.is-ok       { background: var(--ok-bg);   color: var(--ok); }
+.dr-status.is-open     { background: var(--warn-bg); color: var(--warn); }
+.dr-status.is-refunded { background: var(--stop-bg); color: var(--stop); }
+.dr-status.is-neutral  { background: var(--surface2); color: var(--text-muted); }
+
+/* Initial avatars on the staff table, as in the reference. */
+.dr-who { display: inline-flex; align-items: center; gap: 9px; }
+.dr-av  {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+  background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber-border);
+}
 /* Amber = needs attention, not a verdict colour — reserved for tab 1. */
 .dr-table tr.is-open td { background: var(--amber-dim); }
 .dr-table tr.is-open td:first-child { border-left: 3px solid var(--amber); }
@@ -880,8 +963,14 @@ body{
 .dr-stock-fill.tone-attn   { background: var(--amber); }
 .dr-stock-fill.tone-normal { background: var(--muted2); }
 
+.dr-foot-bar{
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+  margin-top:28px;padding-top:14px;border-top:1px solid var(--border);
+  font-family:var(--mono);font-size:11px;color:var(--muted2);
+}
+
 @media print {
-    .dr-tabs, .dr-head-actions, .dr-nav, .back-btn { display: none !important; }
+    .dr-tabs, .dr-head-actions, .dr-nav, .back-btn, .dr-topbar, .dr-foot-bar { display: none !important; }
     .dr-panel[hidden] { display: none !important; }
     body { background: #fff !important; color: #000 !important; }
     .dr-card { break-inside: avoid; border: 1px solid #ccc !important; }
@@ -890,14 +979,23 @@ body{
 </head>
 <body>
 
-<div class="wrap">
+<div class="dr-topbar">
+  <div class="dr-topbar-in">
+    <span class="dr-topbar-mark"><i class="fa-solid fa-mug-hot"></i></span>
+    <span class="dr-topbar-name">The Bird's Nest Coffee</span>
+    <span class="dr-topbar-sep">·</span>
+    <span class="dr-topbar-where">Daily Report</span>
+    <span class="dr-topbar-right"><a href="dashboard.php">Dashboard</a></span>
+  </div>
+</div>
 
-    <a href="dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
+<div class="wrap">
 
     <div class="dr-head">
         <div>
             <div class="dr-eyebrow">DAILY REPORT</div>
             <h1><?= date('l, F j, Y', strtotime($date)) ?></h1>
+            <div class="dr-head-sub"><?= htmlspecialchars($date) ?><?= $isToday ? ' · today' : '' ?></div>
         </div>
         <div class="dr-head-actions">
             <a class="dr-nav" href="?date=<?= htmlspecialchars($prevDate) ?>"><i class="fa-solid fa-chevron-left"></i> Yesterday</a>
@@ -912,10 +1010,10 @@ body{
     </div>
 
     <div class="dr-tabs" role="tablist">
-        <button class="dr-tab is-on" data-tab="today"  role="tab">Today</button>
-        <button class="dr-tab"       data-tab="orders" role="tab">Orders</button>
-        <button class="dr-tab"       data-tab="stock"  role="tab">Stock <span class="dr-badge" id="stockBadge"><?= $lowItems ? (int)$lowItems : '' ?></span></button>
-        <button class="dr-tab"       data-tab="staff"  role="tab">Staff</button>
+        <button class="dr-tab is-on" data-tab="today"  role="tab"><i class="fa-solid fa-chart-simple"></i> Today</button>
+        <button class="dr-tab"       data-tab="orders" role="tab"><i class="fa-solid fa-receipt"></i> Orders</button>
+        <button class="dr-tab"       data-tab="stock"  role="tab"><i class="fa-solid fa-boxes-stacked"></i> Stock <span class="dr-badge" id="stockBadge"><?= $lowItems ? (int)$lowItems : '' ?></span></button>
+        <button class="dr-tab"       data-tab="staff"  role="tab"><i class="fa-solid fa-user-group"></i> Staff</button>
     </div>
     <div class="dr-panel" id="panel-today">
         <div class="dr-verdicts">
@@ -1013,6 +1111,11 @@ body{
     <div class="dr-panel" id="panel-orders" hidden></div>
     <div class="dr-panel" id="panel-stock"  hidden></div>
     <div class="dr-panel" id="panel-staff"  hidden></div>
+
+    <footer class="dr-foot-bar">
+      <span>The Bird's Nest Coffee · POS</span>
+      <span id="drSync">read at <?= date('H:i') ?></span>
+    </footer>
 
 </div>
 
