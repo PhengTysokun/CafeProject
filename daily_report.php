@@ -130,10 +130,8 @@ $vKept = dr_verdict($keptToday, $keptBaseline, $baseGot['label']);
 // Zero sales (the common every-morning-before-the-first-order state) is not
 // a "LESS than a normal Saturday" verdict — that reads as an alarm before
 // the shop has even had a chance. Neutral and unmissable instead.
-if ($paidOrderCount === 0) {
-    $vGot  = ['tone' => 'flat', 'line' => 'no sales yet today', 'sub' => ''];
-    $vKept = ['tone' => 'flat', 'line' => 'no sales yet today', 'sub' => ''];
-}
+// The zero-sales override lives further down, after $notPaidCount is known —
+// it needs to tell "nothing sold" apart from "sold, but all still on tabs".
 
 // Plain-words tooltip for box 1's baseline line — only meaningful when the
 // line actually states a weekday-average comparison (not the yesterday
@@ -215,7 +213,21 @@ $stmt = $conn->prepare("
 $stmt->bind_param("s", $date);
 $stmt->execute();
 [$notPaidYet, $notPaidCount] = $stmt->get_result()->fetch_row();
-$notPaidYet = (float)$notPaidYet;
+$notPaidYet   = (float)$notPaidYet;
+$notPaidCount = (int)$notPaidCount;
+
+// Two different zero days, and calling both "no sales" is a lie on the second.
+// A day whose every order is still on a tab HAS sold drinks — it just has not
+// been paid for them. "No sales yet today" printed beside a non-zero "not paid
+// yet" card reads as a broken page.
+$drAllOnTab = ($paidOrderCount === 0 && $notPaidCount > 0);
+$drZeroLine = $drAllOnTab
+    ? 'nothing paid yet — every order is still on a tab'
+    : 'no sales yet today';
+if ($paidOrderCount === 0) {
+    $vGot  = ['tone' => 'flat', 'line' => $drZeroLine, 'sub' => ''];
+    $vKept = ['tone' => 'flat', 'line' => $drZeroLine, 'sub' => ''];
+}
 
 // Best seller: $cogs['by_product'] arrives unsorted (insertion order), so sort
 // by cups moved. uasort preserves the key, and the key IS the product name.
@@ -683,12 +695,17 @@ if ($fragment !== '') {
   --bg:#0a0a0a;--surface:#111;--surface2:#161616;--border:rgba(255,255,255,.07);
   --amber:#d1904b;--amber-dim:rgba(209,144,75,.12);--amber-border:rgba(209,144,75,.2);
   --text:#f0f0f0;--muted:#555;--muted2:#888;
+  /* Khmer sits a step brighter than muted Latin: its diacritics are small and
+     stack above the character, and they smear into a dark card at #888. */
+  --km:#b4b4b4;
   --bg-card:var(--surface);--text-muted:var(--muted2);
   --radius:14px;
 }
 [data-theme="light"]{
   --bg:#F4F1EC;--surface:#FFFFFF;--surface2:#FAF8F5;--border:rgba(0,0,0,.09);
   --text:#1a1410;--muted:#9a8f84;--muted2:#6b6259;
+  /* Light theme runs the other way: darker than muted, same reason. */
+  --km:#4a433c;
   --bg-card:var(--surface);--text-muted:var(--muted2);
 }
 body{
@@ -775,9 +792,11 @@ body{
 
 .dr-q     { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
 /* Khmer needs more leading than Latin or the diacritics clip. */
-.dr-q-km  { font-size: 12.5px; line-height: 1.9; color: var(--text-muted); margin-bottom: 10px; }
+.dr-q-km  { font-size: 12.5px; line-height: 1.9; color: var(--km); margin-bottom: 10px; }
+/* Khmer inlined into an English line (e.g. "stock we have $X · ស្តុកដែលមាន"). */
+.km       { color: var(--km); }
 .dr-sub   { font-size: 13px;   color: var(--text-muted); }
-.dr-sub-km{ font-size: 12px;   line-height: 1.9; color: var(--text-muted); }
+.dr-sub-km{ font-size: 12px;   line-height: 1.9; color: var(--km); }
 .dr-big   { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .dr-line  { font-weight: 700; margin-top: 10px; }
 .dr-foot  { font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.7; }
@@ -786,7 +805,7 @@ body{
 .dr-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px; }
 @media (max-width: 900px) { .dr-facts { grid-template-columns: repeat(2, 1fr); } }
 .dr-k     { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
-.dr-k-km  { font-size: 12px; line-height: 1.8; color: var(--text-muted); margin-bottom: 6px; }
+.dr-k-km  { font-size: 12px; line-height: 1.8; color: var(--km); margin-bottom: 6px; }
 .dr-v     { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .dr-note  { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.6; }
 .dr-wide  { margin-top: 16px; }
@@ -872,7 +891,11 @@ body{
         </div>
         <div class="dr-head-actions">
             <a class="dr-nav" href="?date=<?= htmlspecialchars($prevDate) ?>"><i class="fa-solid fa-chevron-left"></i> Yesterday</a>
-            <a class="dr-nav <?= $isToday ? 'is-disabled' : '' ?>" href="?date=<?= htmlspecialchars($nextDate) ?>">Tomorrow <i class="fa-solid fa-chevron-right"></i></a>
+            <?php if (!$isToday): /* On today there is no next day to show — drop the
+                    button rather than render a dead one. On a past date it stays, because
+                    it is how a manager walks back forward toward the present. */ ?>
+            <a class="dr-nav" href="?date=<?= htmlspecialchars($nextDate) ?>">Tomorrow <i class="fa-solid fa-chevron-right"></i></a>
+            <?php endif; ?>
             <button class="dr-nav" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
             <a class="dr-nav" href="report.php?mode=daily&date=<?= htmlspecialchars($date) ?>">Full analytics <i class="fa-solid fa-arrow-right"></i></a>
         </div>
@@ -921,7 +944,7 @@ body{
               <?php endif; ?>
             </div>
             <div class="dr-foot">
-              stock we have $<?= number_format($stockValue, 2) ?> · ស្តុកដែលមាន<br>
+              stock we have $<?= number_format($stockValue, 2) ?> · <span class="km">ស្តុកដែលមាន</span><br>
               used today $<?= number_format($usedValue, 2) ?>
             </div>
           </div>
@@ -929,7 +952,7 @@ body{
           <div class="dr-verdict tone-flat">
             <div class="dr-q">Can we open tomorrow?</div>
             <div class="dr-q-km">តើយើងអាចបើកហាងស្អែកបានទេ?</div>
-            <div class="dr-sub">stock right now $<?= number_format($stockValue, 2) ?> · ស្តុកដែលមាន</div>
+            <div class="dr-sub">stock right now $<?= number_format($stockValue, 2) ?> · <span class="km">ស្តុកដែលមាន</span></div>
             <div class="dr-foot">used that day $<?= number_format($usedValue, 2) ?></div>
           </div>
           <?php endif; ?>
@@ -939,7 +962,7 @@ body{
           <div class="dr-card"><div class="dr-k">cash</div><div class="dr-k-km">សាច់ប្រាក់</div><div class="dr-v">$<?= number_format($gotCash, 2) ?></div><div class="dr-note">in the register</div></div>
           <div class="dr-card"><div class="dr-k">bakong</div><div class="dr-k-km">បាគង</div><div class="dr-v">$<?= number_format($gotBakong, 2) ?></div><div class="dr-note">by phone</div></div>
           <div class="dr-card"><div class="dr-k">pay later — paid</div><div class="dr-k-km">បង់ក្រោយ — បង់រួច</div><div class="dr-v">$<?= number_format($gotLater, 2) ?></div><div class="dr-note">settled today</div></div>
-          <div class="dr-card"><div class="dr-k">not paid yet</div><div class="dr-k-km">មិនទាន់បង់</div><div class="dr-v">$<?= number_format($notPaidYet, 2) ?></div><div class="dr-note"><?= (int)$notPaidCount ?> open tab(s)</div></div>
+          <div class="dr-card"><div class="dr-k">not paid yet</div><div class="dr-k-km">មិនទាន់បង់</div><div class="dr-v">$<?= number_format($notPaidYet, 2) ?></div><div class="dr-note"><?= $notPaidCount === 0 ? 'everyone has paid' : ('from ' . $notPaidCount . ' order' . ($notPaidCount === 1 ? '' : 's')) ?></div></div>
           <?php if ($gotOther > 0.01): ?>
           <div class="dr-card"><div class="dr-k">other ways</div><div class="dr-v">$<?= number_format($gotOther, 2) ?></div><div class="dr-note">older orders that did not record how they were paid</div></div>
           <?php endif; ?>
@@ -956,7 +979,7 @@ body{
               <?php endforeach; ?>
             </div>
           <?php else: ?>
-            <p class="dr-note">no sales yet today</p>
+            <p class="dr-note"><?= htmlspecialchars($drZeroLine) ?></p>
           <?php endif; ?>
           <?php if ($notPaidYet > 0): ?>
             <p class="dr-note">$<?= number_format($notPaidYet, 2) ?> not paid yet. We count it only when the customer pays.</p>
@@ -973,7 +996,7 @@ body{
               <div class="dr-fact"><div class="dr-v-sm dr-v-text"><?= htmlspecialchars($bestSellerName ?? '—') ?></div><div class="dr-note">best seller<?= $bestSellerQty ? ' · ' . (int)$bestSellerQty . ' sold' : '' ?></div></div>
             </div>
           <?php else: ?>
-            <p class="dr-note">no sales yet today</p>
+            <p class="dr-note"><?= htmlspecialchars($drZeroLine) ?></p>
           <?php endif; ?>
         </div>
     </div>
