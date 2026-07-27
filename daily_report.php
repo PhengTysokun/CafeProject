@@ -327,6 +327,129 @@ function dr_fragment_orders(mysqli $conn, string $date): void {
     <?php
 }
 
+// ── Tab 3: Stock (Task 7) — levels, what today used, what needs buying ──
+/**
+ * Quantity formatting shared by the stock table: whole numbers print plain,
+ * fractional ones (ingredient_history.amount is DECIMAL(10,4), so "used
+ * today" can be fractional even though stock_quantity/minimum_stock are
+ * always ints) get two decimal places.
+ */
+function dr_qty(float $n): string {
+    return (abs($n - round($n)) < 0.005) ? number_format($n, 0) : number_format($n, 2);
+}
+
+function dr_fragment_stock(mysqli $conn, string $date): void {
+    // Same 06:00-to-06:00 business-day window as tab 1's usedValue query —
+    // ingredient_history has no business_date column, and joining through
+    // orders would silently drop the order_deduct rows with a NULL order_id.
+    $stmt = $conn->prepare("
+        SELECT i.ingredient_id, i.ingredient_name, i.unit, i.stock_quantity,
+               i.minimum_stock, i.cost_per_unit,
+               COALESCE(u.used, 0) AS used_today
+        FROM ingredients i
+        LEFT JOIN (
+            SELECT ingredient_id, SUM(ABS(amount)) AS used
+            FROM ingredient_history
+            WHERE change_type = 'order_deduct'
+              AND created_at >= CONCAT(?, ' 06:00:00')
+              AND created_at <  CONCAT(DATE_ADD(?, INTERVAL 1 DAY), ' 06:00:00')
+            GROUP BY ingredient_id
+        ) u ON u.ingredient_id = i.ingredient_id
+        ORDER BY (i.stock_quantity - i.minimum_stock) ASC, i.ingredient_name ASC
+    ");
+    $stmt->bind_param("ss", $date, $date);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    $trackedCount = count($rows);
+    $buyCount = 0;
+    $outCount = 0;
+    $rowData  = [];
+    foreach ($rows as $r) {
+        $stock = (int)$r['stock_quantity'];
+        $min   = (int)$r['minimum_stock'];
+        $used  = (float)$r['used_today'];
+        $cost  = (float)$r['cost_per_unit'];
+
+        // Three logical states, but only two the manager needs to act on:
+        // "buy now" is the only one that ever gets amber — it is also the
+        // exact test tab 1's $lowItems uses, so the badge and this table
+        // never disagree. "low" is shown as a heads-up label only, styled
+        // the same neutral way as "OK" — nothing red or green on this tab.
+        if ($stock <= $min) {
+            $bucket = 'buy';   $statusLabel = 'buy now';
+            $buyCount++;
+        } elseif ($min > 0 && $stock <= $min * 1.25) {
+            $bucket = 'ok';    $statusLabel = 'getting low';
+        } else {
+            $bucket = 'ok';    $statusLabel = 'have enough';
+        }
+        if ($stock <= 0) { $outCount++; }
+
+        $barBase = max(1, $min * 2);
+        $barPct  = min(100, ($stock / $barBase) * 100);
+
+        $rowData[] = [
+            'name'    => (string)$r['ingredient_name'],
+            'unit'    => (string)$r['unit'],
+            'stock'   => $stock,
+            'min'     => $min,
+            'used'    => $used,
+            'cost'    => $cost,
+            'bucket'  => $bucket,
+            'label'   => $statusLabel,
+            'needBuy' => $bucket === 'buy',
+            'barPct'  => $barPct,
+        ];
+    }
+    ?>
+    <div class="dr-card dr-wide" style="margin-top:0">
+      <div class="dr-facts-inline" style="margin-top:0">
+        <div class="dr-fact"><div class="dr-v-sm"><?= (int)$trackedCount ?></div><div class="dr-note">items we track</div></div>
+        <div class="dr-fact"><div class="dr-v-sm"><?= (int)$buyCount ?></div><div class="dr-note">items to buy</div></div>
+        <div class="dr-fact"><div class="dr-v-sm"><?= (int)$outCount ?></div><div class="dr-note">items already out</div></div>
+      </div>
+
+      <div class="dr-toolbar">
+        <div class="dr-pills" role="group" aria-label="Filter by whether we need to buy more">
+          <button type="button" class="dr-pill is-on" data-filter="all">All</button>
+          <button type="button" class="dr-pill" data-filter="buy">Need buying</button>
+          <button type="button" class="dr-pill" data-filter="ok">OK</button>
+        </div>
+        <input type="text" class="dr-search" id="stockSearch" placeholder="Search ingredient…" aria-label="Search ingredients">
+      </div>
+
+      <div class="dr-table-wrap">
+        <table class="dr-table" id="stockTable">
+          <thead>
+            <tr><th>Item</th><th>We have</th><th>Buy more below</th><th>Used today</th><th>What it costs us (per unit)</th><th>Level</th></tr>
+          </thead>
+          <tbody>
+            <?php if (!$rowData): ?>
+            <tr><td colspan="6" class="dr-note" style="padding:20px 0;text-align:center">no ingredients tracked</td></tr>
+            <?php endif; ?>
+            <?php foreach ($rowData as $rd): ?>
+            <tr class="<?= $rd['needBuy'] ? 'needs-buy' : '' ?>"
+                data-bucket="<?= htmlspecialchars($rd['bucket']) ?>"
+                data-name="<?= htmlspecialchars(mb_strtolower($rd['name'])) ?>">
+              <td><?= htmlspecialchars($rd['name']) ?></td>
+              <td><?= htmlspecialchars(dr_qty($rd['stock'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
+              <td><?= htmlspecialchars(dr_qty($rd['min'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
+              <td><?= htmlspecialchars(dr_qty($rd['used'])) ?> <?= htmlspecialchars($rd['unit']) ?></td>
+              <td>$<?= htmlspecialchars(number_format($rd['cost'], 4)) ?> / <?= htmlspecialchars($rd['unit']) ?></td>
+              <td>
+                <div class="dr-stock-bar"><span class="dr-stock-fill <?= $rd['needBuy'] ? 'tone-attn' : 'tone-normal' ?>" style="width:<?= round($rd['barPct'], 2) ?>%"></span></div>
+                <div class="dr-note" style="margin-top:4px"><?= htmlspecialchars($rd['label']) ?></div>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <?php
+}
+
 // Tabs 2-4 ask for their own HTML. Each branch echoes a fragment and exits.
 // This MUST run before any HTML output — a fragment response is inlined into
 // a tab panel by JS, so it must never carry the page chrome.
@@ -335,7 +458,7 @@ if ($fragment !== '') {
     header('Content-Type: text/html; charset=utf-8');
     switch ($fragment) {
         case 'orders': dr_fragment_orders($conn, $date); break;
-        case 'stock':  /* Task 7 */ break;
+        case 'stock':  dr_fragment_stock($conn, $date); break;
         case 'staff':  /* Task 8 */ break;
         default: http_response_code(404); echo 'Unknown tab.';
     }
@@ -507,6 +630,23 @@ body{
 .dr-pagination  { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
 .dr-pagination .dr-nav[disabled] { opacity: .35; pointer-events: none; }
 
+/* ── Tab 3: Stock ── */
+.dr-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 16px 0 14px; }
+.dr-search  {
+  font-family: 'Poppins',sans-serif; font-size: 12.5px; color: var(--text);
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 20px;
+  padding: 8px 14px; min-width: 200px;
+}
+.dr-search:focus { outline: none; border-color: var(--amber); }
+/* Amber = needs attention, same rule as the orders tab's open rows — never a
+   verdict colour. Rows that don't need buying get a neutral, colourless bar. */
+.dr-table tr.needs-buy td { background: var(--amber-dim); }
+.dr-table tr.needs-buy td:first-child { border-left: 3px solid var(--amber); }
+.dr-stock-bar  { width: 100px; height: 8px; border-radius: 6px; overflow: hidden; background: var(--surface2); }
+.dr-stock-fill { display: block; height: 100%; }
+.dr-stock-fill.tone-attn   { background: var(--amber); }
+.dr-stock-fill.tone-normal { background: var(--muted2); }
+
 @media print {
     .dr-tabs, .dr-head-actions, .sidebar, .dr-nav, .back-btn { display: none !important; }
     .dr-panel[hidden] { display: none !important; }
@@ -537,7 +677,7 @@ body{
     <div class="dr-tabs" role="tablist">
         <button class="dr-tab is-on" data-tab="today"  role="tab">Today</button>
         <button class="dr-tab"       data-tab="orders" role="tab">Orders</button>
-        <button class="dr-tab"       data-tab="stock"  role="tab">Stock <span class="dr-badge" id="stockBadge"></span></button>
+        <button class="dr-tab"       data-tab="stock"  role="tab">Stock <span class="dr-badge" id="stockBadge"><?= $lowItems ? (int)$lowItems : '' ?></span></button>
         <button class="dr-tab"       data-tab="staff"  role="tab">Staff</button>
     </div>
     <div class="dr-panel" id="panel-today">
@@ -731,6 +871,37 @@ function drInit_orders() {
     });
 
     render();
+}
+
+// ── Tab 3: Stock — filter pills + live search over ingredient name ──
+function drInit_stock() {
+    const panel = document.getElementById('panel-stock');
+    const table = panel && panel.querySelector('#stockTable');
+    if (!table) return;
+    const allRows = Array.from(table.querySelectorAll('tbody tr[data-bucket]'));
+    const search  = panel.querySelector('#stockSearch');
+    let activeFilter = 'all';
+
+    function apply() {
+        const q = (search && search.value || '').trim().toLowerCase();
+        allRows.forEach(r => {
+            const matchesFilter = activeFilter === 'all' || r.dataset.bucket === activeFilter;
+            const matchesSearch = !q || r.dataset.name.includes(q);
+            r.style.display = (matchesFilter && matchesSearch) ? '' : 'none';
+        });
+    }
+
+    panel.querySelectorAll('.dr-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+            panel.querySelectorAll('.dr-pill').forEach(b => b.classList.toggle('is-on', b === btn));
+            activeFilter = btn.dataset.filter;
+            apply();
+        });
+    });
+
+    if (search) search.addEventListener('input', apply);
+
+    apply();
 }
 
 // follows shared theme key (toggled elsewhere)
