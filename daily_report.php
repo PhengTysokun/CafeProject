@@ -458,45 +458,74 @@ function dr_fragment_stock(mysqli $conn, string $date): void {
 // employees.employee_id -> orders.employee_id. Joining orders to attendance
 // any more directly attributes work to the wrong person (or nobody) and has
 // produced silently wrong staff figures in this codebase before.
+// employees.user_id carries a UNIQUE key, so this chain cannot fan out one
+// attendance row into more than one employee.
+
+/**
+ * "two shifts" / "three shifts" — spelled out for the common small counts a
+ * split-shift day actually produces, numeric fallback beyond that.
+ */
+function dr_shift_note(int $n): string {
+    static $words = [2 => 'two', 3 => 'three', 4 => 'four', 5 => 'five'];
+    return ($words[$n] ?? (string)$n) . ' shifts';
+}
+
 function dr_fragment_staff(mysqli $conn, string $date): void {
+    // Order/money aggregates are computed per employee_id in their own
+    // subquery, then joined in once. Aggregating orders directly against a
+    // one-row-per-shift attendance join would fan out: a person with two
+    // attendance rows that day would multiply their order rows by two before
+    // GROUP BY ever runs, doubling both the order count and the money.
     $stmt = $conn->prepare("
-        SELECT e.employee_id, e.name AS full_name, a.clock_in, a.clock_out, a.hours_worked,
-               COUNT(o.order_id)                AS orders_served,
-               COALESCE(SUM(o.total), 0)        AS money_taken
+        SELECT e.employee_id, e.name AS full_name,
+               MIN(a.clock_in)                                    AS clock_in,
+               MAX(a.clock_out)                                   AS clock_out,
+               SUM(a.hours_worked)                                AS hours_worked,
+               COUNT(a.id)                                        AS shift_count,
+               SUM(a.clock_out IS NULL)                           AS open_shifts,
+               COALESCE(MAX(o.orders_served), 0)                  AS orders_served,
+               COALESCE(MAX(o.money_taken), 0)                    AS money_taken
         FROM attendance a
         JOIN employees e ON e.user_id = a.user_id
-        LEFT JOIN orders o
-               ON o.employee_id = e.employee_id
-              AND o.business_date = ?
-              AND " . paid_orders_where('o') . "
+        LEFT JOIN (
+            SELECT employee_id,
+                   COUNT(order_id)          AS orders_served,
+                   COALESCE(SUM(total), 0)  AS money_taken
+            FROM orders
+            WHERE business_date = ? AND " . paid_orders_where() . "
+            GROUP BY employee_id
+        ) o ON o.employee_id = e.employee_id
         WHERE a.date = ?
-        GROUP BY e.employee_id, a.id
-        ORDER BY a.clock_in ASC
+        GROUP BY e.employee_id
+        ORDER BY MIN(a.clock_in) ASC
     ");
     $stmt->bind_param("ss", $date, $date);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
     // Money a person "took" means money actually collected (paid_orders_where
-    // above), never an open pay-later tab they merely rang up.
-    //
-    // Someone who clocked in and out more than once the same day gets one row
-    // per shift (GROUP BY includes a.id), but the orders/money join can only
-    // key on employee + business_date — an order carries no clock-session id
-    // to scope it to a particular shift. So every shift row for that employee
-    // repeats the SAME whole-day total. Summing all rows for the footer would
-    // double- (or triple-) count that person; keep only the first sighting of
-    // each employee_id for the totals below.
-    $byEmp = [];
+    // above), never an open pay-later tab they merely rang up. One row per
+    // person now (split shifts collapsed above), so a plain sum is correct —
+    // no per-employee dedup needed.
+    $peopleCount = count($rows);
+    $ordersTotal = 0;
+    $moneyTotal  = 0.0;
     foreach ($rows as $r) {
-        $eid = (int)$r['employee_id'];
-        if (!isset($byEmp[$eid])) {
-            $byEmp[$eid] = ['orders' => (int)$r['orders_served'], 'money' => (float)$r['money_taken']];
-        }
+        $ordersTotal += (int)$r['orders_served'];
+        $moneyTotal  += (float)$r['money_taken'];
     }
-    $peopleCount = count($byEmp);
-    $ordersTotal = array_sum(array_column($byEmp, 'orders'));
-    $moneyTotal  = array_sum(array_column($byEmp, 'money'));
+
+    // The day's collected money (tab 1's own figure, same paid_orders_where()
+    // test) minus what landed on someone who was actually clocked in. Orders
+    // with a NULL employee_id — or an employee_id that isn't in today's
+    // attendance at all — never show up in $moneyTotal above, so without this
+    // line the table would silently show a column of dashes next to a tab 1
+    // total that says money came in, and read as broken rather than honest.
+    $stmt = $conn->prepare("SELECT COALESCE(SUM(total), 0) FROM orders WHERE business_date = ? AND " . paid_orders_where());
+    $stmt->bind_param("s", $date);
+    $stmt->execute();
+    $collectedTotal = (float)$stmt->get_result()->fetch_row()[0];
+    $unlinkedMoney  = $collectedTotal - $moneyTotal;
     ?>
     <div class="dr-card dr-wide" style="margin-top:0">
       <div class="dr-table-wrap">
@@ -509,20 +538,28 @@ function dr_fragment_staff(mysqli $conn, string $date): void {
             <tr><td colspan="6" class="dr-note" style="padding:20px 0;text-align:center">no one worked this day</td></tr>
             <?php endif; ?>
             <?php foreach ($rows as $r):
-                // clock_out = NULL means the shift is still open — the normal
-                // case for a manager reading this mid-shift, not an edge case.
-                // hours_worked is genuinely NULL until clock-out sets it, so it
-                // must never be passed to fmt_hours() (non-nullable float param).
-                $stillWorking = $r['clock_out'] === null;
+                // Any open shift that day means the person reads as still
+                // working — the normal case for a manager reading this
+                // mid-shift, not an edge case. hours_worked is genuinely NULL
+                // until clock-out sets it, so a shift in progress must never
+                // be summed into fmt_hours() (non-nullable float param); we
+                // simply don't use the hours figure while still working.
+                $stillWorking = (int)$r['open_shifts'] > 0;
+                $shiftCount   = (int)$r['shift_count'];
                 $orders = (int)$r['orders_served'];
                 $money  = (float)$r['money_taken'];
                 $served = $orders > 0;
+
+                $hoursCell = $stillWorking
+                    ? 'still working'
+                    : ($r['hours_worked'] !== null ? fmt_hours((float)$r['hours_worked']) : '—');
+                if ($shiftCount > 1) { $hoursCell .= ' · ' . dr_shift_note($shiftCount); }
             ?>
             <tr>
               <td><?= htmlspecialchars((string)$r['full_name']) ?></td>
               <td><?= htmlspecialchars(date('H:i', strtotime($r['clock_in']))) ?></td>
               <td><?= $stillWorking ? 'still working' : htmlspecialchars(date('H:i', strtotime($r['clock_out']))) ?></td>
-              <td><?= $stillWorking ? 'still working' : ($r['hours_worked'] !== null ? htmlspecialchars(fmt_hours((float)$r['hours_worked'])) : '—') ?></td>
+              <td><?= htmlspecialchars($hoursCell) ?></td>
               <td><?= $served ? (int)$orders : '—' ?></td>
               <td><?= $served ? '$' . htmlspecialchars(number_format($money, 2)) : '—' ?></td>
             </tr>
@@ -535,6 +572,10 @@ function dr_fragment_staff(mysqli $conn, string $date): void {
       <div class="dr-table-foot" id="staffFoot">
         <span><?= (int)$peopleCount ?> people worked</span> &middot; <span><?= (int)$ordersTotal ?> orders served</span> &middot; <span>$<?= htmlspecialchars(number_format($moneyTotal, 2)) ?> taken</span>
       </div>
+      <?php endif; ?>
+
+      <?php if ($unlinkedMoney > 0.005): ?>
+      <p class="dr-note" style="margin-top:12px">$<?= htmlspecialchars(number_format($unlinkedMoney, 2)) ?> collected today is not linked to anyone who was clocked in.</p>
       <?php endif; ?>
     </div>
     <?php
