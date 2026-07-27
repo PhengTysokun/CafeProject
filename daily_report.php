@@ -530,6 +530,8 @@ function dr_fragment_stock(mysqli $conn, string $date): void {
           </tbody>
         </table>
       </div>
+      <div class="dr-table-foot" id="stockFoot"></div>
+      <div class="dr-pagination" id="stockPagination"></div>
     </div>
     <?php
 }
@@ -1146,16 +1148,68 @@ function drInit_stock() {
     const panel = document.getElementById('panel-stock');
     const table = panel && panel.querySelector('#stockTable');
     if (!table) return;
+    const pageSize = 25;
     const allRows = Array.from(table.querySelectorAll('tbody tr[data-bucket]'));
     const search  = panel.querySelector('#stockSearch');
+    const pager   = panel.querySelector('#stockPagination');
+    const foot    = panel.querySelector('#stockFoot');
     let activeFilter = 'all';
+    let filtered = allRows.slice();
+    let page = 1;
 
-    function apply() {
+    // Filter and search decide WHICH rows; the pager decides how many of them
+    // are on screen. Any change to the first two resets to page 1 — leaving a
+    // filtered set showing "page 4 of 1" is how paginated tables go blank.
+    function apply(resetPage) {
         const q = (search && search.value || '').trim().toLowerCase();
-        allRows.forEach(r => {
-            const matchesFilter = activeFilter === 'all' || r.dataset.bucket === activeFilter;
-            const matchesSearch = !q || r.dataset.name.includes(q);
-            r.style.display = (matchesFilter && matchesSearch) ? '' : 'none';
+        filtered = allRows.filter(r =>
+            (activeFilter === 'all' || r.dataset.bucket === activeFilter) &&
+            (!q || r.dataset.name.includes(q))
+        );
+        if (resetPage !== false) page = 1;
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (page > totalPages) page = totalPages;
+        render();
+    }
+
+    function render() {
+        allRows.forEach(r => { r.style.display = 'none'; });
+        const start = (page - 1) * pageSize;
+        filtered.slice(start, start + pageSize).forEach(r => { r.style.display = ''; });
+        renderFoot();
+        renderPager();
+    }
+
+    // Says how much of the filtered set is on screen. The stat cards above the
+    // table already carry the catalogue counts (items tracked / to buy / out),
+    // so repeating them here would just be two numbers to keep in agreement.
+    function renderFoot() {
+        if (!foot) return;
+        const start = (page - 1) * pageSize;
+        const end   = Math.min(start + pageSize, filtered.length);
+        foot.innerHTML = filtered.length === 0
+            ? '<span>nothing matches</span>'
+            : (filtered.length <= pageSize
+                ? '<span>' + filtered.length + ' item' + (filtered.length === 1 ? '' : 's') + '</span>'
+                : '<span>showing ' + (start + 1) + '–' + end + ' of ' + filtered.length + '</span>');
+    }
+
+    function renderPager() {
+        if (!pager) return;
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (totalPages <= 1) { pager.innerHTML = ''; return; }
+        pager.innerHTML =
+            '<button type="button" class="dr-nav" data-page="prev"' + (page <= 1 ? ' disabled' : '') + '>' +
+            '<i class="fa-solid fa-chevron-left"></i> Prev</button>' +
+            '<span class="dr-note">Page ' + page + ' of ' + totalPages + '</span>' +
+            '<button type="button" class="dr-nav" data-page="next"' + (page >= totalPages ? ' disabled' : '') + '>' +
+            'Next <i class="fa-solid fa-chevron-right"></i></button>';
+        pager.querySelectorAll('button[data-page]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (btn.dataset.page === 'prev' && page > 1) page--;
+                if (btn.dataset.page === 'next' && page < totalPages) page++;
+                render();
+            });
         });
     }
 
@@ -1167,7 +1221,7 @@ function drInit_stock() {
         });
     });
 
-    if (search) search.addEventListener('input', apply);
+    if (search) search.addEventListener('input', () => apply());
 
     apply();
 }
