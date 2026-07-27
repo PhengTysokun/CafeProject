@@ -450,6 +450,96 @@ function dr_fragment_stock(mysqli $conn, string $date): void {
     <?php
 }
 
+// ── Tab 4: Staff (Task 8) — who worked today and what they served ──
+//
+// LANDMINE: orders.employee_id is a FK to employees.employee_id, which is NOT
+// users.user_id and the two never coincide. attendance keys on user_id. The
+// only correct chain is attendance.user_id -> employees.user_id ->
+// employees.employee_id -> orders.employee_id. Joining orders to attendance
+// any more directly attributes work to the wrong person (or nobody) and has
+// produced silently wrong staff figures in this codebase before.
+function dr_fragment_staff(mysqli $conn, string $date): void {
+    $stmt = $conn->prepare("
+        SELECT e.employee_id, e.name AS full_name, a.clock_in, a.clock_out, a.hours_worked,
+               COUNT(o.order_id)                AS orders_served,
+               COALESCE(SUM(o.total), 0)        AS money_taken
+        FROM attendance a
+        JOIN employees e ON e.user_id = a.user_id
+        LEFT JOIN orders o
+               ON o.employee_id = e.employee_id
+              AND o.business_date = ?
+              AND " . paid_orders_where('o') . "
+        WHERE a.date = ?
+        GROUP BY e.employee_id, a.id
+        ORDER BY a.clock_in ASC
+    ");
+    $stmt->bind_param("ss", $date, $date);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    // Money a person "took" means money actually collected (paid_orders_where
+    // above), never an open pay-later tab they merely rang up.
+    //
+    // Someone who clocked in and out more than once the same day gets one row
+    // per shift (GROUP BY includes a.id), but the orders/money join can only
+    // key on employee + business_date — an order carries no clock-session id
+    // to scope it to a particular shift. So every shift row for that employee
+    // repeats the SAME whole-day total. Summing all rows for the footer would
+    // double- (or triple-) count that person; keep only the first sighting of
+    // each employee_id for the totals below.
+    $byEmp = [];
+    foreach ($rows as $r) {
+        $eid = (int)$r['employee_id'];
+        if (!isset($byEmp[$eid])) {
+            $byEmp[$eid] = ['orders' => (int)$r['orders_served'], 'money' => (float)$r['money_taken']];
+        }
+    }
+    $peopleCount = count($byEmp);
+    $ordersTotal = array_sum(array_column($byEmp, 'orders'));
+    $moneyTotal  = array_sum(array_column($byEmp, 'money'));
+    ?>
+    <div class="dr-card dr-wide" style="margin-top:0">
+      <div class="dr-table-wrap">
+        <table class="dr-table" id="staffTable">
+          <thead>
+            <tr><th>Name</th><th>Clocked in</th><th>Clocked out</th><th>Hours</th><th>Orders served</th><th>Money taken</th></tr>
+          </thead>
+          <tbody>
+            <?php if (!$rows): ?>
+            <tr><td colspan="6" class="dr-note" style="padding:20px 0;text-align:center">no one worked this day</td></tr>
+            <?php endif; ?>
+            <?php foreach ($rows as $r):
+                // clock_out = NULL means the shift is still open — the normal
+                // case for a manager reading this mid-shift, not an edge case.
+                // hours_worked is genuinely NULL until clock-out sets it, so it
+                // must never be passed to fmt_hours() (non-nullable float param).
+                $stillWorking = $r['clock_out'] === null;
+                $orders = (int)$r['orders_served'];
+                $money  = (float)$r['money_taken'];
+                $served = $orders > 0;
+            ?>
+            <tr>
+              <td><?= htmlspecialchars((string)$r['full_name']) ?></td>
+              <td><?= htmlspecialchars(date('H:i', strtotime($r['clock_in']))) ?></td>
+              <td><?= $stillWorking ? 'still working' : htmlspecialchars(date('H:i', strtotime($r['clock_out']))) ?></td>
+              <td><?= $stillWorking ? 'still working' : ($r['hours_worked'] !== null ? htmlspecialchars(fmt_hours((float)$r['hours_worked'])) : '—') ?></td>
+              <td><?= $served ? (int)$orders : '—' ?></td>
+              <td><?= $served ? '$' . htmlspecialchars(number_format($money, 2)) : '—' ?></td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+
+      <?php if ($rows): ?>
+      <div class="dr-table-foot" id="staffFoot">
+        <span><?= (int)$peopleCount ?> people worked</span> &middot; <span><?= (int)$ordersTotal ?> orders served</span> &middot; <span>$<?= htmlspecialchars(number_format($moneyTotal, 2)) ?> taken</span>
+      </div>
+      <?php endif; ?>
+    </div>
+    <?php
+}
+
 // Tabs 2-4 ask for their own HTML. Each branch echoes a fragment and exits.
 // This MUST run before any HTML output — a fragment response is inlined into
 // a tab panel by JS, so it must never carry the page chrome.
@@ -459,7 +549,7 @@ if ($fragment !== '') {
     switch ($fragment) {
         case 'orders': dr_fragment_orders($conn, $date); break;
         case 'stock':  dr_fragment_stock($conn, $date); break;
-        case 'staff':  /* Task 8 */ break;
+        case 'staff':  dr_fragment_staff($conn, $date); break;
         default: http_response_code(404); echo 'Unknown tab.';
     }
     exit;
