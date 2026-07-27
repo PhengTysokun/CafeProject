@@ -1352,7 +1352,7 @@ if (($_SESSION['role'] ?? '') === 'inventory_clerk') { $_bodyClasses[] = 'inv-mo
         </div>
         <div class="nav-group-items collapsed" id="grp-analytics">
             <?php if (can('report')): ?>
-            <a class="nav-item" href="report.php">
+            <a class="nav-item" href="daily_report.php">
                 <i class="fa-solid fa-chart-simple"></i>
                 <span class="nav-label">Daily Report</span>
             </a>

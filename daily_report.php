@@ -14,6 +14,20 @@ $prevDate = date('Y-m-d', strtotime($date . ' -1 day'));
 $nextDate = date('Y-m-d', strtotime($date . ' +1 day'));
 $isToday  = ($date === $today);
 
+// ── Live refresh (Task 9): cheap signature, not a data refetch ──
+// dashboard.php re-runs its full KPI queries every 5s for every open browser;
+// this endpoint returns only a signature so the client can decide whether a
+// reload is even worth doing. Must exit before any HTML is output.
+if (isset($_GET['poll'])) {
+    header('Content-Type: application/json');
+    $stmt = $conn->prepare("SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(MAX(order_date),'') FROM orders WHERE business_date = ?");
+    $stmt->bind_param("s", $date);
+    $stmt->execute();
+    $sig = implode('|', $stmt->get_result()->fetch_row());
+    echo json_encode(['sig' => md5($sig)]);
+    exit;
+}
+
 // ── Tab 1: the three verdicts (Task 4) ──
 // Money we got — the app-wide definition of collected, never hand-rolled.
 $stmt = $conn->prepare("SELECT COALESCE(SUM(total),0), COUNT(*) FROM orders WHERE business_date = ? AND " . paid_orders_where());
@@ -902,14 +916,32 @@ body{
 const drLoaded = {};           // tab -> true once its HTML has arrived
 const DR_DATE  = <?= json_encode($date) ?>;
 
+function drShowTab(tab) {
+    const btn = document.querySelector('.dr-tab[data-tab="' + tab + '"]');
+    if (!btn) return;
+    document.querySelectorAll('.dr-tab').forEach(b => b.classList.toggle('is-on', b === btn));
+    document.querySelectorAll('.dr-panel').forEach(p => p.hidden = (p.id !== 'panel-' + tab));
+    if (tab !== 'today' && !drLoaded[tab]) { loadFragment(tab); }
+    try { sessionStorage.setItem('drActiveTab:' + DR_DATE, tab); } catch (e) {}
+}
+
 document.querySelectorAll('.dr-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const tab = btn.dataset.tab;
-        document.querySelectorAll('.dr-tab').forEach(b => b.classList.toggle('is-on', b === btn));
-        document.querySelectorAll('.dr-panel').forEach(p => p.hidden = (p.id !== 'panel-' + tab));
-        if (tab !== 'today' && !drLoaded[tab]) { loadFragment(tab); }
-    });
+    btn.addEventListener('click', () => drShowTab(btn.dataset.tab));
 });
+
+// A poll-triggered reload must not throw away where the manager was reading —
+// restore the tab they had open, and their scroll position, right after load.
+(function drRestoreAfterReload() {
+    try {
+        const savedTab = sessionStorage.getItem('drActiveTab:' + DR_DATE);
+        if (savedTab && savedTab !== 'today') { drShowTab(savedTab); }
+        const savedY = sessionStorage.getItem('drScrollY:' + DR_DATE);
+        if (savedY !== null) {
+            sessionStorage.removeItem('drScrollY:' + DR_DATE);
+            window.scrollTo(0, parseInt(savedY, 10) || 0);
+        }
+    } catch (e) {}
+})();
 
 async function loadFragment(tab) {
     const panel = document.getElementById('panel-' + tab);
@@ -1033,6 +1065,27 @@ function drInit_stock() {
     if (search) search.addEventListener('input', apply);
 
     apply();
+}
+
+// ── Live refresh (Task 9) — poll a cheap signature, today only. A past date
+// is settled history and must never repeat a network request for it.
+const DR_IS_TODAY = <?= $isToday ? 'true' : 'false' ?>;
+let drSig = null;
+if (DR_IS_TODAY) {
+    setInterval(async () => {
+        try {
+            const res = await fetch('daily_report.php?poll=1&date=' + encodeURIComponent(DR_DATE));
+            const { sig } = await res.json();
+            if (drSig !== null && sig !== drSig) {
+                // Reloading mid-read is hostile to a manager part-way down a
+                // table — stash where they were so drRestoreAfterReload can
+                // put them back once the new page settles.
+                try { sessionStorage.setItem('drScrollY:' + DR_DATE, String(window.scrollY)); } catch (e) {}
+                window.location.reload();
+            }
+            drSig = sig;
+        } catch (e) { /* a dropped poll is not worth interrupting the manager */ }
+    }, 30000);
 }
 
 // follows shared theme key (toggled elsewhere)
