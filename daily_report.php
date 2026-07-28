@@ -229,6 +229,28 @@ if ($paidOrderCount === 0) {
     $vKept = ['tone' => 'flat', 'line' => $drZeroLine, 'sub' => ''];
 }
 
+// ── When the money came in, hour by hour ──
+// Business days run 06:00 to 06:00, so the axis runs from 6am and wraps past
+// midnight rather than starting at hour 0 with a dead morning.
+$hourRev = array_fill(0, 24, 0.0);
+$stmt = $conn->prepare("
+    SELECT HOUR(order_date) h, COALESCE(SUM(total),0) rev
+    FROM orders WHERE business_date = ? AND " . paid_orders_where() . "
+    GROUP BY HOUR(order_date)
+");
+$stmt->bind_param("s", $date);
+$stmt->execute();
+$res = $stmt->get_result();
+while ($r = $res->fetch_assoc()) { $hourRev[(int)$r['h']] = (float)$r['rev']; }
+
+$hourOrder = [];
+for ($i = 6; $i < 30; $i++) { $hourOrder[] = $i % 24; }          // 06:00 → 05:00
+$hourPeakVal = max($hourRev) ?: 0.0;
+$busiestHour = null;
+if ($hourPeakVal > 0) {
+    foreach ($hourOrder as $h) { if ($hourRev[$h] === $hourPeakVal) { $busiestHour = $h; break; } }
+}
+
 // Best seller: $cogs['by_product'] arrives unsorted (insertion order), so sort
 // by cups moved. uasort preserves the key, and the key IS the product name.
 $byProductSorted = $cogs['by_product'];
@@ -762,12 +784,16 @@ body{
 .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}
 
 .back-btn{
-  display:inline-flex;align-items:center;gap:7px;text-decoration:none;color:var(--text-muted);
-  font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:8px;
-  border:1px solid var(--border);background:var(--surface);transition:all .2s;
-  margin-bottom:16px;
+  display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--amber);
+  font-size:13.5px;font-weight:600;padding:9px 16px;border-radius:10px;
+  border:1px solid var(--amber-border);background:var(--amber-dim);transition:all .2s;
+  margin-bottom:18px;
 }
-.back-btn:hover{border-color:var(--amber);color:var(--amber)}
+.back-btn:hover{background:rgba(209,144,75,.22)}
+.dr-live{
+  display:inline-block;width:7px;height:7px;border-radius:50%;background:#4ade80;
+  margin-right:7px;vertical-align:middle;
+}
 
 /* ── Header ── */
 .dr-head{
@@ -879,8 +905,36 @@ body{
 .seg-later  { background: rgba(209,144,75,.4);   }
 .seg-other  { background: rgba(209,144,75,.22);  }
 
-.dr-facts-inline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 12px; }
-@media (max-width: 900px) { .dr-facts-inline { grid-template-columns: repeat(2, 1fr); } }
+/* Auto-fit, not a fixed four: a row of three stats should fill the width
+   rather than leave a dead fourth column. */
+.dr-facts-inline { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-top: 12px; }
+
+/* ── Charts ── drawn by hand in CSS and SVG. No chart library: a CDN that
+   fails on venue wifi is a blank chart in front of a judge. */
+.dr-charts { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; margin-top: 16px; }
+@media (max-width: 900px) { .dr-charts { grid-template-columns: 1fr; } }
+
+.dr-hours { display: flex; align-items: flex-end; gap: 3px; height: 150px; margin-top: 14px; }
+.dr-hour  { flex: 1; height: 100%; display: flex; align-items: flex-end; border-radius: 3px; }
+.dr-hour-fill { display: block; width: 100%; background: var(--amber); opacity: .45; border-radius: 3px; transition: opacity .15s; }
+.dr-hour:hover .dr-hour-fill { opacity: .8; }
+.dr-hour.is-peak .dr-hour-fill { opacity: 1; }
+.dr-hours-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--muted2); margin-top: 6px; }
+
+.dr-donut-row { display: flex; align-items: center; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+.dr-donut { width: 140px; height: 140px; flex: none; transform: rotate(-90deg); }
+.dr-donut-track { fill: none; stroke: var(--surface2); stroke-width: 16; }
+.dr-donut-seg   { fill: none; stroke-width: 16; }
+.dr-donut-mid, .dr-donut-sub { transform: rotate(90deg); transform-origin: 70px 70px; text-anchor: middle; }
+.dr-donut-mid { font-family: var(--mono); font-size: 15px; font-weight: 700; fill: var(--text); }
+.dr-donut-sub { font-family: var(--mono); font-size: 9px; fill: var(--muted2); letter-spacing: .1em; }
+.dr-legend { list-style: none; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: var(--text-muted); }
+.dr-legend b { color: var(--text); font-family: var(--mono); font-size: 12px; margin-left: 4px; }
+.dr-dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 7px; }
+.dr-dot.seg-cash{background:rgba(209,144,75,1)} .dr-dot.seg-bakong{background:rgba(209,144,75,.65)}
+.dr-dot.seg-later{background:rgba(209,144,75,.4)} .dr-dot.seg-other{background:rgba(209,144,75,.22)}
+.dr-donut-seg.seg-cash{stroke:rgba(209,144,75,1)} .dr-donut-seg.seg-bakong{stroke:rgba(209,144,75,.65)}
+.dr-donut-seg.seg-later{stroke:rgba(209,144,75,.4)} .dr-donut-seg.seg-other{stroke:rgba(209,144,75,.22)}
 .dr-fact  { display: flex; flex-direction: column; }
 .dr-v-sm  { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .dr-v-text{ font-size: 16px; font-weight: 700; font-variant-numeric: initial; }
@@ -985,11 +1039,13 @@ body{
     <span class="dr-topbar-name">The Bird's Nest Coffee</span>
     <span class="dr-topbar-sep">·</span>
     <span class="dr-topbar-where">Daily Report</span>
-    <span class="dr-topbar-right"><a href="dashboard.php">Dashboard</a></span>
+    <span class="dr-topbar-right"><?= $isToday ? '<span class="dr-live"></span>live · ' : '' ?><?= htmlspecialchars(date('F Y', strtotime($date))) ?></span>
   </div>
 </div>
 
 <div class="wrap">
+
+    <a href="dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 
     <div class="dr-head">
         <div>
@@ -1004,6 +1060,7 @@ body{
                     it is how a manager walks back forward toward the present. */ ?>
             <a class="dr-nav" href="?date=<?= htmlspecialchars($nextDate) ?>">Tomorrow <i class="fa-solid fa-chevron-right"></i></a>
             <?php endif; ?>
+            <button class="dr-nav" onclick="drExport()"><i class="fa-solid fa-file-excel"></i> Excel</button>
             <button class="dr-nav" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
             <a class="dr-nav" href="report.php?mode=daily&date=<?= htmlspecialchars($date) ?>">Full analytics <i class="fa-solid fa-arrow-right"></i></a>
         </div>
@@ -1076,22 +1133,69 @@ body{
           <?php endif; ?>
         </div>
 
-        <div class="dr-card dr-wide">
-          <div class="dr-k">how the money came in</div>
-          <?php if ($gotToday > 0): ?>
-            <div class="dr-bar">
-              <?php foreach ([['cash',$gotCash],['bakong',$gotBakong],['later',$gotLater],['other',$gotOther]] as [$cls,$amt]):
-                  if ($amt <= 0) { continue; }
-                  $pct = ($amt / $gotToday) * 100; ?>
-                  <span class="seg seg-<?= $cls ?>" style="width:<?= round($pct, 2) ?>%"></span>
-              <?php endforeach; ?>
-            </div>
-          <?php else: ?>
-            <p class="dr-note"><?= htmlspecialchars($drZeroLine) ?></p>
-          <?php endif; ?>
-          <?php if ($notPaidYet > 0): ?>
-            <p class="dr-note">$<?= number_format($notPaidYet, 2) ?> not paid yet. We count it only when the customer pays.</p>
-          <?php endif; ?>
+        <div class="dr-charts">
+          <div class="dr-card">
+            <div class="dr-k">when the money came in</div>
+            <?php if ($hourPeakVal > 0): ?>
+              <div class="dr-hours" role="img" aria-label="Money taken each hour of the trading day">
+                <?php foreach ($hourOrder as $h):
+                    $v = $hourRev[$h];
+                    $pct = $hourPeakVal > 0 ? ($v / $hourPeakVal) * 100 : 0;
+                    $isPeak = ($busiestHour !== null && $h === $busiestHour); ?>
+                  <span class="dr-hour<?= $isPeak ? ' is-peak' : '' ?>"
+                        title="<?= sprintf('%02d:00', $h) ?> · $<?= number_format($v, 2) ?>">
+                    <span class="dr-hour-fill" style="height:<?= $v > 0 ? max(2, round($pct, 1)) : 0 ?>%"></span>
+                  </span>
+                <?php endforeach; ?>
+              </div>
+              <div class="dr-hours-axis"><span>06:00</span><span>12:00</span><span>18:00</span><span>00:00</span><span>05:00</span></div>
+              <?php if ($busiestHour !== null): ?>
+                <p class="dr-note">busiest at <?= sprintf('%02d:00', $busiestHour) ?> · $<?= number_format($hourPeakVal, 2) ?></p>
+              <?php endif; ?>
+            <?php else: ?>
+              <p class="dr-note"><?= htmlspecialchars($drZeroLine) ?></p>
+            <?php endif; ?>
+          </div>
+
+          <div class="dr-card">
+            <div class="dr-k">how the money came in</div>
+            <?php if ($gotToday > 0):
+                // Donut drawn with stroke-dasharray: each slice is a circle whose
+                // dash covers its share, offset by everything before it. No chart
+                // library — a CDN that fails on venue wifi is a blank chart.
+                $C = 2 * M_PI * 54;
+                $slices = array_values(array_filter([
+                    ['cash', 'cash', $gotCash], ['bakong', 'bakong', $gotBakong],
+                    ['later', 'pay later', $gotLater], ['other', 'other ways', $gotOther],
+                ], fn($s) => $s[2] > 0.005));
+                $acc = 0.0; ?>
+              <div class="dr-donut-row">
+                <svg class="dr-donut" viewBox="0 0 140 140" role="img" aria-label="Share of money by how it was paid">
+                  <circle cx="70" cy="70" r="54" class="dr-donut-track"></circle>
+                  <?php foreach ($slices as [$cls, $lbl, $amt]):
+                      $frac = $amt / $gotToday;
+                      $len  = $frac * $C; ?>
+                    <circle cx="70" cy="70" r="54" class="dr-donut-seg seg-<?= $cls ?>"
+                            stroke-dasharray="<?= round($len, 2) ?> <?= round($C - $len, 2) ?>"
+                            stroke-dashoffset="<?= round(-$acc * $C, 2) ?>"></circle>
+                  <?php $acc += $frac; endforeach; ?>
+                  <text x="70" y="66" class="dr-donut-mid">$<?= number_format($gotToday, 2) ?></text>
+                  <text x="70" y="82" class="dr-donut-sub">collected</text>
+                </svg>
+                <ul class="dr-legend">
+                  <?php foreach ($slices as [$cls, $lbl, $amt]): ?>
+                    <li><span class="dr-dot seg-<?= $cls ?>"></span><?= htmlspecialchars($lbl) ?>
+                        <b>$<?= number_format($amt, 2) ?></b></li>
+                  <?php endforeach; ?>
+                </ul>
+              </div>
+            <?php else: ?>
+              <p class="dr-note"><?= htmlspecialchars($drZeroLine) ?></p>
+            <?php endif; ?>
+            <?php if ($notPaidYet > 0): ?>
+              <p class="dr-note">$<?= number_format($notPaidYet, 2) ?> not paid yet. We count it only when the customer pays.</p>
+            <?php endif; ?>
+          </div>
         </div>
 
         <div class="dr-card dr-wide">
@@ -1174,6 +1278,56 @@ async function loadFragment(tab) {
         panel.innerHTML = '<div class="dr-error">Could not load this tab. '
                         + '<button onclick="loadFragment(\'' + tab + '\')">Try again</button></div>';
     }
+}
+
+/**
+ * Export the day for a spreadsheet. CSV rather than a real .xlsx: Excel opens
+ * it natively, so does Sheets, and it needs no library. The leading BOM is what
+ * stops Excel mangling the Khmer and the dollar signs.
+ *
+ * Exports the whole day, not just the tab on screen — a manager who clicks
+ * Excel wants the day's numbers, not whichever table they happened to be
+ * looking at. Tables already loaded are included; ones never opened are
+ * fetched first so the file is never silently short.
+ */
+async function drExport() {
+    const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+    const rows = [];
+    const section = t => { rows.push([]); rows.push([t]); };
+
+    rows.push(['Daily report', DR_DATE]);
+    section('The day');
+    // On a past date box 3 carries no headline and no verdict line by design,
+    // so read every cell defensively — a missing node must export as empty,
+    // never as the string "undefined".
+    const cell = (el, sel) => (el.querySelector(sel)?.textContent || '').replace(/\s+/g, ' ').trim();
+    document.querySelectorAll('#panel-today .dr-verdict').forEach(v => {
+        rows.push([cell(v, '.dr-q'), cell(v, '.dr-big'), cell(v, '.dr-line') || cell(v, '.dr-sub')]);
+    });
+    document.querySelectorAll('#panel-today .dr-facts > .dr-card').forEach(c => {
+        rows.push([cell(c, '.dr-k'), cell(c, '.dr-v'), cell(c, '.dr-note')]);
+    });
+
+    // Pull any tab the manager has not opened, so the file is complete.
+    for (const tab of ['orders', 'stock', 'staff']) {
+        if (!drLoaded[tab]) { await loadFragment(tab); }
+        const table = document.querySelector('#panel-' + tab + ' table');
+        if (!table) continue;
+        section(tab.charAt(0).toUpperCase() + tab.slice(1));
+        table.querySelectorAll('tr').forEach(tr => {
+            const cells = [...tr.querySelectorAll('th,td')]
+                .map(td => td.textContent.replace(/\s+/g, ' ').trim());
+            if (cells.some(c => c !== '')) rows.push(cells);
+        });
+    }
+
+    const csv  = rows.map(r => r.map(q).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = 'daily-report-' + DR_DATE + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
 }
 
 /**
