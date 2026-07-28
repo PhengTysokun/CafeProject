@@ -964,6 +964,10 @@ body{
 .dr-hour-fill { display: block; width: 100%; background: var(--amber); opacity: .45; border-radius: 3px; transition: opacity .15s; }
 .dr-hour:hover .dr-hour-fill { opacity: .8; }
 .dr-hour.is-peak .dr-hour-fill { opacity: 1; }
+/* Midnight. Marked because the axis crosses a calendar day mid-chart and a
+   reader who doesn't know the 06:00 business day would otherwise read the
+   post-midnight bars as an error. */
+.dr-hour.is-daybreak { border-left: 1px dashed var(--border); margin-left: 2px; padding-left: 2px; }
 .dr-hours-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--muted2); margin-top: 6px; }
 
 .dr-donut-row { display: flex; align-items: center; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
@@ -1192,13 +1196,18 @@ body{
         <div class="dr-charts">
           <div class="dr-card">
             <div class="dr-k">when the money came in</div>
+            <?php // The axis runs 06:00 to 05:00 because that is the business day
+                  // (orders.business_date): trade before 06:00 belongs to the night
+                  // before. Said out loud here so nobody reads midnight-after-18:00
+                  // as a broken axis. ?>
+            <div class="dr-note">the trading day, 06:00 to 05:00 next morning</div>
             <?php if ($hourPeakVal > 0): ?>
               <div class="dr-hours" role="img" aria-label="Money taken each hour of the trading day">
                 <?php foreach ($hourOrder as $h):
                     $v = $hourRev[$h];
                     $pct = $hourPeakVal > 0 ? ($v / $hourPeakVal) * 100 : 0;
                     $isPeak = ($busiestHour !== null && $h === $busiestHour); ?>
-                  <span class="dr-hour<?= $isPeak ? ' is-peak' : '' ?>"
+                  <span class="dr-hour<?= $isPeak ? ' is-peak' : '' ?><?= $h === 0 ? ' is-daybreak' : '' ?>"
                         title="<?= sprintf('%02d:00', $h) ?> · $<?= number_format($v, 2) ?>">
                     <span class="dr-hour-fill" style="height:<?= $v > 0 ? max(2, round($pct, 1)) : 0 ?>%"></span>
                   </span>
