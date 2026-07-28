@@ -1110,6 +1110,7 @@ body{
             <a class="dr-nav" href="?date=<?= htmlspecialchars($nextDate) ?>">Tomorrow <i class="fa-solid fa-chevron-right"></i></a>
             <?php endif; ?>
             <button class="dr-nav" onclick="drExport()"><i class="fa-solid fa-file-excel"></i> Excel</button>
+            <a class="dr-nav" href="daily_report_pdf.php?date=<?= htmlspecialchars($date) ?>"><i class="fa-solid fa-file-pdf"></i> PDF</a>
             <button class="dr-nav" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
             <a class="dr-nav" href="report.php?mode=daily&date=<?= htmlspecialchars($date) ?>">Full analytics <i class="fa-solid fa-arrow-right"></i></a>
         </div>
