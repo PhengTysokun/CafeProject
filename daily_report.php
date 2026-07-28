@@ -86,6 +86,31 @@ function dr_verdict(float $now, ?float $baseline, string $label): array {
     ];
 }
 
+/**
+ * The one line under a headline figure that says whether it is good.
+ * A number on its own — "TOTAL SALES $14,450" — cannot tell a manager anything;
+ * this is the whole reason the page exists, compressed into a single line so it
+ * fits a stat card instead of needing a box of its own.
+ *
+ * $money formats the difference as dollars; otherwise it is a plain count.
+ */
+function dr_delta(?float $now, ?float $base, string $label, bool $money = true): array {
+    if ($base === null || $now === null) {
+        return ['tone' => 'flat', 'text' => 'nothing to compare yet'];
+    }
+    $diff = $now - $base;
+    // Counts are whole things. The baseline is an average, so the difference can
+    // land on 6.3 — but "6.3 cups less" is not how anyone reads a cup.
+    $unit = $money ? '$' . number_format(abs($diff), 2) : (string)(int)round(abs($diff));
+    if (($money && abs($diff) < 0.005) || (!$money && round(abs($diff)) < 1)) {
+        return ['tone' => 'flat', 'text' => 'same as ' . $label];
+    }
+    return [
+        'tone' => $diff > 0 ? 'good' : 'bad',
+        'text' => ($diff > 0 ? '↑ ' : '↓ ') . $unit . ($diff > 0 ? ' more' : ' less') . ' than ' . $label,
+    ];
+}
+
 $vGot  = dr_verdict($gotToday, $baseGot['value'], $baseGot['label']);
 
 /**
@@ -118,12 +143,27 @@ if ($baseGot['basis'] !== 'none') {
     }
 
     $keptSum = 0.0;
+    $orderSum = 0;
+    $cupSum   = 0;
     foreach ($baseGot['dates'] as $d) {
         $dayIds = $byDay[$d] ?? [];
-        $keptSum += ($gotByDay[$d] ?? 0.0) - order_cogs($conn, $dayIds, $costMap)['total'];
+        $dayCogs = order_cogs($conn, $dayIds, $costMap);
+        $keptSum  += ($gotByDay[$d] ?? 0.0) - $dayCogs['total'];
+        $orderSum += count($dayIds);
+        $cupSum   += $dayCogs['items'];
     }
-    $keptBaseline = $keptSum / count($baseGot['dates']);
+    $n = count($baseGot['dates']);
+    $keptBaseline   = $keptSum / $n;
+    // The same baseline days answer every headline stat, so all four cards
+    // compare against one consistent idea of "a normal Monday".
+    $ordersBaseline = $orderSum / $n;
+    $cupsBaseline   = $cupSum / $n;
+    $avgBaseline    = $orderSum > 0 ? ($baseGot['value'] * $n) / $orderSum : null;
 }
+$ordersBaseline = $ordersBaseline ?? null;
+$cupsBaseline   = $cupsBaseline   ?? null;
+$avgBaseline    = $avgBaseline    ?? null;
+$avgToday       = $paidOrderCount > 0 ? $gotToday / $paidOrderCount : 0.0;
 
 $vKept = dr_verdict($keptToday, $keptBaseline, $baseGot['label']);
 
@@ -161,6 +201,8 @@ $low = $conn->query("
 $lowItems  = count($low);
 $lowNames  = array_column(array_slice($low, 0, 3), 'ingredient_name');
 $lowExtra  = max(0, $lowItems - 3);
+// Already out is a harder fact than merely low — the alert strip names both.
+$outItems  = count(array_filter($low, fn($r) => (float)$r['stock_quantity'] <= 0));
 
 $stockValue = (float)$conn->query("SELECT COALESCE(SUM(stock_quantity * cost_per_unit),0) FROM ingredients")->fetch_row()[0];
 
@@ -730,9 +772,6 @@ if ($fragment !== '') {
   --bg:#0a0a0a;--surface:#111;--surface2:#161616;--border:rgba(255,255,255,.07);
   --amber:#d1904b;--amber-dim:rgba(209,144,75,.12);--amber-border:rgba(209,144,75,.2);
   --text:#f0f0f0;--muted:#555;--muted2:#888;
-  /* Khmer sits a step brighter than muted Latin: its diacritics are small and
-     stack above the character, and they smear into a dark card at #888. */
-  --km:#b4b4b4;
   --bg-card:var(--surface);--text-muted:var(--muted2);
   --radius:10px;
   --bar:#16130f;              /* brand bar — near-black in both themes */
@@ -748,8 +787,6 @@ if ($fragment !== '') {
 [data-theme="light"]{
   --bg:#f6f5f3;--surface:#FFFFFF;--surface2:#faf9f7;--border:#e6e3de;
   --text:#141210;--muted:#9a8f84;--muted2:#6b6259;
-  /* Light theme runs the other way: darker than muted, same reason. */
-  --km:#4a433c;
   --bg-card:var(--surface);--text-muted:var(--muted2);
   --ok:#1f7a45;--ok-bg:#e8f4ec;
   --warn:#9a6410;--warn-bg:#fbf1de;
@@ -855,36 +892,44 @@ body{
 }
 
 /* ── Tab 1: the three verdicts ── */
-.dr-verdicts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-@media (max-width: 900px) { .dr-verdicts { grid-template-columns: 1fr; } }
 
-/* The verdicts wear their state on a left rule, the way the reference marks its
-   lead stat card — but here the rule actually means something, so it is the one
-   place on the page that earns red or green. */
-.dr-verdict { border-radius: var(--radius); padding: 18px 20px; border: 1px solid var(--border); background: var(--bg-card); border-left-width: 3px; }
-.dr-verdict.tone-good { border-left-color: var(--ok); }
-.dr-verdict.tone-bad  { border-left-color: var(--stop); }
-.dr-verdict.tone-flat { border-left-color: var(--border); }
 .tone-good .dr-line { color: var(--ok); }
 .tone-bad  .dr-line { color: var(--stop); }
 .tone-flat .dr-line { color: var(--text-muted); }
 
 .dr-q     { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
 /* Khmer needs more leading than Latin or the diacritics clip. */
-.dr-q-km  { font-size: 12.5px; line-height: 1.9; color: var(--km); margin-bottom: 10px; }
-/* Khmer inlined into an English line (e.g. "stock we have $X · ស្តុកដែលមាន"). */
-.km       { color: var(--km); }
 .dr-sub   { font-size: 13px;   color: var(--text-muted); }
-.dr-sub-km{ font-size: 12px;   line-height: 1.9; color: var(--km); }
-.dr-big   { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .dr-line  { font-weight: 700; margin-top: 10px; }
 .dr-foot  { font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.7; }
+
+/* ── Headline stats ── the reference's card row, with a comparison line where
+   it had a static caption. Colour lives on that line only: it is the one part
+   that carries a judgement, so it is the one part allowed to be red or green. */
+.dr-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); gap: 14px; }
+.dr-stat  { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+.dr-stat.is-lead { border-left: 3px solid var(--amber); }
+.dr-v-lg  { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 6px 0 8px; letter-spacing: -.5px; }
+.dr-delta { font-size: 12px; font-weight: 600; line-height: 1.5; }
+.dr-delta.tone-good { color: var(--ok); }
+.dr-delta.tone-bad  { color: var(--stop); }
+.dr-delta.tone-flat { color: var(--text-muted); font-weight: 500; }
+
+/* Stock warning, placed where the reference puts it: a strip under the stats,
+   not a card competing with them. */
+.dr-alert {
+  display: flex; align-items: flex-start; gap: 10px; margin-top: 14px;
+  padding: 12px 16px; border-radius: var(--radius); font-size: 13px; line-height: 1.55;
+  background: var(--warn-bg); border: 1px solid var(--amber-border); color: var(--text);
+}
+.dr-alert i { color: var(--warn); margin-top: 2px; }
+.dr-alert.is-clear { background: var(--ok-bg); border-color: rgba(47,158,95,.25); }
+.dr-alert.is-clear i { color: var(--ok); }
 
 /* ── Tab 1: the neutral row — facts, no colour ── */
 .dr-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px; }
 @media (max-width: 900px) { .dr-facts { grid-template-columns: repeat(2, 1fr); } }
 .dr-k     { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
-.dr-k-km  { font-size: 12px; line-height: 1.8; color: var(--km); margin-bottom: 6px; }
 .dr-v     { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
 /* Facts sit in cards like the reference's stat row: hairline box, quiet label
    above, figure below. The lead card takes a rule so the eye starts there. */
@@ -937,7 +982,7 @@ body{
 .dr-donut-seg.seg-later{stroke:rgba(209,144,75,.4)} .dr-donut-seg.seg-other{stroke:rgba(209,144,75,.22)}
 .dr-fact  { display: flex; flex-direction: column; }
 .dr-v-sm  { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.dr-v-text{ font-size: 16px; font-weight: 700; font-variant-numeric: initial; }
+.dr-v-text{ font-size: 20px; font-weight: 700; font-variant-numeric: initial; letter-spacing: 0; }
 
 /* ── Tab 2: Orders ── */
 .dr-pills   { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -1073,61 +1118,72 @@ body{
         <button class="dr-tab"       data-tab="staff"  role="tab"><i class="fa-solid fa-user-group"></i> Staff</button>
     </div>
     <div class="dr-panel" id="panel-today">
-        <div class="dr-verdicts">
-          <div class="dr-verdict tone-<?= $vGot['tone'] ?>">
-            <div class="dr-q">Did we earn more?</div>
-            <div class="dr-q-km">តើយើងរកចំណូលបានច្រើនជាងមុនទេ?</div>
-            <div class="dr-big">$<?= number_format($gotToday, 2) ?></div>
-            <div class="dr-sub">money we got today</div>
-            <div class="dr-sub-km">ប្រាក់ចំណូលថ្ងៃនេះ</div>
-            <div class="dr-line"<?= $baselineTooltip !== '' ? ' title="' . htmlspecialchars($baselineTooltip) . '"' : '' ?>><?= htmlspecialchars($vGot['line']) ?> <?= htmlspecialchars($vGot['sub']) ?></div>
-            <div class="dr-foot">yesterday $<?= number_format($gotYesterday, 2) ?></div>
+        <?php
+          // Four headline stats in the reference's card format, each carrying its
+          // own comparison on the third line. A figure with no baseline cannot
+          // tell a manager whether the day went well, which is the whole reason
+          // this page replaced report.php.
+          // Before the first sale, every card would otherwise read red — "$14.65
+          // less than a normal Tuesday" at 8am is an alarm about a day that has
+          // not happened yet. The shop opening quietly is not bad news.
+          if ($paidOrderCount === 0) {
+              $zero  = ['tone' => 'flat', 'text' => $drZeroLine];
+              $dGot = $dKept = $dOrd = $dCups = $dAvg = $zero;
+          } else {
+              $dGot   = dr_delta($gotToday,  $baseGot['value'],  $baseGot['label']);
+              $dKept  = dr_delta($keptToday, $keptBaseline,      $baseGot['label']);
+              $dOrd   = dr_delta((float)$paidOrderCount, $ordersBaseline, $baseGot['label'], false);
+              $dCups  = dr_delta((float)$cogs['items'],  $cupsBaseline,   $baseGot['label'], false);
+              $dAvg   = dr_delta($avgToday,  $avgBaseline,       $baseGot['label']);
+          }
+          $tip    = $baselineTooltip !== '' ? ' title="' . htmlspecialchars($baselineTooltip) . '"' : '';
+        ?>
+        <div class="dr-stats">
+          <div class="dr-stat is-lead">
+            <div class="dr-k">total sales</div>
+            <div class="dr-v-lg">$<?= number_format($gotToday, 2) ?></div>
+            <div class="dr-delta tone-<?= $dGot['tone'] ?>"<?= $tip ?>><?= htmlspecialchars($dGot['text']) ?></div>
           </div>
-
-          <div class="dr-verdict tone-<?= $vKept['tone'] ?>">
-            <div class="dr-q">Did we keep more?</div>
-            <div class="dr-q-km">តើយើងរកប្រាក់ចំណេញបានច្រើនជាងមុនទេ?</div>
-            <div class="dr-big">$<?= number_format($keptToday, 2) ?></div>
-            <div class="dr-sub">money we keep</div>
-            <div class="dr-sub-km">ប្រាក់ចំណេញ</div>
-            <div class="dr-line"><?= htmlspecialchars($vKept['line']) ?> <?= htmlspecialchars($vKept['sub']) ?></div>
-            <?php if ($keptToday > 0): ?>
-            <div class="dr-foot">we keep <?= (int)$centsKept ?>¢ of each $1</div>
-            <?php endif; ?>
+          <div class="dr-stat">
+            <div class="dr-k">money we keep</div>
+            <div class="dr-v-lg">$<?= number_format($keptToday, 2) ?></div>
+            <div class="dr-delta tone-<?= $dKept['tone'] ?>"><?= htmlspecialchars($dKept['text']) ?></div>
           </div>
-
-          <?php if ($isToday): ?>
-          <div class="dr-verdict tone-<?= $lowItems ? 'bad' : 'good' ?>">
-            <div class="dr-q">Can we open tomorrow?</div>
-            <div class="dr-q-km">តើយើងអាចបើកហាងស្អែកបានទេ?</div>
-            <div class="dr-big"><?= $lowItems ? 'NO' : 'YES' ?></div>
-            <div class="dr-sub">
-              <?php if ($lowItems): ?>
-                buy more <?= htmlspecialchars(implode(', ', $lowNames)) ?><?= $lowExtra ? " and $lowExtra more" : '' ?>
-              <?php else: ?>
-                every item is above its buy-more level
-              <?php endif; ?>
-            </div>
-            <div class="dr-foot">
-              stock we have $<?= number_format($stockValue, 2) ?> · <span class="km">ស្តុកដែលមាន</span><br>
-              used today $<?= number_format($usedValue, 2) ?>
-            </div>
+          <div class="dr-stat">
+            <div class="dr-k">total orders</div>
+            <div class="dr-v-lg"><?= (int)$paidOrderCount ?></div>
+            <div class="dr-delta tone-<?= $dOrd['tone'] ?>"><?= htmlspecialchars($dOrd['text']) ?></div>
           </div>
-          <?php else: ?>
-          <div class="dr-verdict tone-flat">
-            <div class="dr-q">Can we open tomorrow?</div>
-            <div class="dr-q-km">តើយើងអាចបើកហាងស្អែកបានទេ?</div>
-            <div class="dr-sub">stock right now $<?= number_format($stockValue, 2) ?> · <span class="km">ស្តុកដែលមាន</span></div>
-            <div class="dr-foot">used that day $<?= number_format($usedValue, 2) ?></div>
+          <div class="dr-stat">
+            <div class="dr-k">cups sold</div>
+            <div class="dr-v-lg"><?= (int)$cogs['items'] ?></div>
+            <div class="dr-delta tone-<?= $dCups['tone'] ?>"><?= htmlspecialchars($dCups['text']) ?></div>
           </div>
-          <?php endif; ?>
+          <div class="dr-stat">
+            <div class="dr-k">avg per order</div>
+            <div class="dr-v-lg">$<?= number_format($avgToday, 2) ?></div>
+            <div class="dr-delta tone-<?= $dAvg['tone'] ?>"><?= htmlspecialchars($dAvg['text']) ?></div>
+          </div>
         </div>
 
+        <?php if ($isToday && $lowItems): ?>
+          <div class="dr-alert">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span><b><?= (int)$lowItems ?> item<?= $lowItems === 1 ? '' : 's' ?></b> below the buy-more level<?= $outItems ? ', ' . (int)$outItems . ' already out' : '' ?>.
+            Buy <?= htmlspecialchars(implode(', ', $lowNames)) ?><?= $lowExtra ? " and $lowExtra more" : '' ?> before tomorrow.</span>
+          </div>
+        <?php elseif ($isToday): ?>
+          <div class="dr-alert is-clear">
+            <i class="fa-solid fa-circle-check"></i>
+            <span>Every item is above its buy-more level. You can open tomorrow.</span>
+          </div>
+        <?php endif; ?>
+
         <div class="dr-facts">
-          <div class="dr-card"><div class="dr-k">cash</div><div class="dr-k-km">សាច់ប្រាក់</div><div class="dr-v">$<?= number_format($gotCash, 2) ?></div><div class="dr-note">in the register</div></div>
-          <div class="dr-card"><div class="dr-k">bakong</div><div class="dr-k-km">បាគង</div><div class="dr-v">$<?= number_format($gotBakong, 2) ?></div><div class="dr-note">by phone</div></div>
-          <div class="dr-card"><div class="dr-k">pay later — paid</div><div class="dr-k-km">បង់ក្រោយ — បង់រួច</div><div class="dr-v">$<?= number_format($gotLater, 2) ?></div><div class="dr-note">settled today</div></div>
-          <div class="dr-card"><div class="dr-k">not paid yet</div><div class="dr-k-km">មិនទាន់បង់</div><div class="dr-v">$<?= number_format($notPaidYet, 2) ?></div><div class="dr-note"><?= $notPaidCount === 0 ? 'everyone has paid' : ('from ' . $notPaidCount . ' order' . ($notPaidCount === 1 ? '' : 's')) ?></div></div>
+          <div class="dr-card"><div class="dr-k">cash</div><div class="dr-v">$<?= number_format($gotCash, 2) ?></div><div class="dr-note">in the register</div></div>
+          <div class="dr-card"><div class="dr-k">bakong</div><div class="dr-v">$<?= number_format($gotBakong, 2) ?></div><div class="dr-note">by phone</div></div>
+          <div class="dr-card"><div class="dr-k">pay later — paid</div><div class="dr-v">$<?= number_format($gotLater, 2) ?></div><div class="dr-note">settled today</div></div>
+          <div class="dr-card"><div class="dr-k">not paid yet</div><div class="dr-v">$<?= number_format($notPaidYet, 2) ?></div><div class="dr-note"><?= $notPaidCount === 0 ? 'everyone has paid' : ('from ' . $notPaidCount . ' order' . ($notPaidCount === 1 ? '' : 's')) ?></div></div>
           <?php if ($gotOther > 0.01): ?>
           <div class="dr-card"><div class="dr-k">other ways</div><div class="dr-v">$<?= number_format($gotOther, 2) ?></div><div class="dr-note">older orders that did not record how they were paid</div></div>
           <?php endif; ?>
@@ -1199,14 +1255,12 @@ body{
         </div>
 
         <div class="dr-card dr-wide">
-          <div class="dr-k">what sold</div>
-          <?php if ($paidOrderCount > 0 && $cogs['items'] > 0): ?>
-            <div class="dr-facts-inline">
-              <div class="dr-fact"><div class="dr-v-sm"><?= (int)$paidOrderCount ?></div><div class="dr-note">orders</div></div>
-              <div class="dr-fact"><div class="dr-v-sm"><?= (int)$cogs['items'] ?></div><div class="dr-note">cups sold</div></div>
-              <div class="dr-fact"><div class="dr-v-sm"><?= $avgCups !== null ? number_format($avgCups, 1) : '—' ?></div><div class="dr-note">cups per order</div></div>
-              <div class="dr-fact"><div class="dr-v-sm dr-v-text"><?= htmlspecialchars($bestSellerName ?? '—') ?></div><div class="dr-note">best seller<?= $bestSellerQty ? ' · ' . (int)$bestSellerQty . ' sold' : '' ?></div></div>
-            </div>
+          <div class="dr-k">best seller</div>
+          <?php // Orders, cups and the per-order average are headline stats now —
+                // repeating them here would be four more numbers to keep in step. ?>
+          <?php if ($bestSellerName !== null): ?>
+            <div class="dr-v-lg dr-v-text"><?= htmlspecialchars($bestSellerName) ?></div>
+            <div class="dr-note"><?= (int)$bestSellerQty ?> sold<?= $avgCups !== null ? ' · ' . number_format($avgCups, 1) . ' cups per order' : '' ?></div>
           <?php else: ?>
             <p class="dr-note"><?= htmlspecialchars($drZeroLine) ?></p>
           <?php endif; ?>
@@ -1301,9 +1355,11 @@ async function drExport() {
     // so read every cell defensively — a missing node must export as empty,
     // never as the string "undefined".
     const cell = (el, sel) => (el.querySelector(sel)?.textContent || '').replace(/\s+/g, ' ').trim();
-    document.querySelectorAll('#panel-today .dr-verdict').forEach(v => {
-        rows.push([cell(v, '.dr-q'), cell(v, '.dr-big'), cell(v, '.dr-line') || cell(v, '.dr-sub')]);
+    document.querySelectorAll('#panel-today .dr-stat').forEach(v => {
+        rows.push([cell(v, '.dr-k'), cell(v, '.dr-v-lg'), cell(v, '.dr-delta')]);
     });
+    const alertStrip = document.querySelector('#panel-today .dr-alert');
+    if (alertStrip) rows.push(['stock', alertStrip.textContent.replace(/\s+/g, ' ').trim()]);
     document.querySelectorAll('#panel-today .dr-facts > .dr-card').forEach(c => {
         rows.push([cell(c, '.dr-k'), cell(c, '.dr-v'), cell(c, '.dr-note')]);
     });
